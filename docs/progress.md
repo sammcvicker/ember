@@ -398,3 +398,110 @@ None
 - Ready to implement chunking strategies
 - Test coverage increased from 27% to 63%
 - All quality standards maintained
+
+---
+
+## 2025-10-14 Session 5 - Phase 4: Chunking
+
+**Phase:** Phase 4 (Chunking) - COMPLETE ✅
+**Duration:** ~2 hours
+**Commits:** (pending) feat(chunking): implement tree-sitter and line-based chunking with comprehensive tests
+
+### Completed
+- Created Chunker port in `ports/chunkers.py`:
+  - ChunkData dataclass for raw chunk information
+  - Chunker protocol with chunk_file() and supported_languages property
+- Created tree-sitter adapter in `adapters/parsers/tree_sitter_chunker.py`:
+  - Supports Python, TypeScript, JavaScript, Go, Rust
+  - Extracts functions, classes, and methods using AST queries
+  - Uses QueryCursor API with byte-position-based node matching
+  - Handles nested definitions (extracts both classes and methods within)
+  - Returns chunks sorted by line number
+- Created line-based fallback chunker in `adapters/parsers/line_chunker.py`:
+  - Sliding window implementation (120 lines, stride 100, 20-line overlap)
+  - Configurable window size and stride
+  - Universal fallback for unsupported languages
+  - Handles edge cases (small files, exact window size)
+- Implemented ChunkingUseCase in `core/chunking/chunk_usecase.py`:
+  - Tries tree-sitter first for supported languages
+  - Automatically falls back to line-based chunking
+  - Clean architecture - depends only on Chunker port
+  - Returns strategy used ("tree-sitter", "line-based", or "none")
+- Comprehensive test suite (33 tests, all passing):
+  - Tree-sitter tests (12 tests): Python, TypeScript, Go, Rust function/class extraction
+  - Line chunker tests (11 tests): Window sizing, overlap, edge cases
+  - Use case tests (10 tests): Strategy selection, fallback behavior, metadata preservation
+- All tests pass (68 total across project)
+- Test coverage increased from 63% to 71%
+
+### Decisions Made
+- **Tree-sitter query-based extraction**: Use tree-sitter Query and QueryCursor APIs
+  - Adapted to new tree-sitter-py API (captures returns dict, not list of tuples)
+  - Byte-position-based node matching instead of id() for stability
+  - Separate language function names for TypeScript (language_typescript vs language)
+  
+- **Nested function extraction**: Extract both top-level and nested definitions
+  - Classes contain their methods as separate chunks
+  - More granular chunking improves retrieval quality
+  - Test expectations updated to reflect this behavior
+
+- **Simple ChunkData structure**: Minimal data before creating full Chunk entities
+  - start_line, end_line, content, symbol, lang
+  - Use case layer will add project_id, hashes, tree_sha later
+  - Clean separation of concerns
+
+- **Universal line-based fallback**: LineChunker returns empty set() for supported_languages
+  - Indicates it supports all languages as a fallback
+  - Use case checks tree-sitter support first
+
+### Architecture Verification
+- ✅ Clean architecture respected (core depends only on ports)
+- ✅ ChunkingUseCase has no infrastructure imports
+- ✅ Adapters implement Chunker protocol correctly
+- ✅ Type hints on all public interfaces
+- ✅ Proper error handling (empty lists on failures)
+- ✅ All tests pass (68/68 total across project)
+- ✅ Real code samples tested (Python, TypeScript, Go, Rust)
+
+### Testing Results
+```
+68 passed in 1.45s
+Coverage: 71% (644 statements, 189 missing)
+Tree-sitter chunker: 91% coverage (76 statements, 7 missing)
+Line chunker: 100% coverage (33 statements, 0 missing)
+ChunkingUseCase: 100% coverage (27 statements, 0 missing)
+```
+
+### Technical Challenges
+- **Tree-sitter API changes**: New version uses QueryCursor and returns dict from captures()
+  - Required adaptation from legacy query.captures(node) → QueryCursor(query).captures(node)
+  - Return format changed from list[(node, name)] to dict[name: [nodes]]
+  
+- **Node identity stability**: Python id() not stable across API calls
+  - Switched to byte position tuples (start_byte, end_byte) for matching
+  - Parent-child matching now works correctly
+
+- **TypeScript language loading**: Different module structure than other languages
+  - Has language_typescript() and language_tsx() instead of language()
+  - Updated _LANG_MAP to include function name per language
+
+### Next Steps
+Begin Phase 5: Embedding
+- Research and choose default embedding model (small, code-tuned, CPU-friendly)
+- Create local embedder adapter implementing Embedder protocol
+- Implement batched embedding with fingerprinting
+- Test embedding functionality
+- Document model choice
+
+### Blockers
+None
+
+### Notes
+- Phase 4 completed in ~2 hours (on the faster end of 3-4 hour estimate)
+- Chunking is robust with good test coverage
+- Tree-sitter extracts semantic units (functions, classes, methods)
+- Line-based chunker provides solid fallback for unsupported languages
+- Both chunkers tested with real code samples
+- Ready to implement embedding with local models
+- Test coverage continues to climb (now at 71%)
+- All quality standards maintained

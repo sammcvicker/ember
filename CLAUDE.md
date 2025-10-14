@@ -18,10 +18,10 @@ When the user says "continue" or similar, follow this pattern:
 
 ## 📍 CURRENT STATE
 
-**Phase:** Phase 3 Complete → Ready for Phase 4 (Chunking)
-**Last Session:** 2025-10-14 (Session 4)
-**Last Completed:** Phase 3 - Git integration with adapters for VCS operations and file tracking
-**Active Work:** Ready to begin Phase 4 - Chunking strategies (tree-sitter + fallback)
+**Phase:** Phase 4 Complete → Ready for Phase 5 (Embedding)
+**Last Session:** 2025-10-14 (Session 5)
+**Last Completed:** Phase 4 - Chunking with tree-sitter and line-based fallback
+**Active Work:** Ready to begin Phase 5 - Embedding (local model selection and integration)
 **Blockers:** None
 
 ---
@@ -44,15 +44,20 @@ When the user says "continue" or similar, follow this pattern:
 3. [x] Create file tracking repository
 4. [x] Test with fixture git repo (14 tests, all passing)
 
-### Phase 4: Chunking (~3-4 hours total)
-1. [ ] Add tree-sitter language grammars to dependencies
-2. [ ] Create tree-sitter adapter for code-aware chunking (functions/classes)
-3. [ ] Create fallback line-based chunker (120 lines, stride 100, overlap 20)
-4. [ ] Create ChunkingUseCase that tries tree-sitter then falls back
-5. [ ] Test with real code samples (Python, TypeScript, Go, Rust)
+### Phase 4: Chunking - COMPLETE ✅
+1. [x] Add tree-sitter language grammars to dependencies
+2. [x] Create tree-sitter adapter for code-aware chunking (functions/classes)
+3. [x] Create fallback line-based chunker (120 lines, stride 100, overlap 20)
+4. [x] Create ChunkingUseCase that tries tree-sitter then falls back
+5. [x] Test with real code samples (Python, TypeScript, Go, Rust)
 
-### Phase 5: Embedding (next after Phase 4)
-See TODO.md for detailed breakdown.
+### Phase 5: Embedding (~2-3 hours total)
+1. [ ] Research and choose default embedding model (small, code-tuned, CPU-friendly)
+2. [ ] Create local embedder adapter implementing Embedder protocol
+3. [ ] Implement embed_texts with batching
+4. [ ] Generate model fingerprint for determinism
+5. [ ] Write tests for embedding adapter
+6. [ ] Document model choice in ADR
 
 ---
 
@@ -283,5 +288,5 @@ This system works if:
 
 ---
 
-**Last Updated**: 2025-10-14 (Session 4 - Phase 3 Complete)
+**Last Updated**: 2025-10-14 (Session 5 - Phase 4 Complete)
 **Format Version**: 1.0
