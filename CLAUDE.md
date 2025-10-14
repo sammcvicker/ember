@@ -18,35 +18,33 @@ When the user says "continue" or similar, follow this pattern:
 
 ## 📍 CURRENT STATE
 
-**Phase:** Phase 0 Complete → Ready for Phase 1 (Foundation)
+**Phase:** Phase 1 Complete → Ready for Phase 2 (Init Command)
 **Last Session:** 2025-10-14
-**Last Completed:** Phase 0 meta setup - created CLAUDE.md, docs/, ADRs, TODO.md, .gitignore, updated pyproject.toml
-**Active Work:** Ready to begin Phase 1 - Create project structure and define interfaces
+**Last Completed:** Phase 1 foundation - created clean architecture structure, all port interfaces, domain entities, CLI skeleton, tests
+**Active Work:** Ready to begin Phase 2 - Implement init command with config and SQLite setup
 **Blockers:** None
 
 ---
 
 ## 🎯 NEXT PRIORITY (Work Top to Bottom)
 
-### Phase 1: Foundation (~2-3 hours total)
-1. [ ] Create clean architecture folder structure per PRD §3
-2. [ ] Set up pyproject.toml with all dependencies (click, ruff, pyright, pytest, sqlite-vss, tree-sitter, blake3)
-3. [ ] Define all port interfaces in `ember/ports/` (Embedder, TextSearch, VectorSearch, Reranker, ChunkRepository, VCS, FileSystem)
-4. [ ] Create domain entities in `ember/domain/` (Chunk, RepoState, Query, SearchResult)
-5. [ ] Set up pytest structure with test fixtures
-6. [ ] Create basic CLI skeleton with click (init command stub)
-7. [ ] Verify imports and basic structure work
-
 ### Phase 2: Init Command (~2-3 hours total)
-1. [ ] Implement InitUseCase in `core/config/`
-2. [ ] Create .ember/ directory initialization logic
-3. [ ] Generate default config.toml with sensible defaults
-4. [ ] Implement SQLite schema creation (chunks, chunk_text FTS5, vectors, meta, files tables)
-5. [ ] Wire InitUseCase to CLI command
-6. [ ] Test: `ember init` creates correct structure
-7. [ ] Write integration test for init flow
+1. [ ] Create Config domain model in `domain/config.py` with sensible defaults
+2. [ ] Create default config.toml template
+3. [ ] Implement SQLite schema in `adapters/sqlite/schema.py` (chunks, chunk_text FTS5, vectors, meta, files tables)
+4. [ ] Create FileSystem adapter in `adapters/fs/local.py`
+5. [ ] Implement InitUseCase in `core/config/init_usecase.py`
+6. [ ] Wire init command to InitUseCase in CLI
+7. [ ] Test: `ember init` creates .ember/ with config.toml, index.db, state.json
+8. [ ] Write integration test for init flow
 
-### Phase 3: Git Integration (next after Phase 2)
+### Phase 3: Git Integration (~3-4 hours total)
+1. [ ] Create Git adapter implementing VCS protocol
+2. [ ] Implement tree SHA and diff operations
+3. [ ] Create file tracking repository
+4. [ ] Test with fixture git repo
+
+### Phase 4: Chunking (next after Phase 3)
 See TODO.md for detailed breakdown.
 
 ---
@@ -278,5 +276,5 @@ This system works if:
 
 ---
 
-**Last Updated**: 2025-10-14
+**Last Updated**: 2025-10-14 (Session 2 - Phase 1 Complete)
 **Format Version**: 1.0

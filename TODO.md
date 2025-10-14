@@ -1,7 +1,7 @@
 # Ember TODO - v0.1 MVP
 
 **Source:** PRD §15 (Roadmap) and §19 (Acceptance Criteria)
-**Current Phase:** Phase 0 (Meta Setup)
+**Current Phase:** Phase 2 (Init Command)
 **Last Updated:** 2025-10-14
 
 This file breaks down the PRD roadmap into atomic, testable tasks. Each task should take 30-60 minutes and be committable independently.
@@ -14,87 +14,87 @@ This file breaks down the PRD roadmap into atomic, testable tasks. Each task sho
 - [x] Create docs/ folder with progress.md
 - [x] Create ADRs for architecture and storage decisions
 - [x] Create this TODO.md file
-- [ ] Create .gitignore for Python and .ember/
-- [ ] Update pyproject.toml with metadata and scripts
-- [ ] Initial commit of meta documentation
+- [x] Create .gitignore for Python and .ember/
+- [x] Update pyproject.toml with metadata and scripts
+- [x] Initial commit of meta documentation
 
 **Completion Criteria:**
-- User can say "continue" and Claude picks up work immediately
-- CLAUDE.md reflects accurate current state
-- All documentation in place
+- ✅ User can say "continue" and Claude picks up work immediately
+- ✅ CLAUDE.md reflects accurate current state
+- ✅ All documentation in place
 
 ---
 
-## Phase 1: Foundation (~2-3 hours)
+## Phase 1: Foundation ✅
 
 ### 1.1 Project Structure
-- [ ] Create clean architecture folder structure (ports/, domain/, core/, adapters/, app/, entrypoints/, shared/)
-- [ ] Add __init__.py files to make packages importable
-- [ ] Create empty placeholder files for key modules
+- [x] Create clean architecture folder structure (ports/, domain/, core/, adapters/, app/, entrypoints/, shared/)
+- [x] Add __init__.py files to make packages importable
+- [x] Create empty placeholder files for key modules
 
 ### 1.2 Dependencies & Tooling
-- [ ] Update pyproject.toml with all dependencies:
+- [x] Update pyproject.toml with all dependencies:
   - click (CLI framework)
   - ruff (linter/formatter)
   - pyright (type checker)
   - pytest (testing)
-  - sqlite-vss (vector search)
   - tree-sitter + grammars (parsing)
   - blake3 (hashing)
-- [ ] Run `uv sync` to install dependencies
-- [ ] Create ruff.toml and pyproject.toml configs for linting
-- [ ] Create pytest.ini or pyproject.toml test config
-- [ ] Verify tooling works: `uv run ruff check .`, `uv run pytest`
+  - sentence-transformers (embeddings)
+  - torch (ML backend)
+- [x] Install dependencies with `uv pip install -e ".[dev]"`
+- [x] Tool configs in pyproject.toml (ruff, pyright, pytest)
+- [x] Verify tooling works: `uv run ruff check .`, `uv run pytest`
 
 ### 1.3 Domain Entities (PRD §4)
-- [ ] Create `domain/entities.py` with Chunk dataclass
+- [x] Create `domain/entities.py` with Chunk dataclass
   - Fields: id, project_id, path, lang, symbol, start/end_line, content, content_hash, file_hash, tree_sha, rev
   - Add blake3 content hashing method
-  - Add __post_init__ validation
-- [ ] Create RepoState dataclass (last_tree_sha, last_sync_mode, model, version)
-- [ ] Create Query dataclass (text, topk, filters, json_output)
-- [ ] Create SearchResult dataclass (chunk, score, preview)
-- [ ] Write unit tests for domain entities
+  - Compute deterministic chunk IDs
+- [x] Create RepoState dataclass (last_tree_sha, last_sync_mode, model, version)
+- [x] Create Query dataclass (text, topk, filters, json_output)
+- [x] Create SearchResult dataclass (chunk, score, preview)
+- [x] Write unit tests for domain entities (4 tests passing)
 
 ### 1.4 Port Interfaces (PRD §3, §17, §18)
-- [ ] Create `ports/repositories.py`:
-  - ChunkRepository protocol (add, get, find_by_hash, delete, list_all)
+- [x] Create `ports/repositories.py`:
+  - ChunkRepository protocol (add, get, find_by_content_hash, delete, list_all)
   - MetaRepository protocol (get, set, delete)
-  - FileRepository protocol (track, get_state)
-- [ ] Create `ports/embedders.py`:
+  - FileRepository protocol (track_file, get_file_state, get_all_tracked_files)
+- [x] Create `ports/embedders.py`:
   - Embedder protocol (name, dim, fingerprint, embed_texts)
-- [ ] Create `ports/search.py`:
+- [x] Create `ports/search.py`:
   - TextSearch protocol (add, query)
   - VectorSearch protocol (add, query)
   - Reranker protocol (rerank)
-  - Fuser protocol (combine)
-- [ ] Create `ports/vcs.py`:
-  - VCS protocol (get_tree_sha, diff_files, get_file_at_rev)
-- [ ] Create `ports/fs.py`:
+  - Fuser protocol (fuse)
+- [x] Create `ports/vcs.py`:
+  - VCS protocol (get_tree_sha, get_worktree_tree_sha, diff_files, get_file_content)
+- [x] Create `ports/fs.py`:
   - FileSystem protocol (read, write, exists, mkdir, glob)
-- [ ] Add comprehensive docstrings to all protocols
+- [x] Add comprehensive docstrings to all protocols
 
 ### 1.5 CLI Skeleton
-- [ ] Create `entrypoints/cli.py` with click group
-- [ ] Add stub commands: init, sync, find, open, cat, export, import, audit
-- [ ] Add --verbose, --quiet global flags
-- [ ] Add --version flag
-- [ ] Test: `uv run ember --help` shows all commands
+- [x] Create `entrypoints/cli.py` with click group
+- [x] Add stub commands: init, sync, find, open, cat, export, import, audit
+- [x] Add --verbose, --quiet global flags
+- [x] Add --version flag
+- [x] Test: `uv run ember --help` shows all commands
 
 ### 1.6 Testing Infrastructure
-- [ ] Create tests/ folder structure matching src
-- [ ] Create conftest.py with common fixtures
-- [ ] Create test helpers (mock repos, temp dirs)
-- [ ] Add first test: test_cli_help_works
-- [ ] Verify: `uv run pytest -v` runs
+- [x] Create tests/ folder structure (unit, integration, fixtures)
+- [x] Create conftest.py with common fixtures (temp_dir, sample_chunk, sample_chunks)
+- [x] Create test helpers for domain entities
+- [x] Add first tests: test_entities.py (4 tests)
+- [x] Verify: `uv run pytest -v` runs and passes
 
 **Phase 1 Completion Criteria:**
-- All folder structure in place
-- All dependencies installed
-- All port interfaces defined
-- Domain entities created and tested
-- CLI skeleton functional
-- Tests run successfully
+- ✅ All folder structure in place
+- ✅ All dependencies installed
+- ✅ All port interfaces defined
+- ✅ Domain entities created and tested
+- ✅ CLI skeleton functional
+- ✅ Tests run successfully
 
 ---
 

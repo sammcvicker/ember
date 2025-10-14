@@ -14,7 +14,17 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries",
 ]
-dependencies = []
+dependencies = [
+    "click>=8.1.0",
+    "blake3>=0.4.0",
+    "tree-sitter>=0.21.0",
+    "tree-sitter-python>=0.21.0",
+    "tree-sitter-typescript>=0.21.0",
+    "tree-sitter-go>=0.21.0",
+    "tree-sitter-rust>=0.21.0",
+    "sentence-transformers>=2.2.0",
+    "torch>=2.0.0",
+]
 
 [project.scripts]
 ember = "ember.entrypoints.cli:main"
