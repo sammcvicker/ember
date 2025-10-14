@@ -60,6 +60,10 @@ addopts = "-v --cov=ember --cov-report=term-missing"
 markers = [
     "slow: marks tests as slow (require model download or heavy computation)",
 ]
+filterwarnings = [
+    # Jina model checks for optimum (ONNX optimization library) - not needed for our use case
+    "ignore:optimum is not installed.*:UserWarning",
+]
 
 [build-system]
 requires = ["hatchling"]
