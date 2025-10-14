@@ -78,14 +78,15 @@ When the user says "continue" or similar, follow this pattern:
 6. [x] Test retrieval with real queries
 7. [x] Verify ranking quality
 
-### Phase 8: Polish & Remaining Commands (~2-3 hours)
-1. [ ] Write integration tests for SearchUseCase
-2. [ ] Implement cat command for displaying full chunk content
-3. [ ] Implement open command for $EDITOR integration
-4. [ ] Add more language support to tree-sitter chunker
-5. [ ] Consider incremental indexing (diff-based sync optimization)
-6. [ ] Performance testing on larger codebases
-7. [ ] Documentation for users (README, usage examples)
+### Phase 8: Polish & Remaining Commands (~3-4 hours)
+1. [ ] Migrate to Python 3.11 for better installability (PyTorch compatibility)
+2. [ ] Write integration tests for SearchUseCase
+3. [ ] Implement cat command for displaying full chunk content
+4. [ ] Implement open command for $EDITOR integration
+5. [ ] Add more language support to tree-sitter chunker
+6. [ ] Consider incremental indexing (diff-based sync optimization)
+7. [ ] Performance testing on larger codebases
+8. [ ] Documentation for users (README, usage examples)
 
 ---
 
@@ -249,13 +250,16 @@ git commit -m "feat(scope): description"
 
 ---
 
-## 🚨 KNOWN ISSUES & GOTCAS
+## 🚨 KNOWN ISSUES & GOTCHAS
 
 **Current**:
-- None yet (project just starting)
+- **Python 3.13 compatibility**: PyTorch doesn't have pre-built wheels for 3.13 yet
+  - Blocks pipx/pip installation for end users
+  - Solution: Migrate to Python 3.11 (Phase 8 task #1)
+  - Workaround: Use uv environment or editable install
 
 **Dependencies**:
-- Requires Python 3.13+ (per PRD)
+- Currently requires Python 3.13+ (will migrate to 3.11 in Phase 8)
 - sqlite-vss may need system dependencies (fallback to FAISS planned)
 - tree-sitter requires language grammars (add as needed)
 
