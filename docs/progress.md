@@ -942,3 +942,83 @@ None
 - Codebase already used Python 3.9+ compatible syntax
 - Quick win (~15 minutes) that unlocks broader adoption
 - Ready to continue with remaining Phase 8 polish tasks
+
+---
+
+## 2025-10-14 Session 9 (continued) - Phase 8: SearchUseCase Integration Tests
+
+**Phase:** Phase 8 (Polish & Remaining Commands) - IN PROGRESS
+**Duration:** ~45 minutes
+**Commits:** test(search): add comprehensive integration tests for SearchUseCase
+
+### Completed
+- **Created comprehensive integration test suite** for SearchUseCase:
+  - 12 integration tests covering complete hybrid search flow
+  - Tests use real adapters (SQLite, FTS5, SimpleVectorSearch, JinaCodeEmbedder)
+  - Test exact keyword matching (BM25)
+  - Test semantic similarity search (vector embeddings)
+  - Test hybrid fusion with Reciprocal Rank Fusion (RRF)
+  - Test path filtering (glob patterns like `*.ts`)
+  - Test language filtering (e.g., python, typescript)
+  - Test result ranking and scoring
+  - Test preview generation
+  - Test top-k limiting
+  - Test edge cases (empty query raises exception, no matches)
+  - Test RRF fusion algorithm directly (validates formula)
+- **All tests passing**: 12/12 SearchUseCase tests, 93/93 total project tests
+- **Test coverage improved**: SearchUseCase now at 98% (63/64 lines)
+
+### Decisions Made
+- **Real adapters for integration tests**: Use actual SQLite, FTS5, embedder instead of mocks
+  - Higher confidence in correctness
+  - Tests verify full end-to-end behavior
+  - Catches integration issues mocks would miss
+
+- **Pytest slow marker**: Mark tests requiring model loading with `@pytest.mark.slow`
+  - Allows running fast tests separately (`pytest -m "not slow"`)
+  - Slow tests take ~13s, fast tests <2s
+
+- **Empty query behavior**: Documented that empty queries raise exception
+  - FTS5 syntax error is expected behavior
+  - Test explicitly verifies this with `pytest.raises(Exception)`
+  - Could be improved in future to handle gracefully
+
+- **Sample test data**: Created realistic code chunks (Python + TypeScript)
+  - Tests search across multiple languages
+  - Validates filtering works correctly
+  - Chunks use proper IDs computed via `Chunk.compute_id()`
+
+### Architecture Verification
+- ✅ Tests follow integration test patterns from existing tests
+- ✅ Proper fixture usage (db_path, sample_chunks, search_usecase)
+- ✅ No mocks - real database and embeddings
+- ✅ Marked slow tests appropriately
+- ✅ All tests pass (93/93 total)
+- ✅ Test coverage: SearchUseCase 98%, overall project 60%
+
+### Testing Results
+```
+93 passed in 19.26s
+SearchUseCase coverage: 98% (63/64 lines)
+Overall coverage: 60% (483/1215 missing)
+```
+
+### Next Steps
+- Continue Phase 8 tasks:
+  - Implement cat command for displaying full chunk content
+  - Implement open command for $EDITOR integration
+  - Add more language support to tree-sitter chunker
+  - Consider incremental indexing (diff-based sync)
+  - Performance testing on larger codebases
+  - User documentation (README, usage examples)
+
+### Blockers
+None
+
+### Notes
+- SearchUseCase is now comprehensively tested with integration tests
+- Tests verify hybrid search (BM25 + vector + RRF fusion) works correctly
+- All filtering, ranking, and scoring logic verified
+- Ready to move on to remaining Phase 8 polish tasks
+- Test suite continues to grow (81 → 93 tests this session)
+- All quality standards maintained
