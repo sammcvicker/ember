@@ -85,10 +85,10 @@ class GitAdapter:
         """Get tree SHA representing current worktree state.
 
         This computes a virtual tree SHA that represents the actual file contents
-        in the worktree, including unstaged changes. This is done by:
-        1. Getting all tracked files from git ls-files
-        2. Hashing each file's current content using git hash-object
-        3. Building a tree structure and computing tree hash using git mktree
+        in the worktree, including unstaged changes. We do this by:
+        1. Temporarily adding all tracked files to the index with --intent-to-add
+        2. Using git write-tree to compute the tree SHA
+        3. Restoring the index to its previous state
 
         Returns:
             Tree SHA representing current worktree.
@@ -97,58 +97,30 @@ class GitAdapter:
             RuntimeError: If not a git repository or git commands fail.
         """
         try:
-            # Get list of all tracked files
-            result = self._run_git(["ls-files", "-z"])
-            files_output = result.stdout.decode()
+            # Save current index state
+            # First, get the index tree (what's currently staged)
+            try:
+                index_tree = self._run_git(["write-tree"]).stdout.decode().strip()
+            except subprocess.CalledProcessError:
+                # No index yet (initial commit scenario)
+                index_tree = None
 
-            if not files_output:
-                # Empty repository
-                return "4b825dc642cb6eb9a060e54bf8d69288fbee4904"  # empty tree SHA
+            # Add all tracked files to the index (update with worktree content)
+            # This temporarily stages everything but doesn't commit
+            self._run_git(["add", "-u"])  # Update tracked files only
 
-            # Split on null bytes
-            tracked_files = [f for f in files_output.split("\0") if f]
+            # Write the tree from the current index
+            result = self._run_git(["write-tree"])
+            worktree_tree_sha = result.stdout.decode().strip()
 
-            # Build tree entries: mode, type, hash, name
-            tree_entries = []
-            for filepath in tracked_files:
-                file_path = self.repo_root / filepath
+            # Restore index to previous state
+            if index_tree:
+                self._run_git(["read-tree", index_tree])
+            else:
+                # If there was no index, reset it
+                self._run_git(["reset"], check=False)
 
-                if not file_path.exists():
-                    # File was deleted in worktree but still tracked
-                    continue
-
-                # Hash the file content as it exists in worktree
-                hash_result = self._run_git([
-                    "hash-object",
-                    "-w",  # Write object to git database
-                    str(file_path)
-                ])
-                object_hash = hash_result.stdout.decode().strip()
-
-                # Determine file mode (simplified - just executable vs regular)
-                mode = "100755" if file_path.stat().st_mode & 0o111 else "100644"
-
-                # Git tree entry format: "mode type hash\tname"
-                tree_entries.append(f"{mode} blob {object_hash}\t{filepath}")
-
-            if not tree_entries:
-                # All files deleted
-                return "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
-
-            # Sort entries (git requires this)
-            tree_entries.sort()
-
-            # Create tree object using git mktree
-            mktree_input = "\n".join(tree_entries).encode()
-            mktree_result = subprocess.run(
-                ["git", "-C", str(self.repo_root), "mktree"],
-                input=mktree_input,
-                capture_output=True,
-                check=True,
-            )
-            tree_sha = mktree_result.stdout.decode().strip()
-
-            return tree_sha
+            return worktree_tree_sha
 
         except subprocess.CalledProcessError as e:
             raise RuntimeError(

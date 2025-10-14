@@ -4,6 +4,7 @@ Uses jinaai/jina-embeddings-v2-base-code via sentence-transformers.
 """
 
 import hashlib
+import warnings
 from typing import Any
 
 from sentence_transformers import SentenceTransformer
@@ -57,11 +58,19 @@ class JinaCodeEmbedder:
         """
         if self._model is None:
             try:
-                self._model = SentenceTransformer(
-                    self.MODEL_NAME,
-                    trust_remote_code=True,
-                    device=self._device,
-                )
+                # Suppress the optimum warning when loading Jina model
+                # (optimum is optional, provides ONNX optimization)
+                with warnings.catch_warnings():
+                    warnings.filterwarnings(
+                        "ignore",
+                        message=".*optimum is not installed.*",
+                        category=UserWarning,
+                    )
+                    self._model = SentenceTransformer(
+                        self.MODEL_NAME,
+                        trust_remote_code=True,
+                        device=self._device,
+                    )
                 self._model.max_seq_length = self._max_seq_length
             except Exception as e:
                 raise RuntimeError(
