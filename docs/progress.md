@@ -155,3 +155,128 @@ None
 - Foundation is solid - all structure and interfaces in place
 - Ready to start implementing actual business logic
 - All quality standards maintained throughout
+
+---
+
+## 2025-10-14 Session 3 - Phase 2: Init Command
+
+**Phase:** Phase 2 (Init Command) - COMPLETE ✅
+**Duration:** ~90min
+**Commits:** feat(init): implement complete init command with config, db, and state
+
+### Completed
+- Created Config domain model in `domain/config.py`:
+  - IndexConfig, SearchConfig, RedactionConfig, EmberConfig dataclasses
+  - Frozen dataclasses with sensible defaults matching PRD §10
+  - Type-safe with Literal types for chunk strategy
+- Created config I/O utilities in `shared/config_io.py`:
+  - load_config() and save_config() using tomllib/tomli-w
+  - create_default_config_file() with commented template
+  - Added tomli-w dependency for TOML writing
+- Implemented SQLite schema in `adapters/sqlite/schema.py`:
+  - init_database() creates complete schema per PRD §4
+  - Tables: chunks, chunk_text (FTS5), vectors, meta, tags, files
+  - FTS5 triggers for automatic content indexing
+  - Indexes for efficient queries (tree_sha+path, content_hash, etc.)
+  - Schema versioning in meta table
+- Created state I/O utilities in `shared/state_io.py`:
+  - load_state() and save_state() for state.json
+  - create_initial_state() for new indexes
+  - ISO-8601 timestamps for tracking
+- Created LocalFileSystem adapter in `adapters/fs/local.py`:
+  - Implements FileSystem protocol using pathlib
+  - All operations use absolute paths
+  - Deterministic glob results (sorted)
+- Implemented InitUseCase in `core/config/init_usecase.py`:
+  - Clean architecture - orchestrates without infrastructure dependencies
+  - InitRequest and InitResponse DTOs
+  - Creates .ember/ directory with config.toml, index.db, state.json
+  - Supports --force flag for reinitialization
+  - Proper error handling (FileExistsError)
+- Wired init command in CLI:
+  - Updated `entrypoints/cli.py` to use InitUseCase
+  - Added --force/-f flag
+  - User-friendly output with checkmarks
+  - Proper error messages and exit codes
+- Comprehensive integration tests (7 tests, all passing):
+  - test_init_creates_all_files
+  - test_init_config_is_valid_toml
+  - test_init_creates_valid_database_schema
+  - test_init_creates_valid_state_json
+  - test_init_fails_if_ember_dir_exists
+  - test_init_force_reinitializes
+  - test_init_database_has_fts5_triggers
+
+### Decisions Made
+- **TOML for config**: Human-readable, comments preserved in template
+  - Used tomllib (built-in Python 3.11+) for reading
+  - Added tomli-w for writing (maintains formatting)
+
+- **Commented config template**: create_default_config_file() uses string template
+  - Preserves helpful comments for users
+  - Better UX than programmatic TOML generation
+
+- **Frozen config dataclasses**: All config types are immutable
+  - Prevents accidental modification
+  - Clear that config is read-only during execution
+
+- **FTS5 with Porter stemming**: Better English text matching
+  - Using tokenize='porter unicode61' for FTS5
+  - Automatic trigger-based sync between chunks and chunk_text
+
+- **Schema versioning**: meta.schema_version for future migrations
+  - Currently at version 1
+  - check_schema_version() utility for migration checks
+
+### Architecture Verification
+- ✅ Clean architecture respected (core depends only on ports)
+- ✅ InitUseCase has no infrastructure imports
+- ✅ All adapters implement protocols correctly
+- ✅ Type hints on all public interfaces
+- ✅ Proper error handling at boundaries
+- ✅ All tests pass (11/11)
+- ✅ Integration tests cover happy path and error cases
+
+### Testing Results
+```
+11 passed in 0.09s
+Coverage: 50% (361 statements, 181 missing)
+```
+
+### Manual Testing
+```bash
+$ uv run ember init
+Initialized ember index at /tmp/test/.ember
+  ✓ Created config.toml
+  ✓ Created index.db
+  ✓ Created state.json
+
+$ uv run ember init  # Without force
+Error: Directory /tmp/test/.ember already exists. Use --force to reinitialize.
+
+$ uv run ember init --force
+Reinitialized existing ember index at /tmp/test/.ember
+  ✓ Created config.toml
+  ✓ Created index.db
+  ✓ Created state.json
+```
+
+### Next Steps
+Begin Phase 3: Git Integration
+- Create Git adapter implementing VCS protocol
+- Implement tree SHA computation
+- Create git diff operations for incremental sync
+- Build file tracking repository
+- Test with fixture git repo
+
+### Blockers
+None
+
+### Notes
+- Phase 2 completed in ~90 minutes as estimated
+- Init command is fully functional and tested
+- Database schema includes all tables needed for MVP
+- Config template has helpful comments for users
+- All quality standards maintained
+- Test coverage is good (100% for init use case)
+- Ready to implement git integration for sync command

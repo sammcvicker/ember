@@ -4,8 +4,11 @@ Command-line interface for Ember code search tool.
 """
 
 import sys
+from pathlib import Path
 
 import click
+
+from ember.core.config.init_usecase import InitRequest, InitUseCase
 
 
 @click.group()
@@ -34,17 +37,46 @@ def cli(ctx: click.Context, verbose: bool, quiet: bool) -> None:
 
 
 @cli.command()
+@click.option(
+    "--force",
+    "-f",
+    is_flag=True,
+    help="Reinitialize even if .ember/ already exists.",
+)
 @click.pass_context
-def init(ctx: click.Context) -> None:
+def init(ctx: click.Context, force: bool) -> None:
     """Initialize Ember in the current directory.
 
     Creates .ember/ directory with configuration and database.
     """
-    click.echo("init command - not yet implemented")
-    click.echo("This will create .ember/ directory with:")
-    click.echo("  - config.toml (configuration)")
-    click.echo("  - index.db (SQLite database)")
-    click.echo("  - state.json (indexing state)")
+    repo_root = Path.cwd().resolve()
+
+    # Create use case and execute
+    use_case = InitUseCase(version="0.1.0")
+    request = InitRequest(repo_root=repo_root, force=force)
+
+    try:
+        response = use_case.execute(request)
+
+        # Report success
+        if response.was_reinitialized:
+            click.echo(f"Reinitialized existing ember index at {response.ember_dir}")
+        else:
+            click.echo(f"Initialized ember index at {response.ember_dir}")
+
+        if not ctx.obj.get("quiet", False):
+            click.echo(f"  ✓ Created {response.config_path.name}")
+            click.echo(f"  ✓ Created {response.db_path.name}")
+            click.echo(f"  ✓ Created {response.state_path.name}")
+            click.echo("\nNext: Run 'ember sync' to index your codebase")
+
+    except FileExistsError as e:
+        click.echo(f"Error: {e}", err=True)
+        click.echo("Use 'ember init --force' to reinitialize", err=True)
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"Error initializing ember: {e}", err=True)
+        sys.exit(1)
 
 
 @cli.command()
