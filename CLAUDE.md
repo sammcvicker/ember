@@ -18,10 +18,10 @@ When the user says "continue" or similar, follow this pattern:
 
 ## 📍 CURRENT STATE
 
-**Phase:** Phase 2 Complete → Ready for Phase 3 (Git Integration)
-**Last Session:** 2025-10-14 (Session 3)
-**Last Completed:** Phase 2 - Init command fully implemented with config, database schema, and state management
-**Active Work:** Ready to begin Phase 3 - Git integration for sync command
+**Phase:** Phase 3 Complete → Ready for Phase 4 (Chunking)
+**Last Session:** 2025-10-14 (Session 4)
+**Last Completed:** Phase 3 - Git integration with adapters for VCS operations and file tracking
+**Active Work:** Ready to begin Phase 4 - Chunking strategies (tree-sitter + fallback)
 **Blockers:** None
 
 ---
@@ -38,13 +38,20 @@ When the user says "continue" or similar, follow this pattern:
 7. [x] Test: `ember init` creates .ember/ with config.toml, index.db, state.json
 8. [x] Write integration test for init flow
 
-### Phase 3: Git Integration (~3-4 hours total)
-1. [ ] Create Git adapter implementing VCS protocol
-2. [ ] Implement tree SHA and diff operations
-3. [ ] Create file tracking repository
-4. [ ] Test with fixture git repo
+### Phase 3: Git Integration - COMPLETE ✅
+1. [x] Create Git adapter implementing VCS protocol
+2. [x] Implement tree SHA and diff operations (including worktree SHA with unstaged changes)
+3. [x] Create file tracking repository
+4. [x] Test with fixture git repo (14 tests, all passing)
 
-### Phase 4: Chunking (next after Phase 3)
+### Phase 4: Chunking (~3-4 hours total)
+1. [ ] Add tree-sitter language grammars to dependencies
+2. [ ] Create tree-sitter adapter for code-aware chunking (functions/classes)
+3. [ ] Create fallback line-based chunker (120 lines, stride 100, overlap 20)
+4. [ ] Create ChunkingUseCase that tries tree-sitter then falls back
+5. [ ] Test with real code samples (Python, TypeScript, Go, Rust)
+
+### Phase 5: Embedding (next after Phase 4)
 See TODO.md for detailed breakdown.
 
 ---
@@ -276,5 +283,5 @@ This system works if:
 
 ---
 
-**Last Updated**: 2025-10-14 (Session 3 - Phase 2 Complete)
+**Last Updated**: 2025-10-14 (Session 4 - Phase 3 Complete)
 **Format Version**: 1.0

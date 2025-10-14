@@ -1,0 +1,250 @@
+"""Git adapter implementing VCS protocol using subprocess git commands."""
+
+import subprocess
+from pathlib import Path
+from typing import Literal
+
+from ember.ports.vcs import FileStatus, VCS
+
+
+class GitAdapter:
+    """Git VCS adapter using subprocess calls to git CLI."""
+
+    def __init__(self, repo_root: Path) -> None:
+        """Initialize Git adapter.
+
+        Args:
+            repo_root: Absolute path to git repository root.
+
+        Raises:
+            RuntimeError: If repo_root is not a git repository.
+        """
+        self.repo_root = repo_root.resolve()
+        # Verify this is a git repo
+        if not self._is_git_repo():
+            raise RuntimeError(f"Not a git repository: {self.repo_root}")
+
+    def _is_git_repo(self) -> bool:
+        """Check if repo_root is a git repository."""
+        try:
+            self._run_git(["rev-parse", "--git-dir"], check=True)
+            return True
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            return False
+
+    def _run_git(
+        self,
+        args: list[str],
+        check: bool = True,
+        capture_output: bool = True,
+    ) -> subprocess.CompletedProcess[bytes]:
+        """Run a git command in the repository.
+
+        Args:
+            args: Git command arguments (without 'git' prefix).
+            check: Whether to raise CalledProcessError on non-zero exit.
+            capture_output: Whether to capture stdout/stderr.
+
+        Returns:
+            CompletedProcess with command results.
+
+        Raises:
+            subprocess.CalledProcessError: If check=True and command fails.
+        """
+        cmd = ["git", "-C", str(self.repo_root)] + args
+        result = subprocess.run(
+            cmd,
+            capture_output=capture_output,
+            check=check,
+        )
+        return result
+
+    def get_tree_sha(self, ref: str = "HEAD") -> str:
+        """Get the tree SHA for a given ref.
+
+        Args:
+            ref: Git ref (commit SHA, branch name, tag, etc.). Default: HEAD.
+
+        Returns:
+            Tree SHA (40-char hex string).
+
+        Raises:
+            RuntimeError: If ref is invalid or not a git repository.
+        """
+        try:
+            # Get tree SHA from commit ref using rev-parse
+            result = self._run_git(["rev-parse", f"{ref}^{{tree}}"])
+            tree_sha = result.stdout.decode().strip()
+            return tree_sha
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(
+                f"Failed to get tree SHA for ref '{ref}': {e.stderr.decode()}"
+            ) from e
+
+    def get_worktree_tree_sha(self) -> str:
+        """Get tree SHA representing current worktree state.
+
+        This computes a virtual tree SHA that represents the actual file contents
+        in the worktree, including unstaged changes. This is done by:
+        1. Getting all tracked files from git ls-files
+        2. Hashing each file's current content using git hash-object
+        3. Building a tree structure and computing tree hash using git mktree
+
+        Returns:
+            Tree SHA representing current worktree.
+
+        Raises:
+            RuntimeError: If not a git repository or git commands fail.
+        """
+        try:
+            # Get list of all tracked files
+            result = self._run_git(["ls-files", "-z"])
+            files_output = result.stdout.decode()
+
+            if not files_output:
+                # Empty repository
+                return "4b825dc642cb6eb9a060e54bf8d69288fbee4904"  # empty tree SHA
+
+            # Split on null bytes
+            tracked_files = [f for f in files_output.split("\0") if f]
+
+            # Build tree entries: mode, type, hash, name
+            tree_entries = []
+            for filepath in tracked_files:
+                file_path = self.repo_root / filepath
+
+                if not file_path.exists():
+                    # File was deleted in worktree but still tracked
+                    continue
+
+                # Hash the file content as it exists in worktree
+                hash_result = self._run_git([
+                    "hash-object",
+                    "-w",  # Write object to git database
+                    str(file_path)
+                ])
+                object_hash = hash_result.stdout.decode().strip()
+
+                # Determine file mode (simplified - just executable vs regular)
+                mode = "100755" if file_path.stat().st_mode & 0o111 else "100644"
+
+                # Git tree entry format: "mode type hash\tname"
+                tree_entries.append(f"{mode} blob {object_hash}\t{filepath}")
+
+            if not tree_entries:
+                # All files deleted
+                return "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
+            # Sort entries (git requires this)
+            tree_entries.sort()
+
+            # Create tree object using git mktree
+            mktree_input = "\n".join(tree_entries).encode()
+            mktree_result = subprocess.run(
+                ["git", "-C", str(self.repo_root), "mktree"],
+                input=mktree_input,
+                capture_output=True,
+                check=True,
+            )
+            tree_sha = mktree_result.stdout.decode().strip()
+
+            return tree_sha
+
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(
+                f"Failed to compute worktree tree SHA: {e.stderr.decode()}"
+            ) from e
+
+    def diff_files(
+        self,
+        from_sha: str | None,
+        to_sha: str,
+    ) -> list[tuple[FileStatus, Path]]:
+        """Get list of changed files between two tree SHAs.
+
+        Args:
+            from_sha: Starting tree SHA (None for empty tree).
+            to_sha: Ending tree SHA.
+
+        Returns:
+            List of (status, path) tuples for changed files.
+            Paths are relative to repository root.
+        """
+        try:
+            # Use git diff-tree to compare tree objects
+            # --no-commit-id: suppress commit ID output
+            # --name-status: show names and status
+            # -r: recurse into subdirectories
+            # -M: detect renames
+            from_ref = from_sha if from_sha else "4b825dc642cb6eb9a060e54bf8d69288fbee4904"  # empty tree SHA
+            args = ["diff-tree", "--no-commit-id", "--name-status", "-r", "-M", from_ref, to_sha]
+
+            result = self._run_git(args)
+            output = result.stdout.decode().strip()
+
+            if not output:
+                return []
+
+            # Parse output lines: "STATUS\tPATH" or "RNUM\tOLD\tNEW" for renames
+            changes: list[tuple[FileStatus, Path]] = []
+            for line in output.split("\n"):
+                parts = line.split("\t")
+                if len(parts) < 2:
+                    continue
+
+                status_code = parts[0]
+
+                # Map git status codes to our FileStatus
+                if status_code == "A":
+                    status: FileStatus = "added"
+                    path = Path(parts[1])
+                elif status_code == "D":
+                    status = "deleted"
+                    path = Path(parts[1])
+                elif status_code == "M":
+                    status = "modified"
+                    path = Path(parts[1])
+                elif status_code.startswith("R"):  # R100, R090, etc.
+                    status = "renamed"
+                    # For renames, use the new path
+                    path = Path(parts[2]) if len(parts) > 2 else Path(parts[1])
+                else:
+                    # Unknown status, skip
+                    continue
+
+                changes.append((status, path))
+
+            return changes
+
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(
+                f"Failed to diff trees {from_sha} -> {to_sha}: {e.stderr.decode()}"
+            ) from e
+
+    def get_file_content(self, path: Path, ref: str = "HEAD") -> bytes:
+        """Get file content at a specific ref.
+
+        Args:
+            path: Path relative to repository root.
+            ref: Git ref. Default: HEAD.
+
+        Returns:
+            File content as bytes.
+
+        Raises:
+            FileNotFoundError: If file doesn't exist at ref.
+            RuntimeError: If ref is invalid.
+        """
+        try:
+            # Use git show to get file content at ref
+            result = self._run_git(["show", f"{ref}:{path}"])
+            return result.stdout
+        except subprocess.CalledProcessError as e:
+            stderr = e.stderr.decode()
+            if "does not exist" in stderr or "exists on disk, but not in" in stderr:
+                raise FileNotFoundError(
+                    f"File '{path}' not found at ref '{ref}'"
+                ) from e
+            raise RuntimeError(
+                f"Failed to get content for '{path}' at ref '{ref}': {stderr}"
+            ) from e

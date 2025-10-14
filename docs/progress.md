@@ -280,3 +280,121 @@ None
 - All quality standards maintained
 - Test coverage is good (100% for init use case)
 - Ready to implement git integration for sync command
+
+---
+
+## 2025-10-14 Session 4 - Phase 3: Git Integration
+
+**Phase:** Phase 3 (Git Integration) - COMPLETE ✅
+**Duration:** ~90min
+**Commits:** feat(git): implement Git adapter and FileRepository with comprehensive tests
+
+### Completed
+- Created Git adapter in `adapters/git_cmd/git_adapter.py`:
+  - Implements VCS protocol using subprocess git commands
+  - `get_tree_sha(ref)` - Gets tree SHA for any git ref (HEAD, branch, commit)
+  - `get_worktree_tree_sha()` - Computes virtual tree SHA for worktree including unstaged changes
+  - `diff_files(from_sha, to_sha)` - Returns changed files between tree SHAs with status (added/modified/deleted/renamed)
+  - `get_file_content(path, ref)` - Retrieves file content at specific ref
+  - Proper error handling with descriptive error messages
+  - Uses git plumbing commands (hash-object, mktree) for worktree tree computation
+- Implemented worktree tree SHA computation:
+  - Uses `git ls-files` to get all tracked files
+  - Hashes each file's current content with `git hash-object -w`
+  - Builds tree structure with proper file modes (100644/100755)
+  - Computes final tree SHA with `git mktree`
+  - Correctly handles unstaged changes, deletions, and empty repos
+- Created FileRepository adapter in `adapters/sqlite/file_repository.py`:
+  - Implements FileRepository protocol for tracking indexed files
+  - `track_file()` - UPSERT semantics for storing file metadata
+  - `get_file_state()` - Retrieves tracked file metadata (hash, size, mtime)
+  - `get_all_tracked_files()` - Returns all tracked paths sorted
+  - Automatic `last_indexed_at` timestamp management
+  - Proper connection lifecycle (open/close per operation)
+- Comprehensive Git adapter tests (14 tests, all passing):
+  - test_git_adapter_initialization
+  - test_git_adapter_rejects_non_repo
+  - test_get_tree_sha_for_head
+  - test_get_tree_sha_for_invalid_ref
+  - test_get_worktree_tree_sha
+  - test_get_worktree_tree_sha_with_unstaged_changes (verifies unstaged change detection)
+  - test_diff_files_between_commits
+  - test_diff_files_from_empty_tree
+  - test_diff_files_with_deletions
+  - test_diff_files_with_renames (with -M flag)
+  - test_get_file_content_at_head
+  - test_get_file_content_nonexistent_file
+  - test_get_file_content_invalid_ref
+  - test_diff_files_returns_empty_for_identical_trees
+- Comprehensive FileRepository tests (10 tests, all passing):
+  - test_track_file
+  - test_track_file_updates_existing (UPSERT verification)
+  - test_get_file_state_nonexistent
+  - test_get_all_tracked_files_empty
+  - test_get_all_tracked_files
+  - test_get_all_tracked_files_sorted
+  - test_last_indexed_at_timestamp
+  - test_track_file_with_absolute_path
+  - test_track_multiple_files_independence
+  - test_file_repository_connection_cleanup
+
+### Decisions Made
+- **Git subprocess approach**: Use subprocess to call git CLI commands
+  - Simple, reliable, no need for libgit2 bindings
+  - Leverages user's installed git version
+  - Standard approach for git integrations
+
+- **Worktree tree SHA implementation**: Compute virtual tree using git plumbing
+  - Gets all tracked files with `git ls-files -z`
+  - Hashes actual file content (not just index)
+  - Properly detects unstaged changes
+  - Returns git-compatible tree SHA for comparison
+
+- **Connection-per-operation pattern**: FileRepository opens/closes DB per operation
+  - Simpler than connection pooling for MVP
+  - No connection leaks
+  - Thread-safe by default
+  - Can optimize later if needed
+
+- **UPSERT for file tracking**: Use ON CONFLICT DO UPDATE
+  - Prevents duplicate path errors
+  - Automatically updates changed files
+  - Single query for insert or update
+
+### Architecture Verification
+- ✅ Clean architecture respected (adapters implement ports)
+- ✅ GitAdapter has no business logic, pure infrastructure
+- ✅ FileRepository properly encapsulates SQLite operations
+- ✅ All protocols correctly implemented
+- ✅ Type hints on all public interfaces
+- ✅ Proper error handling at boundaries
+- ✅ All tests pass (35/35 total across project)
+- ✅ Integration tests use real git repos (not mocks)
+
+### Testing Results
+```
+35 passed in 1.42s
+Coverage: 63% (494 statements, 182 missing)
+Git adapter: 90% coverage (91 statements, 9 missing)
+FileRepository: 100% coverage (36 statements, 0 missing)
+```
+
+### Next Steps
+Begin Phase 4: Chunking
+- Create tree-sitter adapter for code-aware chunking
+- Implement fallback line-based chunker
+- Create chunking use case
+- Test with real code samples (Python, TypeScript, Go, Rust)
+
+### Blockers
+None
+
+### Notes
+- Phase 3 completed in ~90 minutes as estimated
+- Git integration is robust and well-tested
+- Worktree tree SHA correctly handles unstaged changes (critical for sync)
+- FileRepository uses simple connection pattern (can optimize later)
+- All git operations tested with real git repos (high confidence)
+- Ready to implement chunking strategies
+- Test coverage increased from 27% to 63%
+- All quality standards maintained
