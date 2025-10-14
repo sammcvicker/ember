@@ -292,6 +292,36 @@ def find(
         # Execute search
         results = search_usecase.search(query_obj)
 
+        # Cache results for cat/open commands
+        cache_path = ember_dir / ".last_search.json"
+        try:
+            import json
+
+            cache_data = {
+                "query": query,
+                "results": [
+                    {
+                        "rank": result.rank,
+                        "score": result.score,
+                        "path": str(result.chunk.path),
+                        "lang": result.chunk.lang,
+                        "symbol": result.chunk.symbol,
+                        "start_line": result.chunk.start_line,
+                        "end_line": result.chunk.end_line,
+                        "content": result.chunk.content,
+                        "chunk_id": result.chunk.id,
+                        "tree_sha": result.chunk.tree_sha,
+                        "explanation": result.explanation,
+                    }
+                    for result in results
+                ],
+            }
+            cache_path.write_text(json.dumps(cache_data, indent=2))
+        except Exception as e:
+            # Log cache errors but don't fail the command
+            if ctx.obj.get("verbose", False):
+                click.echo(f"Warning: Could not cache results: {e}", err=True)
+
         # Display results
         if json_output:
             import json
@@ -370,8 +400,100 @@ def cat(ctx: click.Context, index: int, context: int) -> None:
 
     Use after 'find' to view full chunk content.
     """
-    click.echo("cat command - not yet implemented")
-    click.echo(f"Would show result #{index} with {context} lines of context")
+    import json
+
+    repo_root = Path.cwd().resolve()
+    ember_dir = repo_root / ".ember"
+    cache_path = ember_dir / ".last_search.json"
+
+    # Check if cache exists
+    if not cache_path.exists():
+        click.echo("Error: No recent search results found", err=True)
+        click.echo("Run 'ember find <query>' first", err=True)
+        sys.exit(1)
+
+    try:
+        # Load cached results
+        cache_data = json.loads(cache_path.read_text())
+        results = cache_data.get("results", [])
+
+        if not results:
+            click.echo("Error: No results in cache", err=True)
+            sys.exit(1)
+
+        # Validate index (1-based)
+        if index < 1 or index > len(results):
+            click.echo(
+                f"Error: Index {index} out of range (1-{len(results)})", err=True
+            )
+            sys.exit(1)
+
+        # Get the result (convert to 0-based)
+        result = results[index - 1]
+
+        # Display header
+        path = result["path"]
+        symbol_info = f" ({result['symbol']})" if result.get("symbol") else ""
+        click.echo(f"\n{index}. {path}:{result['start_line']}{symbol_info}")
+        click.echo(
+            f"   Lines {result['start_line']}-{result['end_line']} "
+            f"({result['lang'] or 'text'})"
+        )
+        click.echo()
+
+        # Get chunk content
+        content = result["content"]
+
+        # If context requested, read file and show surrounding lines
+        if context > 0:
+            file_path = repo_root / path
+            if file_path.exists():
+                try:
+                    file_lines = file_path.read_text(errors="replace").splitlines()
+                    start_line = result["start_line"]
+                    end_line = result["end_line"]
+
+                    # Calculate context range (1-based line numbers)
+                    context_start = max(1, start_line - context)
+                    context_end = min(len(file_lines), end_line + context)
+
+                    # Display with line numbers
+                    for line_num in range(context_start, context_end + 1):
+                        line_content = file_lines[line_num - 1]  # Convert to 0-based
+                        # Highlight the chunk lines
+                        if start_line <= line_num <= end_line:
+                            click.echo(f"{line_num:5} | {line_content}")
+                        else:
+                            click.echo(
+                                click.style(f"{line_num:5} | {line_content}", dim=True)
+                            )
+                except Exception as e:
+                    # Fall back to just chunk content if file read fails
+                    click.echo(
+                        f"Warning: Could not read context from {path}: {e}", err=True
+                    )
+                    click.echo(content)
+            else:
+                click.echo(
+                    f"Warning: File {path} not found, showing chunk only", err=True
+                )
+                click.echo(content)
+        else:
+            # Just display the chunk content
+            click.echo(content)
+
+        click.echo()
+
+    except json.JSONDecodeError:
+        click.echo("Error: Corrupted search cache", err=True)
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        if ctx.obj.get("verbose", False):
+            import traceback
+
+            traceback.print_exc()
+        sys.exit(1)
 
 
 @cli.command()

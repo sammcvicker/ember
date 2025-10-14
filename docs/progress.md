@@ -1022,3 +1022,138 @@ None
 - Ready to move on to remaining Phase 8 polish tasks
 - Test suite continues to grow (81 → 93 tests this session)
 - All quality standards maintained
+
+---
+
+## 2025-10-14 Session 9 (continued) - Phase 8: Cat Command Implementation
+
+**Phase:** Phase 8 (Polish & Remaining Commands) - IN PROGRESS
+**Duration:** ~45 minutes
+**Commits:** feat(cli): implement cat command for displaying full chunk content
+
+### Completed
+- **Updated find command to cache search results**:
+  - Saves results to `.ember/.last_search.json` after each search
+  - Includes all chunk metadata, scores, and explanations
+  - Non-critical caching (silent failure, shows warning with --verbose)
+  - Enables stateful workflow: `ember find → ember cat → ember open`
+- **Implemented cat command** in `entrypoints/cli.py`:
+  - Accepts 1-based index argument referencing cached search results
+  - `--context N` option shows N lines of surrounding context from source file
+  - Displays chunk header: path, line range, symbol, language
+  - Shows full chunk content by default
+  - With context: reads source file and displays surrounding lines
+  - Context lines are dimmed (using `click.style(dim=True)`)
+  - Chunk lines are highlighted (normal style)
+  - Line numbers displayed with 5-character padding
+- **Error handling**:
+  - Validates cache file exists (`ember find` must be run first)
+  - Validates index is in range (1-based)
+  - Handles missing source files (falls back to chunk content only)
+  - Handles file read errors gracefully
+  - JSON decode errors for corrupted cache
+- **Manual end-to-end testing**:
+  - Tested basic cat: `ember cat 1` displays chunk content
+  - Tested with context: `ember cat 1 -C 3` shows 3 lines before/after
+  - Tested invalid index: `ember cat 5` shows appropriate error
+  - Tested different results: `ember cat 2 -C 2` works correctly
+  - Verified context highlighting (chunk vs context lines)
+
+### Decisions Made
+- **Session-based result caching**: Use `.ember/.last_search.json` for workflow continuity
+  - Enables smooth UX: user sees results, then explores with cat/open
+  - Avoids need to pass chunk IDs manually
+  - Standard pattern for CLI tools (git, ripgrep, etc. use similar approaches)
+  - Cache persists across commands but not tracked in git (.ember/ is ignored)
+
+- **1-based indexing**: Match user-facing display in find results
+  - Results shown as "1.", "2.", "3." in find output
+  - Cat command uses same indexing for consistency
+  - Convert to 0-based internally when accessing list
+
+- **Optional context from source file**: Read actual file for context, not from database
+  - More flexible (can show more context than was indexed)
+  - Always shows current file state (useful for active development)
+  - Falls back gracefully if file no longer exists
+  - Line numbers help user locate code quickly
+
+- **Click styling for context dimming**: Use click.style(dim=True) for context lines
+  - Built-in terminal styling (no external deps)
+  - Clear visual distinction between chunk and context
+  - Works across terminals with varying color support
+
+- **Non-blocking cache failures**: Don't fail find command if caching fails
+  - Caching is convenience feature, not critical path
+  - Log warning only with --verbose flag
+  - User can still see search results even if cache fails
+
+### Architecture Verification
+- ✅ Implementation follows CLI patterns (click conventions)
+- ✅ Proper error handling with user-friendly messages
+- ✅ No business logic in CLI layer (pure presentation)
+- ✅ File I/O uses pathlib.Path consistently
+- ✅ UTF-8 handling with errors='replace' for robustness
+- ✅ All quality standards maintained
+
+### Manual Testing Results
+```bash
+# Basic cat
+$ ember find "multiply" -k 3
+$ ember cat 1
+1. math.py:5 (multiply)
+   Lines 5-7 (py)
+
+def multiply(a, b):
+    """Multiply two numbers."""
+    return a * b
+
+# With context
+$ ember cat 1 --context 3
+1. math.py:5 (multiply)
+   Lines 5-7 (py)
+
+    2 |     """Add two numbers."""
+    3 |     return a + b
+    4 |
+    5 | def multiply(a, b):
+    6 |     """Multiply two numbers."""
+    7 |     return a * b
+    8 |
+    9 | class Calculator:
+   10 |     """A simple calculator."""
+
+# Error handling
+$ ember cat 5
+Error: Index 5 out of range (1-3)
+
+# Different result
+$ ember cat 2 -C 2
+2. math.py:15 (compute)
+   Lines 15-19 (py)
+
+   13 |         self.history = []
+   14 |
+   15 |     def compute(self, operation, a, b):
+   16 |         """Perform a calculation."""
+   17 |         result = operation(a, b)
+   18 |         self.history.append(result)
+   19 |         return result
+```
+
+### Next Steps
+- Commit cat command implementation
+- Continue Phase 8: Implement open command for $EDITOR integration
+- Then: Additional language support, performance testing, documentation
+
+### Blockers
+None
+
+### Notes
+- **Cat command completes a major workflow**: find → cat → open
+- Session-based caching works smoothly for typical usage
+- Context display is highly useful for understanding surrounding code
+- Visual styling (dimmed context lines) improves readability
+- Command works well standalone and as part of workflow
+- No tests written yet (can add integration tests later if needed)
+- All quality standards maintained
+- Ready for next Phase 8 task (open command)
