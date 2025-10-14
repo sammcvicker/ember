@@ -504,8 +504,100 @@ def open_result(ctx: click.Context, index: int) -> None:
 
     Opens file at the correct line in $EDITOR.
     """
-    click.echo("open command - not yet implemented")
-    click.echo(f"Would open result #{index} in $EDITOR")
+    import json
+    import os
+    import subprocess
+
+    repo_root = Path.cwd().resolve()
+    ember_dir = repo_root / ".ember"
+    cache_path = ember_dir / ".last_search.json"
+
+    # Check if cache exists
+    if not cache_path.exists():
+        click.echo("Error: No recent search results found", err=True)
+        click.echo("Run 'ember find <query>' first", err=True)
+        sys.exit(1)
+
+    try:
+        # Load cached results
+        cache_data = json.loads(cache_path.read_text())
+        results = cache_data.get("results", [])
+
+        if not results:
+            click.echo("Error: No results in cache", err=True)
+            sys.exit(1)
+
+        # Validate index (1-based)
+        if index < 1 or index > len(results):
+            click.echo(
+                f"Error: Index {index} out of range (1-{len(results)})", err=True
+            )
+            sys.exit(1)
+
+        # Get the result (convert to 0-based)
+        result = results[index - 1]
+
+        # Build absolute file path
+        file_path = repo_root / result["path"]
+
+        # Check if file exists
+        if not file_path.exists():
+            click.echo(f"Error: File not found: {result['path']}", err=True)
+            sys.exit(1)
+
+        # Determine which editor to use
+        # Priority: $VISUAL > $EDITOR > vim (fallback)
+        editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "vim"
+
+        # Build editor command with line number
+        # Different editors have different syntax for opening at a line
+        editor_name = Path(editor).name.lower()
+        line_num = result["start_line"]
+
+        if editor_name in ("vim", "vi", "nvim", "nano"):
+            # vim/vi/nvim/nano: +line syntax
+            cmd = [editor, f"+{line_num}", str(file_path)]
+        elif editor_name in ("emacs", "emacsclient"):
+            # emacs: +line syntax
+            cmd = [editor, f"+{line_num}", str(file_path)]
+        elif editor_name in ("code", "vscode"):
+            # VS Code: --goto file:line syntax
+            cmd = [editor, "--goto", f"{file_path}:{line_num}"]
+        elif editor_name == "subl":
+            # Sublime Text: file:line syntax
+            cmd = [editor, f"{file_path}:{line_num}"]
+        elif editor_name == "atom":
+            # Atom: file:line syntax
+            cmd = [editor, f"{file_path}:{line_num}"]
+        else:
+            # Unknown editor: try vim-style +line syntax
+            cmd = [editor, f"+{line_num}", str(file_path)]
+
+        # Show what we're doing (if not quiet)
+        if not ctx.obj.get("quiet", False):
+            symbol_info = f" ({result['symbol']})" if result.get("symbol") else ""
+            click.echo(f"Opening {result['path']}:{line_num}{symbol_info} in {editor}")
+
+        # Execute editor command
+        subprocess.run(cmd, check=True)
+
+    except json.JSONDecodeError:
+        click.echo("Error: Corrupted search cache", err=True)
+        sys.exit(1)
+    except subprocess.CalledProcessError as e:
+        click.echo(f"Error: Failed to open editor: {e}", err=True)
+        sys.exit(1)
+    except FileNotFoundError:
+        click.echo(f"Error: Editor '{editor}' not found", err=True)
+        click.echo("Set $EDITOR or $VISUAL environment variable", err=True)
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        if ctx.obj.get("verbose", False):
+            import traceback
+
+            traceback.print_exc()
+        sys.exit(1)
 
 
 @cli.command()

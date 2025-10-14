@@ -1157,3 +1157,127 @@ None
 - No tests written yet (can add integration tests later if needed)
 - All quality standards maintained
 - Ready for next Phase 8 task (open command)
+
+---
+
+## 2025-10-14 Session 9 (continued) - Phase 8: Open Command Implementation
+
+**Phase:** Phase 8 (Polish & Remaining Commands) - IN PROGRESS
+**Duration:** ~30 minutes
+**Commits:** feat(cli): implement open command for $EDITOR integration
+
+### Completed
+- **Implemented open command** in `entrypoints/cli.py`:
+  - Reads from cached `.ember/.last_search.json` (like cat command)
+  - Accepts 1-based index argument referencing search results
+  - Opens file in user's preferred editor ($VISUAL, $EDITOR, or vim fallback)
+  - Jumps to the correct line number of the chunk
+  - Multi-editor support with correct line-jump syntax:
+    - vim/vi/nvim/nano: `+line` syntax (e.g., `vim +5 file.py`)
+    - emacs/emacsclient: `+line` syntax
+    - VS Code: `--goto file:line` syntax (e.g., `code --goto file.py:5`)
+    - Sublime Text: `file:line` syntax (e.g., `subl file.py:5`)
+    - Atom: `file:line` syntax
+    - Unknown editors: fallback to vim-style `+line` syntax
+  - Displays informative message: "Opening path:line (symbol) in editor"
+- **Error handling**:
+  - Validates cache file exists (`ember find` must be run first)
+  - Validates index is in range (1-based)
+  - Checks if file exists before opening
+  - Handles missing $EDITOR gracefully (suggests setting variable)
+  - Handles subprocess errors (editor not found, failed to execute)
+  - JSON decode errors for corrupted cache
+- **Manual end-to-end testing**:
+  - Tested with custom editor script (verified correct arguments)
+  - Tested invalid index error handling
+  - Tested missing cache error handling
+  - Tested VS Code-style editor detection (`--goto` syntax)
+  - Tested nano editor detection (`+line` syntax)
+  - Verified absolute file paths are passed to editors
+  - All error cases handled gracefully
+
+### Decisions Made
+- **Editor priority**: $VISUAL > $EDITOR > vim (fallback)
+  - Follows Unix convention (VISUAL for visual editors, EDITOR for any)
+  - Vim is universal fallback (available on most systems)
+  - Users can set EDITOR variable for their preferred editor
+
+- **Multi-editor line-jump support**: Detect editor by name and use correct syntax
+  - Different editors have incompatible line-jump syntax
+  - Parse editor path basename to identify editor
+  - Maintain compatibility matrix for popular editors (vim, emacs, VS Code, Sublime, Atom)
+  - Fallback to vim-style +line for unknown editors (widely compatible)
+
+- **subprocess.run with check=True**: Block until editor exits
+  - Allows interactive editing (user edits, saves, exits)
+  - CLI waits for editor to close before returning
+  - Captures exit codes (check=True raises on failure)
+  - Standard pattern for editor integration
+
+- **Absolute paths**: Pass full absolute path to editor
+  - Prevents issues with relative paths and cwd
+  - Editor can be opened from any directory
+  - Consistent with how cat command reads files
+
+- **Reuse cache format**: Same `.last_search.json` as cat command
+  - Consistent user experience across commands
+  - Minimal code duplication
+  - find → cat → open workflow uses single cache
+
+### Architecture Verification
+- ✅ Implementation follows CLI patterns (click conventions)
+- ✅ Proper error handling with user-friendly messages
+- ✅ No business logic in CLI layer (pure presentation)
+- ✅ Uses subprocess for editor execution (standard approach)
+- ✅ Editor detection logic is clear and maintainable
+- ✅ All quality standards maintained
+
+### Manual Testing Results
+```bash
+# Test with custom editor script
+$ EDITOR=/tmp/test_editor.sh ember open 1
+Opening math.py:5 (multiply) in /tmp/test_editor.sh
+Test editor called with args: +5 /private/tmp/ember-test/math.py
+
+# Test VS Code detection
+$ EDITOR=/tmp/code ember open 2
+Opening math.py:15 (compute) in /tmp/code
+VS Code called with args: --goto /private/tmp/ember-test/math.py:15
+
+# Test nano detection
+$ EDITOR=/tmp/nano ember open 3
+Opening math.py:1 (add) in /tmp/nano
+Nano called with args: +1 /private/tmp/ember-test/math.py
+
+# Test error handling - invalid index
+$ ember open 5
+Error: Index 5 out of range (1-3)
+
+# Test error handling - no cache
+$ rm .ember/.last_search.json
+$ ember open 1
+Error: No recent search results found
+Run 'ember find <query>' first
+```
+
+### Next Steps
+- Commit open command implementation
+- Update CLAUDE.md to reflect completion
+- Continue Phase 8 tasks:
+  - Add more language support to tree-sitter chunker
+  - Consider incremental indexing (diff-based sync)
+  - Performance testing on larger codebases
+  - User documentation (README, usage examples)
+
+### Blockers
+None
+
+### Notes
+- **Open command completes the find → cat → open workflow!**
+- Users can now search, inspect, and edit code seamlessly
+- Multi-editor support covers most popular editors
+- Editor detection is extensible (easy to add new editors)
+- Fallback to vim-style syntax provides broad compatibility
+- No integration tests written yet (tested manually end-to-end)
+- All quality standards maintained
+- This is a significant UX milestone for the MVP
