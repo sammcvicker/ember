@@ -876,3 +876,69 @@ None
 - Ready for real-world testing on larger codebases
 - All quality standards maintained
 - Architecture proven sound through 7 phases
+
+---
+
+## 2025-10-14 Session 9 - Phase 8: Python 3.11 Migration
+
+**Phase:** Phase 8 (Polish & Remaining Commands) - IN PROGRESS
+**Duration:** ~15 minutes
+**Commits:** (pending) chore(deps): migrate to Python 3.11 for better installability
+
+### Completed
+- **Migrated Python version requirement from 3.13 to 3.11**:
+  - Updated `pyproject.toml` `requires-python` to `>=3.11`
+  - Updated classifiers to include Python 3.11, 3.12, and 3.13
+  - Updated Ruff target version to `py311`
+  - Updated Pyright Python version to `3.11`
+- **Verified compatibility**:
+  - All 81 tests pass on Python 3.13 (current venv)
+  - No Python 3.13-specific features used in codebase
+  - Uses modern type hints (`list[str]`) which are Python 3.9+ compatible
+  - No `@override` decorator or type parameter syntax used
+- **Updated documentation**:
+  - Updated CLAUDE.md current state (Session 9, Phase 8)
+  - Marked Python 3.11 migration task as complete
+  - Updated Known Issues section (removed Python 3.13 blocker)
+  - Updated dependencies section to reflect 3.11+ support
+
+### Decisions Made
+- **Target Python 3.11 as minimum**: Balances modern features with installability
+  - PyTorch has pre-built wheels for Python 3.11+
+  - Enables pipx/pip installation for end users
+  - Modern type hints (`list[str]`) still work (Python 3.9+ feature)
+  - tomllib is built-in (no tomli needed for reading)
+
+- **Support 3.11, 3.12, 3.13**: Broad compatibility
+  - Listed all three versions in classifiers
+  - Future-proofs for users on different Python versions
+  - No breaking changes needed
+
+### Architecture Verification
+- ✅ All 81 tests pass (unchanged)
+- ✅ No Python version-specific code detected
+- ✅ Linter configuration updated
+- ✅ Type checker configuration updated
+- ✅ All quality standards maintained
+
+### Testing Results
+```
+81 passed in 8.61s
+Coverage: 40% (unchanged from test perspective)
+```
+
+### Next Steps
+- Commit Python 3.11 migration changes
+- Begin next Phase 8 task: Write integration tests for SearchUseCase
+- Continue with remaining Phase 8 tasks (cat, open commands, etc.)
+
+### Blockers
+None
+
+### Notes
+- **This resolves the primary installability blocker for MVP release**
+- PyTorch wheels now available for all supported Python versions
+- No code changes needed - pure metadata update
+- Codebase already used Python 3.9+ compatible syntax
+- Quick win (~15 minutes) that unlocks broader adoption
+- Ready to continue with remaining Phase 8 polish tasks

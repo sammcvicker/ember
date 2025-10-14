@@ -3,7 +3,7 @@ name = "ember"
 version = "0.1.0"
 description = "Local codebase embedding and search CLI - fast, deterministic, agent-friendly"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 authors = [
     { name = "Sam @ KamiwazaAI" }
 ]
@@ -11,6 +11,8 @@ keywords = ["code-search", "embeddings", "cli", "semantic-search", "git"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries",
 ]
@@ -40,14 +42,14 @@ dev = [
 
 [tool.ruff]
 line-length = 100
-target-version = "py313"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP", "B", "A", "C4", "SIM"]
 ignore = ["E501"]  # Line too long (handled by formatter)
 
 [tool.pyright]
-pythonVersion = "3.13"
+pythonVersion = "3.11"
 typeCheckingMode = "standard"
 reportMissingTypeStubs = false
 
