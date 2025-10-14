@@ -72,3 +72,14 @@ class VCS(Protocol):
             RuntimeError: If ref is invalid.
         """
         ...
+
+    def list_tracked_files(self) -> list[Path]:
+        """Get list of all tracked files in the repository.
+
+        Returns:
+            List of paths relative to repository root.
+
+        Raises:
+            RuntimeError: If not a git repository.
+        """
+        ...

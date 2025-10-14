@@ -100,6 +100,44 @@ class MetaRepository(Protocol):
         ...
 
 
+class VectorRepository(Protocol):
+    """Repository for storing and retrieving vector embeddings."""
+
+    def add(
+        self,
+        chunk_id: str,
+        embedding: list[float],
+        model_fingerprint: str,
+    ) -> None:
+        """Store an embedding vector for a chunk.
+
+        Args:
+            chunk_id: The chunk identifier (blake3 hash).
+            embedding: The embedding vector.
+            model_fingerprint: Fingerprint of the model that generated this embedding.
+        """
+        ...
+
+    def get(self, chunk_id: str) -> list[float] | None:
+        """Retrieve an embedding vector for a chunk.
+
+        Args:
+            chunk_id: The chunk identifier.
+
+        Returns:
+            The embedding vector if found, None otherwise.
+        """
+        ...
+
+    def delete(self, chunk_id: str) -> None:
+        """Delete an embedding vector.
+
+        Args:
+            chunk_id: The chunk identifier.
+        """
+        ...
+
+
 class FileRepository(Protocol):
     """Repository for tracking indexed file state."""
 

@@ -18,10 +18,10 @@ When the user says "continue" or similar, follow this pattern:
 
 ## 📍 CURRENT STATE
 
-**Phase:** Phase 5 Complete → Ready for Phase 6 (Indexing Use Case)
-**Last Session:** 2025-10-14 (Session 6)
-**Last Completed:** Phase 5 - Embedding with Jina Code model (jinaai/jina-embeddings-v2-base-code)
-**Active Work:** Ready to begin Phase 6 - Indexing use case (orchestrate git, chunking, embedding, storage)
+**Phase:** Phase 6 Complete → Ready for Phase 7 (Search Use Case)
+**Last Session:** 2025-10-14 (Session 7)
+**Last Completed:** Phase 6 - Full indexing pipeline (git → chunk → embed → store)
+**Active Work:** Ready to begin Phase 7 - Search use case (FTS5 + vector retrieval)
 **Blockers:** None
 
 ---
@@ -59,15 +59,24 @@ When the user says "continue" or similar, follow this pattern:
 5. [x] Write tests for embedding adapter (13 tests, all passing)
 6. [x] Document model choice in ADR 003
 
-### Phase 6: Indexing Use Case (~3-4 hours total)
-1. [ ] Create ChunkRepository adapter in `adapters/sqlite/chunk_repository.py`
-2. [ ] Create MetaRepository adapter in `adapters/sqlite/meta_repository.py`
-3. [ ] Implement vector storage (start with simple BLOB, optimize later)
-4. [ ] Create IndexingUseCase in `core/indexing/index_usecase.py`
-5. [ ] Orchestrate: git diff → chunk files → embed → store
-6. [ ] Wire sync command to IndexingUseCase
-7. [ ] Test: `ember sync` indexes files and creates embeddings
-8. [ ] Write integration tests for full indexing flow
+### Phase 6: Indexing Use Case - COMPLETE ✅
+1. [x] Create ChunkRepository adapter in `adapters/sqlite/chunk_repository.py`
+2. [x] Create MetaRepository adapter in `adapters/sqlite/meta_repository.py`
+3. [x] Implement vector storage (start with simple BLOB, optimize later)
+4. [x] Create IndexingUseCase in `core/indexing/index_usecase.py`
+5. [x] Orchestrate: git diff → chunk files → embed → store
+6. [x] Wire sync command to IndexingUseCase
+7. [x] Test: `ember sync` indexes files and creates embeddings
+8. [x] Write integration tests for full indexing flow
+
+### Phase 7: Search Use Case (~3-4 hours total)
+1. [ ] Create TextSearch adapter implementing FTS5 in `adapters/fts/sqlite_fts.py`
+2. [ ] Create VectorSearch adapter for BLOB-based similarity in `adapters/vss/simple_vector_search.py`
+3. [ ] Implement SearchUseCase in `core/retrieval/search_usecase.py`
+4. [ ] Orchestrate hybrid search: BM25 + vector + fusion
+5. [ ] Wire find command to SearchUseCase
+6. [ ] Test retrieval with real queries
+7. [ ] Verify ranking quality
 
 ---
 
@@ -298,5 +307,5 @@ This system works if:
 
 ---
 
-**Last Updated**: 2025-10-14 (Session 6 - Phase 5 Complete)
+**Last Updated**: 2025-10-14 (Session 7 - Phase 6 Complete)
 **Format Version**: 1.0

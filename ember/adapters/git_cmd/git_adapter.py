@@ -248,3 +248,30 @@ class GitAdapter:
             raise RuntimeError(
                 f"Failed to get content for '{path}' at ref '{ref}': {stderr}"
             ) from e
+
+    def list_tracked_files(self) -> list[Path]:
+        """Get list of all tracked files in the repository.
+
+        Returns:
+            List of paths relative to repository root.
+
+        Raises:
+            RuntimeError: If not a git repository.
+        """
+        try:
+            result = self._run_git(["ls-files", "-z"])
+            files_output = result.stdout.decode()
+
+            if not files_output:
+                return []
+
+            # Split on null bytes and convert to Path objects
+            tracked_files = [
+                Path(f) for f in files_output.split("\0") if f
+            ]
+            return tracked_files
+
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(
+                f"Failed to list tracked files: {e.stderr.decode()}"
+            ) from e

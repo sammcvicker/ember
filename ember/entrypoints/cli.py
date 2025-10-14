@@ -6,9 +6,21 @@ Command-line interface for Ember code search tool.
 import sys
 from pathlib import Path
 
+import blake3
 import click
 
+from ember.adapters.local_models.jina_embedder import JinaCodeEmbedder
+from ember.adapters.fs.local import LocalFileSystem
+from ember.adapters.git_cmd.git_adapter import GitAdapter
+from ember.adapters.parsers.line_chunker import LineChunker
+from ember.adapters.parsers.tree_sitter_chunker import TreeSitterChunker
+from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
+from ember.adapters.sqlite.file_repository import SQLiteFileRepository
+from ember.adapters.sqlite.meta_repository import SQLiteMetaRepository
+from ember.adapters.sqlite.vector_repository import SQLiteVectorRepository
+from ember.core.chunking.chunk_usecase import ChunkFileUseCase
 from ember.core.config.init_usecase import InitRequest, InitUseCase
+from ember.core.indexing.index_usecase import IndexingUseCase, IndexRequest
 
 
 @click.group()
@@ -112,11 +124,91 @@ def sync(
 
     By default, indexes the current worktree.
     """
-    click.echo("sync command - not yet implemented")
-    mode = "worktree" if worktree else "staged" if staged else rev or "worktree"
-    click.echo(f"Will index: {mode}")
-    if reindex:
-        click.echo("Full reindex requested")
+    repo_root = Path.cwd().resolve()
+    ember_dir = repo_root / ".ember"
+    db_path = ember_dir / "index.db"
+
+    # Check if ember is initialized
+    if not ember_dir.exists() or not db_path.exists():
+        click.echo("Error: Ember not initialized in this directory", err=True)
+        click.echo("Run 'ember init' first", err=True)
+        sys.exit(1)
+
+    # Determine sync mode
+    if rev:
+        sync_mode = rev
+    elif staged:
+        sync_mode = "staged"
+    else:
+        sync_mode = "worktree"
+
+    if not ctx.obj.get("quiet", False):
+        click.echo(f"Indexing {sync_mode}...")
+
+    try:
+        # Initialize dependencies
+        vcs = GitAdapter(repo_root)
+        fs = LocalFileSystem()
+        embedder = JinaCodeEmbedder()
+
+        # Initialize repositories
+        chunk_repo = SQLiteChunkRepository(db_path)
+        vector_repo = SQLiteVectorRepository(db_path)
+        file_repo = SQLiteFileRepository(db_path)
+        meta_repo = SQLiteMetaRepository(db_path)
+
+        # Initialize chunking use case
+        tree_sitter = TreeSitterChunker()
+        line_chunker = LineChunker()
+        chunk_usecase = ChunkFileUseCase(tree_sitter, line_chunker)
+
+        # Compute project ID (hash of repo root path)
+        project_id = blake3.blake3(str(repo_root).encode("utf-8")).hexdigest()
+
+        # Create indexing use case
+        indexing_usecase = IndexingUseCase(
+            vcs=vcs,
+            fs=fs,
+            chunk_usecase=chunk_usecase,
+            embedder=embedder,
+            chunk_repo=chunk_repo,
+            vector_repo=vector_repo,
+            file_repo=file_repo,
+            meta_repo=meta_repo,
+            project_id=project_id,
+        )
+
+        # Execute indexing
+        request = IndexRequest(
+            repo_root=repo_root,
+            sync_mode=sync_mode,
+            path_filters=[],
+            force_reindex=reindex,
+        )
+
+        response = indexing_usecase.execute(request)
+
+        if not response.success:
+            click.echo(f"Error during indexing: {response.error}", err=True)
+            sys.exit(1)
+
+        # Report results
+        click.echo(f"✓ Indexed {response.files_indexed} files")
+        click.echo(f"  • {response.chunks_created} chunks created")
+        click.echo(f"  • {response.chunks_updated} chunks updated")
+        click.echo(f"  • {response.vectors_stored} vectors stored")
+        click.echo(f"  • Tree SHA: {response.tree_sha[:12]}...")
+
+    except RuntimeError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"Unexpected error during sync: {e}", err=True)
+        if ctx.obj.get("verbose", False):
+            import traceback
+
+            traceback.print_exc()
+        sys.exit(1)
 
 
 @cli.command()

@@ -1,0 +1,283 @@
+"""SQLite adapter implementing ChunkRepository protocol for chunk storage."""
+
+import sqlite3
+import time
+from pathlib import Path
+
+from ember.domain.entities import Chunk
+
+
+class SQLiteChunkRepository:
+    """SQLite implementation of ChunkRepository for storing code chunks."""
+
+    def __init__(self, db_path: Path) -> None:
+        """Initialize chunk repository.
+
+        Args:
+            db_path: Path to SQLite database file.
+        """
+        self.db_path = db_path
+
+    def _get_connection(self) -> sqlite3.Connection:
+        """Get a database connection with foreign keys enabled.
+
+        Returns:
+            SQLite connection object.
+        """
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("PRAGMA foreign_keys = ON")
+        return conn
+
+    def add(self, chunk: Chunk) -> None:
+        """Add or update a chunk in the repository.
+
+        Uses UPSERT semantics based on (tree_sha, path, start_line, end_line).
+        The chunk.id is computed from these fields and doesn't need to be stored separately.
+
+        Args:
+            chunk: The chunk to store.
+        """
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            path_str = str(chunk.path)
+            now = time.time()
+
+            # UPSERT: insert or update if (tree_sha, path, start_line, end_line) exists
+            cursor.execute(
+                """
+                INSERT INTO chunks (
+                    project_id, path, lang, symbol, start_line, end_line,
+                    content, content_hash, file_hash, tree_sha, rev, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(tree_sha, path, start_line, end_line) DO UPDATE SET
+                    project_id = excluded.project_id,
+                    lang = excluded.lang,
+                    symbol = excluded.symbol,
+                    content = excluded.content,
+                    content_hash = excluded.content_hash,
+                    file_hash = excluded.file_hash,
+                    rev = excluded.rev
+                """,
+                (
+                    chunk.project_id,
+                    path_str,
+                    chunk.lang,
+                    chunk.symbol,
+                    chunk.start_line,
+                    chunk.end_line,
+                    chunk.content,
+                    chunk.content_hash,
+                    chunk.file_hash,
+                    chunk.tree_sha,
+                    chunk.rev,
+                    now,
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def get(self, chunk_id: str) -> Chunk | None:
+        """Retrieve a chunk by its ID.
+
+        The chunk_id is a blake3 hash of (project_id:path:start_line:end_line).
+        We need to scan all chunks and compute IDs to find a match.
+        This is not efficient for large datasets - consider adding a chunk_id column.
+
+        Args:
+            chunk_id: The unique identifier for the chunk.
+
+        Returns:
+            The chunk if found, None otherwise.
+        """
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+
+            # Retrieve all chunks and compute IDs (inefficient but works for MVP)
+            cursor.execute(
+                """
+                SELECT project_id, path, lang, symbol, start_line, end_line,
+                       content, content_hash, file_hash, tree_sha, rev
+                FROM chunks
+                """
+            )
+
+            rows = cursor.fetchall()
+            for row in rows:
+                project_id = row[0]
+                path = Path(row[1])
+                start_line = row[4]
+                end_line = row[5]
+
+                computed_id = Chunk.compute_id(project_id, path, start_line, end_line)
+                if computed_id == chunk_id:
+                    return Chunk(
+                        id=computed_id,
+                        project_id=project_id,
+                        path=path,
+                        lang=row[2],
+                        symbol=row[3],
+                        start_line=start_line,
+                        end_line=end_line,
+                        content=row[6],
+                        content_hash=row[7],
+                        file_hash=row[8],
+                        tree_sha=row[9],
+                        rev=row[10],
+                    )
+
+            return None
+        finally:
+            conn.close()
+
+    def find_by_content_hash(self, content_hash: str) -> list[Chunk]:
+        """Find chunks with matching content hash.
+
+        Args:
+            content_hash: blake3 hash of chunk content.
+
+        Returns:
+            List of chunks with matching hash.
+        """
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+
+            cursor.execute(
+                """
+                SELECT project_id, path, lang, symbol, start_line, end_line,
+                       content, content_hash, file_hash, tree_sha, rev
+                FROM chunks
+                WHERE content_hash = ?
+                """,
+                (content_hash,),
+            )
+
+            rows = cursor.fetchall()
+            chunks = []
+            for row in rows:
+                project_id = row[0]
+                path = Path(row[1])
+                start_line = row[4]
+                end_line = row[5]
+
+                chunk = Chunk(
+                    id=Chunk.compute_id(project_id, path, start_line, end_line),
+                    project_id=project_id,
+                    path=path,
+                    lang=row[2],
+                    symbol=row[3],
+                    start_line=start_line,
+                    end_line=end_line,
+                    content=row[6],
+                    content_hash=row[7],
+                    file_hash=row[8],
+                    tree_sha=row[9],
+                    rev=row[10],
+                )
+                chunks.append(chunk)
+
+            return chunks
+        finally:
+            conn.close()
+
+    def delete(self, chunk_id: str) -> None:
+        """Delete a chunk by ID.
+
+        Since we don't store chunk_id directly, we need to find it first then delete.
+
+        Args:
+            chunk_id: The chunk identifier to delete.
+        """
+        # First find the chunk to get its DB row id
+        chunk = self.get(chunk_id)
+        if chunk is None:
+            return  # Already deleted or doesn't exist
+
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            path_str = str(chunk.path)
+
+            # Delete by unique constraint fields
+            cursor.execute(
+                """
+                DELETE FROM chunks
+                WHERE tree_sha = ? AND path = ? AND start_line = ? AND end_line = ?
+                """,
+                (chunk.tree_sha, path_str, chunk.start_line, chunk.end_line),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def list_all(
+        self,
+        path_filter: str | None = None,
+        lang_filter: str | None = None,
+    ) -> list[Chunk]:
+        """List all chunks, optionally filtered.
+
+        Args:
+            path_filter: Optional glob pattern to filter by file path.
+            lang_filter: Optional language code to filter by.
+
+        Returns:
+            List of matching chunks.
+        """
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+
+            # Build query with optional filters
+            query = """
+                SELECT project_id, path, lang, symbol, start_line, end_line,
+                       content, content_hash, file_hash, tree_sha, rev
+                FROM chunks
+                WHERE 1=1
+            """
+            params: list[str] = []
+
+            if path_filter:
+                # SQLite GLOB for pattern matching (Unix-style wildcards)
+                query += " AND path GLOB ?"
+                params.append(path_filter)
+
+            if lang_filter:
+                query += " AND lang = ?"
+                params.append(lang_filter)
+
+            query += " ORDER BY path, start_line"
+
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+
+            chunks = []
+            for row in rows:
+                project_id = row[0]
+                path = Path(row[1])
+                start_line = row[4]
+                end_line = row[5]
+
+                chunk = Chunk(
+                    id=Chunk.compute_id(project_id, path, start_line, end_line),
+                    project_id=project_id,
+                    path=path,
+                    lang=row[2],
+                    symbol=row[3],
+                    start_line=start_line,
+                    end_line=end_line,
+                    content=row[6],
+                    content_hash=row[7],
+                    file_hash=row[8],
+                    tree_sha=row[9],
+                    rev=row[10],
+                )
+                chunks.append(chunk)
+
+            return chunks
+        finally:
+            conn.close()

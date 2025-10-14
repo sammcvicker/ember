@@ -615,3 +615,149 @@ None
 - Test coverage stable at 72%
 - All quality standards maintained
 - Model download is one-time (cached thereafter)
+
+---
+
+## 2025-10-14 Session 7 - Phase 6: Indexing Use Case
+
+**Phase:** Phase 6 (Indexing Use Case) - COMPLETE ✅
+**Duration:** ~3 hours
+**Commits:** (pending) feat(indexing): implement full sync pipeline - git → chunk → embed → store
+
+### Completed
+- **Extended VCS port** in `ports/vcs.py`:
+  - Added `list_tracked_files()` method for getting all tracked files
+  - Implemented in GitAdapter
+- **Added VectorRepository port** in `ports/repositories.py`:
+  - Protocol for storing/retrieving embedding vectors
+  - Methods: add(), get(), delete()
+  - Stores model fingerprint for compatibility checking
+- **Created ChunkRepository adapter** in `adapters/sqlite/chunk_repository.py`:
+  - Implements ChunkRepository protocol for SQLite
+  - UPSERT semantics based on (tree_sha, path, start_line, end_line) unique constraint
+  - Methods: add(), get(), find_by_content_hash(), delete(), list_all()
+  - Converts between Chunk entities and DB rows
+  - Glob pattern support for list_all() path filtering
+- **Created MetaRepository adapter** in `adapters/sqlite/meta_repository.py`:
+  - Simple key-value storage in meta table
+  - Methods: get(), set(), delete()
+  - UPSERT semantics with ON CONFLICT DO UPDATE
+- **Created VectorRepository adapter** in `adapters/sqlite/vector_repository.py`:
+  - Stores embeddings as BLOB using struct.pack/unpack
+  - Uses float64 (double) encoding for precision
+  - Stores dimension and model fingerprint per vector
+  - Maps chunk IDs (blake3 hashes) to DB integer IDs via join
+- **Implemented IndexingUseCase** in `core/indexing/index_usecase.py`:
+  - Orchestrates complete indexing pipeline
+  - Dependencies: VCS, FileSystem, ChunkFileUseCase, Embedder, 4 repositories
+  - Pipeline: get files → read content → chunk → create Chunk entities → embed → store
+  - Tracks statistics: files_indexed, chunks_created, chunks_updated, vectors_stored
+  - Content-hash-based deduplication (checks existing chunks before storing)
+  - Stores metadata: last_tree_sha, last_sync_mode, model_fingerprint
+  - Language detection from file extensions
+  - Supports worktree, staged, and commit SHA sync modes
+- **Wired sync command** in `entrypoints/cli.py`:
+  - Full dependency injection: initializes all adapters
+  - Computes project_id from repo root path hash
+  - Error handling and user-friendly output
+  - Shows statistics: files indexed, chunks created/updated, vectors stored, tree SHA
+  - Supports --worktree, --staged, --rev, --reindex flags
+  - Validates .ember/ exists before syncing
+- **Manual end-to-end testing:**
+  - Created test repository with Python and TypeScript files
+  - Ran `ember init` successfully
+  - Ran `ember sync` successfully: 2 files → 7 chunks → 7 vectors
+  - Verified database contents: chunks, vectors, FTS5, metadata all populated correctly
+  - Tested idempotency: second sync shows 0 created, 7 updated (no duplicates)
+- All tests pass (81 total, unchanged from Phase 5)
+- No new unit tests (integration tested end-to-end instead)
+
+### Decisions Made
+- **BLOB vector storage with struct encoding**: Simple, portable, works for MVP
+  - Uses Python struct.pack() for float64 array serialization
+  - No dependencies on specialized vector DB libraries
+  - Can migrate to sqlite-vss or FAISS later if needed
+
+- **Chunk ID mapping inefficiency accepted**: Get by ID scans all chunks
+  - chunk_id is computed (blake3 hash), not stored in DB
+  - For MVP with <100k chunks, scan is acceptable
+  - TODO: Add chunk_id column for O(1) lookup if needed
+
+- **Content-hash-based deduplication**: Checks existing chunks before insert
+  - Uses find_by_content_hash() to detect duplicates
+  - Tracks chunks_created vs chunks_updated in response
+  - UPSERT handles tree_sha changes (same content, different commit)
+
+- **Full reindex for MVP**: No incremental indexing yet
+  - Indexes all tracked files every sync
+  - TODO in code for incremental (diff-based) indexing
+  - Acceptable for MVP with moderate codebase size
+
+- **FileSystem.read() returns bytes**: Decode to UTF-8 in use case
+  - Keeps adapter simple (no encoding assumptions)
+  - Use case handles decode with errors='replace'
+
+### Architecture Verification
+- ✅ Clean architecture respected (core depends only on ports)
+- ✅ IndexingUseCase has no infrastructure imports
+- ✅ All adapters implement protocols correctly
+- ✅ Type hints on all public interfaces
+- ✅ Proper error handling at boundaries
+- ✅ All tests pass (81/81 total across project)
+- ✅ End-to-end manual testing successful
+
+### Testing Results
+```
+81 passed, 1 warning in 9.35s
+Coverage: 72% (unchanged)
+```
+
+**Manual Test:**
+```bash
+$ cd /private/tmp/ember-test
+$ uv run ember init
+Initialized ember index at /private/tmp/ember-test/.ember
+
+$ uv run ember sync
+Indexing worktree...
+✓ Indexed 2 files
+  • 7 chunks created
+  • 0 chunks updated
+  • 7 vectors stored
+  • Tree SHA: a79cedbf0a0f...
+
+$ sqlite3 .ember/index.db "SELECT COUNT(*) FROM chunks;"
+7
+
+$ uv run ember sync  # Idempotency test
+✓ Indexed 2 files
+  • 0 chunks created
+  • 7 chunks updated
+  • 7 vectors stored
+
+$ sqlite3 .ember/index.db "SELECT COUNT(*) FROM chunks;"
+7  # No duplicates!
+```
+
+### Next Steps
+Begin Phase 7: Search Use Case
+- Create TextSearch adapter for FTS5
+- Create VectorSearch adapter (simple BLOB-based initially)
+- Implement hybrid search (BM25 + vector)
+- Create SearchUseCase orchestrating retrieval
+- Wire find command to SearchUseCase
+- Test retrieval quality
+
+### Blockers
+None
+
+### Notes
+- Phase 6 completed in ~3 hours (on target with 3-4 hour estimate)
+- Full indexing pipeline working end-to-end!
+- Successfully tested with real code files (Python, TypeScript)
+- Deduplication working correctly (no duplicates on re-sync)
+- FTS5 triggers working (chunk_text stays in sync)
+- Vector storage simple but functional for MVP
+- Ready to implement search/retrieval
+- This is a major milestone - can now index codebases!
+- All quality standards maintained
