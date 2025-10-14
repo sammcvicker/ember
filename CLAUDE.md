@@ -18,10 +18,10 @@ When the user says "continue" or similar, follow this pattern:
 
 ## 📍 CURRENT STATE
 
-**Phase:** Phase 4 Complete → Ready for Phase 5 (Embedding)
-**Last Session:** 2025-10-14 (Session 5)
-**Last Completed:** Phase 4 - Chunking with tree-sitter and line-based fallback
-**Active Work:** Ready to begin Phase 5 - Embedding (local model selection and integration)
+**Phase:** Phase 5 Complete → Ready for Phase 6 (Indexing Use Case)
+**Last Session:** 2025-10-14 (Session 6)
+**Last Completed:** Phase 5 - Embedding with Jina Code model (jinaai/jina-embeddings-v2-base-code)
+**Active Work:** Ready to begin Phase 6 - Indexing use case (orchestrate git, chunking, embedding, storage)
 **Blockers:** None
 
 ---
@@ -51,13 +51,23 @@ When the user says "continue" or similar, follow this pattern:
 4. [x] Create ChunkingUseCase that tries tree-sitter then falls back
 5. [x] Test with real code samples (Python, TypeScript, Go, Rust)
 
-### Phase 5: Embedding (~2-3 hours total)
-1. [ ] Research and choose default embedding model (small, code-tuned, CPU-friendly)
-2. [ ] Create local embedder adapter implementing Embedder protocol
-3. [ ] Implement embed_texts with batching
-4. [ ] Generate model fingerprint for determinism
-5. [ ] Write tests for embedding adapter
-6. [ ] Document model choice in ADR
+### Phase 5: Embedding - COMPLETE ✅
+1. [x] Research and choose default embedding model (small, code-tuned, CPU-friendly)
+2. [x] Create local embedder adapter implementing Embedder protocol
+3. [x] Implement embed_texts with batching
+4. [x] Generate model fingerprint for determinism
+5. [x] Write tests for embedding adapter (13 tests, all passing)
+6. [x] Document model choice in ADR 003
+
+### Phase 6: Indexing Use Case (~3-4 hours total)
+1. [ ] Create ChunkRepository adapter in `adapters/sqlite/chunk_repository.py`
+2. [ ] Create MetaRepository adapter in `adapters/sqlite/meta_repository.py`
+3. [ ] Implement vector storage (start with simple BLOB, optimize later)
+4. [ ] Create IndexingUseCase in `core/indexing/index_usecase.py`
+5. [ ] Orchestrate: git diff → chunk files → embed → store
+6. [ ] Wire sync command to IndexingUseCase
+7. [ ] Test: `ember sync` indexes files and creates embeddings
+8. [ ] Write integration tests for full indexing flow
 
 ---
 
@@ -243,7 +253,7 @@ See `docs/decisions/` for full ADRs.
 
 - **001**: Clean Architecture with ports/adapters pattern
 - **002**: SQLite + FTS5 + VSS for storage (simple, local, portable)
-- More decisions will be added as they're made
+- **003**: Jina Embeddings v2 Code model (161M params, 768 dims, code-aware)
 
 ---
 
@@ -288,5 +298,5 @@ This system works if:
 
 ---
 
-**Last Updated**: 2025-10-14 (Session 5 - Phase 4 Complete)
+**Last Updated**: 2025-10-14 (Session 6 - Phase 5 Complete)
 **Format Version**: 1.0

@@ -57,6 +57,9 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v --cov=ember --cov-report=term-missing"
+markers = [
+    "slow: marks tests as slow (require model download or heavy computation)",
+]
 
 [build-system]
 requires = ["hatchling"]

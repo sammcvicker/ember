@@ -505,3 +505,113 @@ None
 - Ready to implement embedding with local models
 - Test coverage continues to climb (now at 71%)
 - All quality standards maintained
+
+---
+
+## 2025-10-14 Session 6 - Phase 5: Embedding
+
+**Phase:** Phase 5 (Embedding) - COMPLETE ✅
+**Duration:** ~2 hours
+**Commits:** feat(embedding): implement Jina Code embedder with comprehensive tests per PRD §8
+
+### Completed
+- **Model research and selection:**
+  - Evaluated multiple code embedding models (BGE, GTE, Jina, Nomic, CodeSage)
+  - Selected jinaai/jina-embeddings-v2-base-code as default
+  - 161M params, 768 dims, 8192 token context, 30+ languages supported
+- **Created JinaCodeEmbedder** in `adapters/local_models/jina_embedder.py`:
+  - Implements Embedder protocol via sentence-transformers
+  - Lazy model loading (only loads on first embed call)
+  - Configurable max_seq_length (default 512), batch_size (default 32)
+  - L2 normalization for cosine similarity
+  - Mean pooling (Jina v2 standard)
+- **Deterministic fingerprinting:**
+  - Format: `{model_name}:v2:sha256({config})`
+  - Includes model name, dimensions, max_seq_length, pooling, normalization
+  - Ensures index compatibility checks
+- **Batched embedding:**
+  - sentence-transformers handles internal batching
+  - Configurable batch size for memory control
+  - Returns numpy arrays converted to lists
+- **Comprehensive test suite** (13 tests, all passing):
+  - Fast tests (8): Initialization, properties, fingerprinting, empty input
+  - Slow tests (5): Actual embedding with model download, code samples, model reuse
+  - Marked slow tests with @pytest.mark.slow
+  - Added slow marker to pyproject.toml pytest config
+- **ADR 003** documenting model choice:
+  - Rationale for Jina Code vs alternatives
+  - Specifications and integration details
+  - Performance expectations
+  - Consequences and mitigations
+- All tests pass (81 total across project)
+- Test coverage increased from 71% to 72%
+
+### Decisions Made
+- **Jina Embeddings v2 Code model**: Best balance for local CPU use
+  - Code-specific training (30+ languages)
+  - Right size (161M params - fast enough for CPU)
+  - Perfect dimensions (768 fits 384-768 requirement)
+  - Long context (8192 tokens prevents truncation)
+  - Open source (Apache 2.0)
+
+- **Lazy loading pattern**: Model loads on first embed_texts() call
+  - Faster CLI startup (no model overhead for init/audit/etc)
+  - Memory efficient (only load when needed)
+  - Simple implementation (check if _model is None)
+
+- **Sentence-transformers native integration**: No adapter needed
+  - Well-maintained library (already in dependencies)
+  - Simple API (encode with normalize_embeddings)
+  - HuggingFace caching built-in (~600MB one-time download)
+  - trust_remote_code=True required for Jina custom BERT
+
+- **Conservative defaults**: 512 token max_seq_length, batch_size=32
+  - Most code chunks fit in 512 tokens
+  - Can increase up to 8192 if needed
+  - Batch size balances speed vs memory
+
+### Architecture Verification
+- ✅ Clean architecture respected (adapter implements port)
+- ✅ JinaCodeEmbedder has no business logic
+- ✅ Embedder protocol correctly implemented
+- ✅ Type hints on all public interfaces
+- ✅ Proper error handling (RuntimeError on failures)
+- ✅ All tests pass (81/81 total across project)
+- ✅ Integration tests with real model (high confidence)
+
+### Testing Results
+```
+81 passed, 1 warning in 9.20s
+Coverage: 72% (685 statements, 193 missing)
+JinaCodeEmbedder: 90% coverage (41 statements, 4 missing)
+```
+
+**Warning:** `optimum` package not installed (optional, for ONNX optimization)
+
+### Model Performance
+- First run: ~17s (includes model download ~600MB)
+- Subsequent runs: <1s per batch
+- Embeddings are L2 normalized (ready for cosine similarity)
+- Model cached at `~/.cache/huggingface/`
+
+### Next Steps
+Begin Phase 6: Indexing Use Case
+- Create ChunkRepository adapter for storing chunks
+- Create MetaRepository adapter for metadata
+- Implement vector storage (BLOB in SQLite initially)
+- Build IndexingUseCase orchestrating git → chunk → embed → store
+- Wire sync command to IndexingUseCase
+- Test full indexing flow
+
+### Blockers
+None
+
+### Notes
+- Phase 5 completed in ~2 hours (on target with 2-3 hour estimate)
+- Embedding implementation is clean and well-tested
+- Model choice documented in ADR 003 for future reference
+- Lazy loading ensures fast CLI startup
+- Ready to build full indexing pipeline
+- Test coverage stable at 72%
+- All quality standards maintained
+- Model download is one-time (cached thereafter)
