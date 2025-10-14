@@ -11,6 +11,7 @@ import click
 
 from ember.adapters.local_models.jina_embedder import JinaCodeEmbedder
 from ember.adapters.fs.local import LocalFileSystem
+from ember.adapters.fts.sqlite_fts import SQLiteFTS
 from ember.adapters.git_cmd.git_adapter import GitAdapter
 from ember.adapters.parsers.line_chunker import LineChunker
 from ember.adapters.parsers.tree_sitter_chunker import TreeSitterChunker
@@ -18,9 +19,12 @@ from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
 from ember.adapters.sqlite.file_repository import SQLiteFileRepository
 from ember.adapters.sqlite.meta_repository import SQLiteMetaRepository
 from ember.adapters.sqlite.vector_repository import SQLiteVectorRepository
+from ember.adapters.vss.simple_vector_search import SimpleVectorSearch
 from ember.core.chunking.chunk_usecase import ChunkFileUseCase
 from ember.core.config.init_usecase import InitRequest, InitUseCase
 from ember.core.indexing.index_usecase import IndexingUseCase, IndexRequest
+from ember.core.retrieval.search_usecase import SearchUseCase
+from ember.domain.entities import Query
 
 
 @click.group()
@@ -251,9 +255,104 @@ def find(
 
     Performs hybrid search (BM25 + semantic embeddings).
     """
-    click.echo("find command - not yet implemented")
-    click.echo(f"Query: {query}")
-    click.echo(f"Top-k: {topk}")
+    repo_root = Path.cwd().resolve()
+    ember_dir = repo_root / ".ember"
+    db_path = ember_dir / "index.db"
+
+    # Check if ember is initialized
+    if not ember_dir.exists() or not db_path.exists():
+        click.echo("Error: Ember not initialized in this directory", err=True)
+        click.echo("Run 'ember init' first", err=True)
+        sys.exit(1)
+
+    try:
+        # Initialize dependencies
+        text_search = SQLiteFTS(db_path)
+        vector_search = SimpleVectorSearch(db_path)
+        chunk_repo = SQLiteChunkRepository(db_path)
+        embedder = JinaCodeEmbedder()
+
+        # Create search use case
+        search_usecase = SearchUseCase(
+            text_search=text_search,
+            vector_search=vector_search,
+            chunk_repo=chunk_repo,
+            embedder=embedder,
+        )
+
+        # Create query object
+        query_obj = Query(
+            text=query,
+            topk=topk,
+            path_filter=path_filter,
+            lang_filter=lang_filter,
+            json_output=json_output,
+        )
+
+        # Execute search
+        results = search_usecase.search(query_obj)
+
+        # Display results
+        if json_output:
+            import json
+
+            output = []
+            for result in results:
+                output.append(
+                    {
+                        "rank": result.rank,
+                        "score": result.score,
+                        "path": str(result.chunk.path),
+                        "lang": result.chunk.lang,
+                        "symbol": result.chunk.symbol,
+                        "start_line": result.chunk.start_line,
+                        "end_line": result.chunk.end_line,
+                        "content": result.chunk.content,
+                        "explanation": result.explanation,
+                    }
+                )
+            click.echo(json.dumps(output, indent=2))
+        else:
+            # Human-readable output
+            if not results:
+                click.echo("No results found.")
+                return
+
+            click.echo(f"\nFound {len(results)} results:\n")
+
+            for result in results:
+                # Header with rank, path, symbol
+                symbol_info = (
+                    f" ({result.chunk.symbol})" if result.chunk.symbol else ""
+                )
+                click.echo(
+                    f"{result.rank}. {result.chunk.path}:{result.chunk.start_line}{symbol_info}"
+                )
+
+                # Score info
+                click.echo(
+                    f"   Score: {result.score:.4f} "
+                    f"(BM25: {result.explanation.get('bm25_score', 0):.4f}, "
+                    f"Vector: {result.explanation.get('vector_score', 0):.4f})"
+                )
+
+                # Preview
+                preview = result.preview or result.format_preview(max_lines=3)
+                for line in preview.split("\n"):
+                    click.echo(f"   {line}")
+
+                click.echo()  # Blank line between results
+
+    except RuntimeError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    except Exception as e:
+        click.echo(f"Unexpected error during search: {e}", err=True)
+        if ctx.obj.get("verbose", False):
+            import traceback
+
+            traceback.print_exc()
+        sys.exit(1)
 
 
 @cli.command()

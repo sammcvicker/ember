@@ -18,10 +18,10 @@ When the user says "continue" or similar, follow this pattern:
 
 ## 📍 CURRENT STATE
 
-**Phase:** Phase 6 Complete → Ready for Phase 7 (Search Use Case)
-**Last Session:** 2025-10-14 (Session 7)
-**Last Completed:** Phase 6 - Full indexing pipeline (git → chunk → embed → store)
-**Active Work:** Ready to begin Phase 7 - Search use case (FTS5 + vector retrieval)
+**Phase:** Phase 7 Complete → MVP Core Features Done! 🎉
+**Last Session:** 2025-10-14 (Session 8)
+**Last Completed:** Phase 7 - Hybrid search with FTS5 + vector + RRF fusion
+**Active Work:** MVP working end-to-end (init → sync → find). Ready for polish & remaining commands.
 **Blockers:** None
 
 ---
@@ -69,14 +69,23 @@ When the user says "continue" or similar, follow this pattern:
 7. [x] Test: `ember sync` indexes files and creates embeddings
 8. [x] Write integration tests for full indexing flow
 
-### Phase 7: Search Use Case (~3-4 hours total)
-1. [ ] Create TextSearch adapter implementing FTS5 in `adapters/fts/sqlite_fts.py`
-2. [ ] Create VectorSearch adapter for BLOB-based similarity in `adapters/vss/simple_vector_search.py`
-3. [ ] Implement SearchUseCase in `core/retrieval/search_usecase.py`
-4. [ ] Orchestrate hybrid search: BM25 + vector + fusion
-5. [ ] Wire find command to SearchUseCase
-6. [ ] Test retrieval with real queries
-7. [ ] Verify ranking quality
+### Phase 7: Search Use Case - COMPLETE ✅
+1. [x] Create TextSearch adapter implementing FTS5 in `adapters/fts/sqlite_fts.py`
+2. [x] Create VectorSearch adapter for BLOB-based similarity in `adapters/vss/simple_vector_search.py`
+3. [x] Implement SearchUseCase in `core/retrieval/search_usecase.py`
+4. [x] Orchestrate hybrid search: BM25 + vector + RRF fusion
+5. [x] Wire find command to SearchUseCase
+6. [x] Test retrieval with real queries
+7. [x] Verify ranking quality
+
+### Phase 8: Polish & Remaining Commands (~2-3 hours)
+1. [ ] Write integration tests for SearchUseCase
+2. [ ] Implement cat command for displaying full chunk content
+3. [ ] Implement open command for $EDITOR integration
+4. [ ] Add more language support to tree-sitter chunker
+5. [ ] Consider incremental indexing (diff-based sync optimization)
+6. [ ] Performance testing on larger codebases
+7. [ ] Documentation for users (README, usage examples)
 
 ---
 
@@ -307,5 +316,5 @@ This system works if:
 
 ---
 
-**Last Updated**: 2025-10-14 (Session 7 - Phase 6 Complete)
+**Last Updated**: 2025-10-14 (Session 8 - Phase 7 Complete - MVP WORKING!)
 **Format Version**: 1.0

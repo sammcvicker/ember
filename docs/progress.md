@@ -761,3 +761,118 @@ None
 - Ready to implement search/retrieval
 - This is a major milestone - can now index codebases!
 - All quality standards maintained
+
+---
+
+## 2025-10-14 Session 8 - Phase 7: Search Use Case
+
+**Phase:** Phase 7 (Search Use Case) - COMPLETE ✅
+**Duration:** ~2 hours
+**Commits:** (pending) feat(search): implement hybrid search with FTS5 + vector + RRF fusion
+
+### Completed
+- **Created SQLiteFTS adapter** in `adapters/fts/sqlite_fts.py`:
+  - Implements TextSearch protocol for BM25-style full-text search
+  - Queries FTS5 virtual table `chunk_text` (automatically synced via triggers)
+  - Returns (chunk_id, score) tuples with negative BM25 rank converted to positive scores
+  - No-op add() method since FTS5 is trigger-synced
+- **Created SimpleVectorSearch adapter** in `adapters/vss/simple_vector_search.py`:
+  - Implements VectorSearch protocol using brute-force cosine similarity
+  - Loads all vectors from database and computes similarity in memory
+  - Suitable for MVP with <100k chunks
+  - Assumes L2-normalized vectors from Jina embedder (cosine = dot product)
+  - Returns (chunk_id, similarity) tuples sorted by descending similarity
+- **Implemented SearchUseCase** in `core/retrieval/search_usecase.py`:
+  - Orchestrates hybrid search: BM25 + vector semantic search
+  - Uses Reciprocal Rank Fusion (RRF) for result fusion
+  - RRF formula: score(d) = sum(1 / (k + rank)) where k=60
+  - Pipeline: embed query → FTS5 search → vector search → fuse → retrieve chunks
+  - Supports path and language filtering (applied post-fusion)
+  - Returns SearchResult objects with scores and explanations
+  - Generates 3-line previews for each result
+- **Wired find command** in `entrypoints/cli.py`:
+  - Full dependency injection: text search, vector search, chunk repo, embedder
+  - Human-readable output with rank, path, symbol, scores, preview
+  - JSON output support with --json flag
+  - Path filtering with --in glob pattern
+  - Language filtering with --lang code
+  - Displays fused score + individual BM25 and vector scores
+- **Manual end-to-end testing:**
+  - Tested with existing /private/tmp/ember-test repository
+  - Exact keyword search: "multiply" correctly finds function with BM25 score
+  - Semantic search: "greeting someone" finds greet/farewell functions via vector similarity
+  - Path filtering: --in "*.ts" correctly filters to TypeScript files only
+  - JSON output: properly formatted with all metadata and scores
+  - Hybrid fusion working: combining BM25 and vector scores correctly
+
+### Decisions Made
+- **Reciprocal Rank Fusion (RRF)**: Standard fusion algorithm for hybrid search
+  - k=60 is common default (balances top vs lower-ranked results)
+  - Simple, effective, no need for learned weights
+  - Better than score normalization (BM25 and cosine scales differ)
+
+- **Post-fusion filtering**: Apply path/lang filters after fusion, not before
+  - Simpler implementation (filter on final results)
+  - Maintains fusion quality (both rankers see full corpus)
+  - Acceptable for MVP (filters are not highly selective)
+
+- **Brute-force vector search**: Load all vectors and compute in-memory
+  - Simple, no dependencies (FAISS, sqlite-vss)
+  - Fast enough for <100k chunks
+  - Can migrate to ANN index later if needed
+
+- **FTS5 trigger sync**: Reuse existing triggers, no manual indexing
+  - FTS5 automatically stays in sync with chunks table
+  - Less code, fewer bugs
+  - Standard SQLite FTS5 pattern
+
+### Architecture Verification
+- ✅ Clean architecture respected (core depends only on ports)
+- ✅ SearchUseCase has no infrastructure imports
+- ✅ All adapters implement protocols correctly
+- ✅ Type hints on all public interfaces
+- ✅ Proper error handling at boundaries
+- ✅ End-to-end manual testing successful
+- ✅ All quality standards maintained
+
+### Testing Results
+**Manual tests (all passing):**
+```bash
+# Semantic search
+$ ember find "greeting someone" -k 2
+Found 2 results (greet, farewell functions with vector scores)
+
+# Exact keyword search
+$ ember find "multiply" -k 3
+Found 3 results (multiply function with BM25=2.39, vector=0.68)
+
+# Path filtering
+$ ember find "function" --in "*.ts" -k 3
+Found 2 results (only TypeScript files)
+
+# JSON output
+$ ember find "add" --json
+[{"rank": 1, "score": 0.0328, "path": "math.py", ...}]
+```
+
+### Next Steps
+Begin Phase 8: Polish & Remaining Commands
+- Implement cat command for displaying full chunk content
+- Implement open command for editor integration
+- Add language detection for more file types
+- Write integration tests for search use case
+- Consider adding incremental indexing (diff-based sync)
+
+### Blockers
+None
+
+### Notes
+- Phase 7 completed in ~2 hours (faster than 3-4 hour estimate)
+- **This is a MAJOR milestone - full end-to-end MVP working!**
+- init → sync → find pipeline complete and tested
+- Hybrid search quality is excellent (BM25 + vector fusion works well)
+- Semantic search finds conceptually similar code
+- Exact search works for keywords
+- Ready for real-world testing on larger codebases
+- All quality standards maintained
+- Architecture proven sound through 7 phases
