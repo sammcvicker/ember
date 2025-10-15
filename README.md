@@ -16,7 +16,7 @@ Ember turns any codebase into a searchable knowledge base using hybrid search (B
 - **Hybrid search**: Combines BM25 (keyword) + vector embeddings (semantic) for best results
 - **Incremental sync**: Only re-indexes changed files (9x+ speedup on typical workflows)
 - **Multi-language**: Supports 9+ languages with tree-sitter-based semantic chunking
-- **Developer-friendly**: `find ’ cat ’ open` workflow integrates with your editor
+- **Developer-friendly**: `find -> cat -> open` workflow integrates with your editor
 - **Deterministic**: Reproducible indexes via git tree SHAs and model fingerprints
 - **Zero dependencies**: No servers, APIs, or cloud servicesruns entirely offline
 
@@ -440,12 +440,12 @@ A: Add patterns to `ignore` in `.ember/config.toml` or use `.emberignore`.
 ## Roadmap
 
 **v0.1 (MVP)** - Current
--  Core commands: init, sync, find, cat, open
--  Hybrid search (BM25 + vector)
--  Incremental indexing
--  9+ language support
-- ó Export/import bundles
-- ó Audit command for secrets
+- [x] Core commands: init, sync, find, cat, open
+- [x] Hybrid search (BM25 + vector)
+- [x] Incremental indexing
+- [x] 9+ language support
+- [ ] Export/import bundles
+- [ ] Audit command for secrets
 
 **v0.2** - Planned
 - Cross-encoder reranking
