@@ -197,11 +197,23 @@ def sync(
             sys.exit(1)
 
         # Report results
-        click.echo(f"✓ Indexed {response.files_indexed} files")
-        click.echo(f"  • {response.chunks_created} chunks created")
-        click.echo(f"  • {response.chunks_updated} chunks updated")
-        click.echo(f"  • {response.vectors_stored} vectors stored")
-        click.echo(f"  • Tree SHA: {response.tree_sha[:12]}...")
+        sync_type = "incremental" if response.is_incremental else "full"
+
+        if response.files_indexed == 0 and response.chunks_deleted == 0:
+            click.echo("✓ No changes detected (index up to date)")
+        else:
+            click.echo(f"✓ Indexed {response.files_indexed} files ({sync_type} sync)")
+
+        if response.chunks_created > 0:
+            click.echo(f"  • {response.chunks_created} chunks created")
+        if response.chunks_updated > 0:
+            click.echo(f"  • {response.chunks_updated} chunks updated")
+        if response.chunks_deleted > 0:
+            click.echo(f"  • {response.chunks_deleted} chunks deleted")
+        if response.vectors_stored > 0:
+            click.echo(f"  • {response.vectors_stored} vectors stored")
+        if response.files_indexed > 0 or response.chunks_deleted > 0:
+            click.echo(f"  • Tree SHA: {response.tree_sha[:12]}...")
 
     except RuntimeError as e:
         click.echo(f"Error: {e}", err=True)

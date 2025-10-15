@@ -214,6 +214,67 @@ class SQLiteChunkRepository:
         finally:
             conn.close()
 
+    def delete_by_path(self, path: Path, tree_sha: str) -> int:
+        """Delete all chunks for a given file path and tree SHA.
+
+        This is more efficient than calling delete() for each chunk.
+        Used for handling deleted files during incremental sync.
+
+        Args:
+            path: File path relative to repository root.
+            tree_sha: Tree SHA to delete chunks for.
+
+        Returns:
+            Number of chunks deleted.
+        """
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            path_str = str(path)
+
+            # Delete all chunks for this path and tree_sha
+            cursor.execute(
+                """
+                DELETE FROM chunks
+                WHERE tree_sha = ? AND path = ?
+                """,
+                (tree_sha, path_str),
+            )
+            deleted_count = cursor.rowcount
+            conn.commit()
+            return deleted_count
+        finally:
+            conn.close()
+
+    def delete_old_tree_shas(self, current_tree_sha: str) -> int:
+        """Delete all chunks that don't match the current tree SHA.
+
+        This cleans up stale chunks from previous syncs.
+
+        Args:
+            current_tree_sha: The current tree SHA to keep.
+
+        Returns:
+            Number of chunks deleted.
+        """
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+
+            # Delete all chunks with different tree_sha
+            cursor.execute(
+                """
+                DELETE FROM chunks
+                WHERE tree_sha != ?
+                """,
+                (current_tree_sha,),
+            )
+            deleted_count = cursor.rowcount
+            conn.commit()
+            return deleted_count
+        finally:
+            conn.close()
+
     def list_all(
         self,
         path_filter: str | None = None,

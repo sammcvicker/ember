@@ -52,8 +52,10 @@ class IndexResponse:
         files_indexed: Number of files processed.
         chunks_created: Number of chunks created.
         chunks_updated: Number of chunks updated (deduplicated).
+        chunks_deleted: Number of chunks deleted (from removed files).
         vectors_stored: Number of vectors stored.
         tree_sha: Git tree SHA that was indexed.
+        is_incremental: Whether this was an incremental sync (vs full reindex).
         success: Whether indexing succeeded.
         error: Error message if indexing failed.
     """
@@ -61,8 +63,10 @@ class IndexResponse:
     files_indexed: int
     chunks_created: int
     chunks_updated: int
+    chunks_deleted: int
     vectors_stored: int
     tree_sha: str
+    is_incremental: bool = False
     success: bool = True
     error: str | None = None
 
@@ -122,13 +126,21 @@ class IndexingUseCase:
             # Get current tree SHA based on sync mode
             tree_sha = self._get_tree_sha(request.repo_root, request.sync_mode)
 
-            # Get files to index
-            files_to_index = self._get_files_to_index(
+            # Get files to index (returns tuple of files and is_incremental flag)
+            files_to_index, is_incremental = self._get_files_to_index(
                 request.repo_root,
                 tree_sha,
                 request.path_filters,
                 request.force_reindex,
             )
+
+            # Handle deletions for incremental sync
+            chunks_deleted = 0
+            if is_incremental:
+                chunks_deleted = self._handle_deletions(
+                    repo_root=request.repo_root,
+                    tree_sha=tree_sha,
+                )
 
             # Index each file
             files_indexed = 0
@@ -149,6 +161,11 @@ class IndexingUseCase:
                 chunks_updated += result["chunks_updated"]
                 vectors_stored += result["vectors_stored"]
 
+            # Clean up old tree SHA chunks (keeps only current tree_sha)
+            # This ensures we don't accumulate stale chunks across syncs
+            stale_deleted = self.chunk_repo.delete_old_tree_shas(tree_sha)
+            chunks_deleted += stale_deleted
+
             # Update metadata with new tree SHA
             self.meta_repo.set("last_tree_sha", tree_sha)
             self.meta_repo.set("last_sync_mode", request.sync_mode)
@@ -158,8 +175,10 @@ class IndexingUseCase:
                 files_indexed=files_indexed,
                 chunks_created=chunks_created,
                 chunks_updated=chunks_updated,
+                chunks_deleted=chunks_deleted,
                 vectors_stored=vectors_stored,
                 tree_sha=tree_sha,
+                is_incremental=is_incremental,
                 success=True,
                 error=None,
             )
@@ -169,8 +188,10 @@ class IndexingUseCase:
                 files_indexed=0,
                 chunks_created=0,
                 chunks_updated=0,
+                chunks_deleted=0,
                 vectors_stored=0,
                 tree_sha="",
+                is_incremental=False,
                 success=False,
                 error=str(e),
             )
@@ -200,7 +221,7 @@ class IndexingUseCase:
         tree_sha: str,
         path_filters: list[str],
         force_reindex: bool,
-    ) -> list[Path]:
+    ) -> tuple[list[Path], bool]:
         """Get list of files that need to be indexed.
 
         Args:
@@ -210,14 +231,31 @@ class IndexingUseCase:
             force_reindex: Whether to reindex all files.
 
         Returns:
-            List of absolute file paths to index.
+            Tuple of (list of absolute file paths to index, is_incremental flag).
         """
-        # For MVP, just get all tracked files from git (returns relative paths)
-        # TODO: Implement incremental indexing (only changed files)
-        relative_files = self.vcs.list_tracked_files()
+        # Check if we can do incremental indexing
+        last_tree_sha = self.meta_repo.get("last_tree_sha")
 
-        # Convert to absolute paths
-        files = [repo_root / f for f in relative_files]
+        if force_reindex or last_tree_sha is None:
+            # Full reindex: get all tracked files
+            relative_files = self.vcs.list_tracked_files()
+            files = [repo_root / f for f in relative_files]
+            is_incremental = False
+        elif last_tree_sha == tree_sha:
+            # No changes since last sync - skip indexing
+            return ([], False)
+        else:
+            # Incremental sync: only get changed files
+            changes = self.vcs.diff_files(from_sha=last_tree_sha, to_sha=tree_sha)
+
+            # Get added and modified files (deletions handled separately)
+            relative_files = [
+                path
+                for status, path in changes
+                if status in ("added", "modified", "renamed")
+            ]
+            files = [repo_root / f for f in relative_files]
+            is_incremental = True
 
         # Apply path filters if provided
         if path_filters:
@@ -230,7 +268,41 @@ class IndexingUseCase:
                         break
             files = filtered
 
-        return files
+        return (files, is_incremental)
+
+    def _handle_deletions(
+        self,
+        repo_root: Path,
+        tree_sha: str,
+    ) -> int:
+        """Handle deleted files by removing their chunks.
+
+        Args:
+            repo_root: Repository root path.
+            tree_sha: Current tree SHA.
+
+        Returns:
+            Number of chunks deleted.
+        """
+        # Get last indexed tree SHA
+        last_tree_sha = self.meta_repo.get("last_tree_sha")
+        if last_tree_sha is None:
+            return 0  # No previous index, nothing to delete
+
+        # Get deleted files from git diff
+        changes = self.vcs.diff_files(from_sha=last_tree_sha, to_sha=tree_sha)
+        deleted_files = [path for status, path in changes if status == "deleted"]
+
+        # Delete chunks for each deleted file
+        total_deleted = 0
+        for file_path in deleted_files:
+            # Delete all chunks for this file (using last_tree_sha since file no longer exists in new tree)
+            deleted_count = self.chunk_repo.delete_by_path(
+                path=file_path, tree_sha=last_tree_sha
+            )
+            total_deleted += deleted_count
+
+        return total_deleted
 
     def _index_file(
         self,
@@ -250,15 +322,21 @@ class IndexingUseCase:
         Returns:
             Dict with counts: chunks_created, chunks_updated, vectors_stored.
         """
+        # Get relative path
+        rel_path = file_path.relative_to(repo_root)
+
+        # Clean up old chunks for this file from previous tree SHAs
+        # This prevents accumulation of stale chunks across syncs
+        last_tree_sha = self.meta_repo.get("last_tree_sha")
+        if last_tree_sha and last_tree_sha != tree_sha:
+            self.chunk_repo.delete_by_path(path=rel_path, tree_sha=last_tree_sha)
+
         # Read file content (returns bytes, decode to string)
         content_bytes = self.fs.read(file_path)
         content = content_bytes.decode("utf-8", errors="replace")
 
         # Detect language from file extension
         lang = self._detect_language(file_path)
-
-        # Get relative path
-        rel_path = file_path.relative_to(repo_root)
 
         # Chunk the file
         chunk_request = ChunkFileRequest(

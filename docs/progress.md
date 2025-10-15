@@ -1394,3 +1394,166 @@ None
 - Ready for broader language testing in real-world codebases
 - All quality standards maintained
 - This significantly expands Ember's usefulness across different tech stacks
+
+---
+
+## 2025-10-14 Session 11 - Phase 8: Incremental Indexing
+
+**Phase:** Phase 8 (Polish & Remaining Commands) - IN PROGRESS
+**Duration:** ~90 minutes
+**Commits:** feat(indexing): implement incremental sync with diff-based file detection and cleanup
+
+### Completed
+- **Implemented incremental file detection** in `_get_files_to_index()`:
+  - Checks `last_tree_sha` from metadata to determine sync type
+  - If tree SHA unchanged, returns empty list (no-op sync)
+  - If changed, uses `diff_files()` to get only added/modified files
+  - Returns tuple of (files, is_incremental) for tracking
+- **Added deletion handling** in `_handle_deletions()`:
+  - Gets deleted files from git diff
+  - Removes chunks for deleted files using new `delete_by_path()` method
+  - Returns count of chunks deleted
+- **Updated IndexResponse** dataclass:
+  - Added `chunks_deleted` field to track deletion count
+  - Added `is_incremental` flag to distinguish full vs incremental syncs
+- **Enhanced ChunkRepository** with deletion methods:
+  - `delete_by_path(path, tree_sha)` - Deletes all chunks for a file/tree combo
+  - `delete_old_tree_shas(current_tree_sha)` - Cleans up stale chunks from previous syncs
+- **Added automatic cleanup** at end of sync:
+  - Removes all chunks that don't match current tree SHA
+  - Prevents accumulation of stale chunks across syncs
+  - Ensures database only contains latest tree SHA chunks
+- **Updated CLI output** to show:
+  - Sync type: "(full sync)" or "(incremental sync)"
+  - Deletion statistics (if > 0 chunks deleted)
+  - "No changes detected" message for no-op syncs
+  - Conditional display of stats (only show non-zero values)
+- **Comprehensive manual testing**:
+  - First sync: full reindex (5 chunks created)
+  - Second sync: no-op (no changes detected)
+  - Modified file sync: incremental (1 created, 5 updated)
+  - New file sync: incremental (2 created, only new file indexed)
+  - Deleted file sync: incremental (2 chunks deleted)
+  - Cleanup verification: old tree SHA chunks removed
+- All 98 tests passing (no regressions)
+
+### Decisions Made
+- **Incremental by default**: Automatically uses diff-based sync when possible
+  - Checks last_tree_sha from metadata
+  - No user configuration needed
+  - Significant performance improvement for large codebases
+
+- **Automatic tree SHA cleanup**: Remove old chunks at end of every sync
+  - Prevents database bloat from accumulating tree SHAs
+  - Keeps database lean (only current state)
+  - Trade-off: Can't query historical versions (acceptable for MVP)
+
+- **Track deletions separately**: Handle deleted files before indexing new/modified
+  - Ensures removed files are cleaned up
+  - Deletion count displayed separately in CLI output
+  - Clear separation of concerns
+
+- **Per-file cleanup during reindex**: When re-indexing a file with new tree SHA
+  - Delete old tree SHA chunks for that specific file
+  - Prevents temporary duplicates during incremental sync
+  - Combined with global cleanup ensures no duplicates
+
+- **Enhanced CLI output**: Smart display of sync statistics
+  - Only show non-zero values (cleaner output)
+  - Indicate sync type (full/incremental)
+  - Special message for no-op syncs
+  - Users can see incremental sync is working
+
+### Architecture Verification
+- ✅ Clean architecture respected (core depends only on ports)
+- ✅ IndexingUseCase has no infrastructure imports
+- ✅ ChunkRepository properly encapsulates deletion logic
+- ✅ Type hints on all public interfaces
+- ✅ Proper error handling at boundaries
+- ✅ All tests pass (98/98 total)
+- ✅ Manual end-to-end testing successful
+
+### Testing Results
+```
+98 passed in 19.20s
+Test coverage: 53% (1394 statements, 654 missing)
+IndexingUseCase: 0% coverage (not tested yet - integration tests needed)
+ChunkRepository: 37% coverage (deletion methods not tested yet)
+```
+
+**Manual Test Results:**
+```bash
+# First sync (full reindex)
+$ ember sync
+Indexing worktree...
+✓ Indexed 1 files (full sync)
+  • 5 chunks created
+  • 5 vectors stored
+  • Tree SHA: c30bfda9fe2d...
+
+# No-op sync (no changes)
+$ ember sync
+Indexing worktree...
+✓ No changes detected (index up to date)
+
+# Incremental sync after modifying file
+$ ember sync
+Indexing worktree...
+✓ Indexed 1 files (incremental sync)
+  • 1 chunks created
+  • 5 chunks updated
+  • 6 vectors stored
+  • Tree SHA: 3662c5bea502...
+
+# Incremental sync after adding new file
+$ ember sync
+Indexing worktree...
+✓ Indexed 1 files (incremental sync)
+  • 2 chunks created
+  • 2 vectors stored
+  • Tree SHA: e85df04b13cf...
+
+# Incremental sync after deleting file
+$ ember sync
+Indexing worktree...
+✓ Indexed 0 files (incremental sync)
+  • 2 chunks deleted
+  • Tree SHA: 3662c5bea502...
+```
+
+### Performance Impact
+**Before (full reindex every time)**:
+- Re-indexes ALL tracked files on every sync
+- Wastes time re-embedding unchanged code
+- Scales O(n) with codebase size
+
+**After (incremental sync)**:
+- Only indexes changed files
+- Skips sync entirely if no changes
+- Scales O(k) where k = number of changed files
+- Typical case: k << n for incremental development
+
+**Example savings** (1000-file codebase, 10 files changed):
+- Full sync: ~1000 files indexed
+- Incremental sync: ~10 files indexed
+- **99% reduction in indexing work**
+
+### Next Steps
+- Continue Phase 8 tasks:
+  - Performance testing on larger codebases
+  - User documentation (README, usage examples)
+- Consider Phase 9: Additional features (if needed)
+
+### Blockers
+None
+
+### Notes
+- **Incremental indexing is a MAJOR performance improvement!**
+- No-op syncs complete instantly (tree SHA comparison only)
+- Changed file syncs only process affected files
+- Deletion handling ensures database stays clean
+- Automatic cleanup prevents database bloat
+- All existing tests pass (no regressions)
+- Ready for real-world performance testing
+- This makes Ember practical for large codebases
+- All quality standards maintained
