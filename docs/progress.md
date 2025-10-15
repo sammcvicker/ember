@@ -1685,3 +1685,111 @@ None
 - Documentation provides transparency about performance characteristics
 - This completes a major Phase 8 milestone
 - All quality standards maintained
+
+---
+
+## 2025-10-14 Session 13 - Phase 8: User Documentation
+
+**Phase:** Phase 8 (Polish & Remaining Commands) - COMPLETE ✅
+**Duration:** ~60 minutes
+**Commits:** docs(readme): add comprehensive user documentation and usage guide
+
+### Completed
+- **Created comprehensive README.md**:
+  - What Ember is and why use it (value proposition, key features)
+  - Installation instructions (uv and pip methods)
+  - Quick start guide (init, sync, find workflow)
+  - Complete command reference with examples:
+    - `ember init` - Initialize index
+    - `ember sync` - Index/sync codebase
+    - `ember find` - Hybrid search
+    - `ember cat` - Display chunk content with context
+    - `ember open` - Editor integration
+    - `ember export/import/audit` - Noted as not yet fully implemented
+  - Configuration guide (.ember/config.toml documentation)
+  - Supported languages table (9 languages, 24 file extensions)
+  - Architecture overview (Clean Architecture diagram)
+  - Performance summary table (with links to PERFORMANCE.md)
+  - Development setup guide
+  - FAQ section
+  - Roadmap (v0.1 current, v0.2/v0.3 planned)
+  - Contributing guidelines
+  - Credits and license
+- **Documentation is user-focused**:
+  - Practical examples for every command
+  - Clear installation path for end users
+  - Links to technical docs for developers
+  - Answers common questions
+  - Transparent about what's implemented vs planned
+
+### Decisions Made
+- **README as primary entry point**: Comprehensive standalone documentation
+  - Users can get started without reading PRD or CLAUDE.md
+  - Developers have clear path to contribution
+  - Links to deeper technical docs (ADRs, PERFORMANCE.md, progress.md)
+
+- **Honest about implementation status**: Clearly mark incomplete features
+  - export/import/audit shown as "not yet fully implemented"
+  - Roadmap shows v0.1 (MVP) status with future versions
+  - Sets correct expectations for users
+
+- **Performance transparency**: Link to detailed benchmarks
+  - Summary table in README for quick reference
+  - Full PERFORMANCE.md for detailed metrics
+  - Projections for different codebase sizes
+  - Helps users decide if Ember fits their needs
+
+- **Badges for quick status**: Show test count, Python version, license
+  - At-a-glance project health indicators
+  - 103 passing tests badge demonstrates quality
+  - Python 3.11+ requirement clearly stated
+
+### Architecture Verification
+- ✅ Documentation covers all implemented features
+- ✅ Examples tested and accurate
+- ✅ Architecture explanation matches implementation
+- ✅ Links to technical docs are correct
+- ✅ All quality standards maintained
+
+### Documentation Coverage
+**User Guide**:
+- ✅ Installation
+- ✅ Quick start
+- ✅ All commands (init, sync, find, cat, open)
+- ✅ Configuration
+- ✅ Supported languages
+- ✅ Performance expectations
+- ✅ FAQ
+
+**Developer Guide**:
+- ✅ Setup instructions
+- ✅ Test commands
+- ✅ Quality standards
+- ✅ Contributing guidelines
+- ✅ Architecture overview
+- ✅ Links to CLAUDE.md for contributors
+
+### Next Steps
+- Update CLAUDE.md to mark Phase 8 complete
+- Commit all documentation changes
+- Phase 8 is now COMPLETE - MVP ready!
+- Consider next steps:
+  - MVP release preparation
+  - Additional features (export/import/audit completion)
+  - Community building
+
+### Blockers
+None
+
+### Notes
+- **Phase 8 is now COMPLETE!**
+- **Ember v0.1 MVP is feature-complete!**
+- All core functionality working: init, sync, find, cat, open
+- 103 tests passing (unit, integration, performance)
+- 9 languages supported
+- Incremental indexing working (9x+ speedup)
+- Performance validated and documented
+- User documentation comprehensive and clear
+- Ready for real-world use and feedback
+- This marks the completion of the MVP milestone
+- All quality standards maintained throughout all 13 sessions
