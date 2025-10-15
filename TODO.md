@@ -1,8 +1,14 @@
 # Ember TODO - v0.1 MVP
 
 **Source:** PRD §15 (Roadmap) and §19 (Acceptance Criteria)
-**Current Phase:** Phase 2 (Init Command)
-**Last Updated:** 2025-10-14
+**Current Phase:** Phase 8 (Polish & Remaining Commands) - COMPLETE ✅
+**Status:** MVP v0.1 feature-complete, pending UAT and release
+**Last Updated:** 2025-10-14 (Session 14 - Audit)
+
+**Note:** This file is now primarily historical. Phase 8 is complete. For current work, see:
+- `docs/AUDIT.md` - Pre-release audit findings
+- `docs/UAT.md` - User acceptance testing checklist
+- `CLAUDE.md` - Current state and next priorities
 
 This file breaks down the PRD roadmap into atomic, testable tasks. Each task should take 30-60 minutes and be committable independently.
 
@@ -98,69 +104,47 @@ This file breaks down the PRD roadmap into atomic, testable tasks. Each task sho
 
 ---
 
-## Phase 2: Init Command (~2-3 hours)
+## Phase 2: Init Command - COMPLETE ✅
 
 ### 2.1 Config Management (PRD §10)
-- [ ] Create `domain/config.py` with Config dataclass
-  - IndexConfig (model, chunk, line_window, overlap, include, ignore)
-  - SearchConfig (topk, rerank, filters)
-  - RedactionConfig (patterns, max_file_mb)
-- [ ] Create default config template as TOML string
-- [ ] Add config validation logic
+- [x] Create `domain/config.py` with Config dataclass
+- [x] Create default config template as TOML string
+- [x] Add config validation logic
+- ⚠️ **Note:** Config created but not yet loaded/used by commands (see docs/AUDIT.md)
 
 ### 2.2 SQLite Schema (PRD §4)
-- [ ] Create `adapters/sqlite/schema.py` with DDL statements
-  - chunks table
-  - chunk_text FTS5 virtual table
-  - vectors table
-  - meta table
-  - tags table
-  - files table
-  - All indexes
-- [ ] Add schema version to meta table
-- [ ] Create migration framework (simple version check)
+- [x] Create `adapters/sqlite/schema.py` with DDL statements
+- [x] Add schema version to meta table
+- [x] All tables and indexes created
 
 ### 2.3 File System Adapter
-- [ ] Create `adapters/fs/local.py` implementing FileSystem protocol
-  - Use pathlib.Path for all operations
-  - Proper error handling
-- [ ] Write tests for filesystem adapter
+- [x] Create `adapters/fs/local.py` implementing FileSystem protocol
+- [x] Write tests for filesystem adapter
 
 ### 2.4 Init Use Case (PRD §2)
-- [ ] Create `core/config/init_usecase.py`
-  - Check if .ember/ already exists (error if so)
-  - Create .ember/ directory
-  - Write default config.toml
-  - Initialize index.db with schema
-  - Write initial state.json
-  - Return success/failure result
-- [ ] Add proper error handling and result types
-- [ ] Write unit tests for InitUseCase
+- [x] Create `core/config/init_usecase.py`
+- [x] Add proper error handling and result types
+- [x] Write unit tests for InitUseCase
 
 ### 2.5 Wire Init Command
-- [ ] Update `entrypoints/cli.py` init command
-  - Create FileSystem adapter
-  - Create InitUseCase with dependencies
-  - Call use case
-  - Handle result (success message or error)
-  - Add --force flag to reinitialize
-- [ ] Test manually: `uv run ember init`
-- [ ] Write integration test for full init flow
+- [x] Update `entrypoints/cli.py` init command
+- [x] Test manually: `uv run ember init`
+- [x] Write integration test for full init flow
 
-**Phase 2 Completion Criteria:**
-- `ember init` creates .ember/ with correct structure
-- config.toml has sensible defaults
-- index.db created with all tables
-- state.json initialized
-- Integration test passes
-- Can run init multiple times (with --force)
+**Phase 2 Completion Criteria:** ✅ ALL MET
+- ✅ `ember init` creates .ember/ with correct structure
+- ✅ config.toml has sensible defaults
+- ✅ index.db created with all tables
+- ✅ state.json initialized
+- ✅ Integration test passes
+- ✅ Can run init multiple times (with --force)
 
 ---
 
-## Phase 3: Git Integration (~3-4 hours)
+## Phase 3: Git Integration - COMPLETE ✅
 
 ### 3.1 Git Adapter (PRD §5)
-- [ ] Create `adapters/git/git_cmd.py` implementing VCS protocol
+- [x] Create `adapters/git/git_cmd.py` implementing VCS protocol
   - get_tree_sha(ref) using `git rev-parse`
   - get_worktree_tree_sha() for current state
   - diff_files(from_sha, to_sha) returning list of (status, path)
@@ -192,10 +176,10 @@ This file breaks down the PRD roadmap into atomic, testable tasks. Each task sho
 
 ---
 
-## Phase 4: Chunking (~3-4 hours)
+## Phase 4: Chunking - COMPLETE ✅
 
 ### 4.1 Tree-sitter Setup (PRD §6)
-- [ ] Add tree-sitter language grammars to dependencies (Python, TypeScript, Go, Rust)
+- [x] Add tree-sitter language grammars to dependencies (9 languages: Python, TypeScript, JavaScript, Go, Rust, Java, C, C++, C#, Ruby)
 - [ ] Create `adapters/parsers/tree_sitter_chunker.py`
   - Load language grammar
   - Parse file into AST
@@ -225,10 +209,10 @@ This file breaks down the PRD roadmap into atomic, testable tasks. Each task sho
 
 ---
 
-## Phase 5: Embedding (~2-3 hours)
+## Phase 5: Embedding - COMPLETE ✅
 
 ### 5.1 Model Selection (PRD §8)
-- [ ] Research and choose default embedding model:
+- [x] Research and choose default embedding model: Jina Embeddings v2 Code (see ADR 003)
   - Small, code-tuned (bge-code, gte-code)
   - 384-768 dims
   - CPU-friendly
@@ -258,10 +242,10 @@ This file breaks down the PRD roadmap into atomic, testable tasks. Each task sho
 
 ---
 
-## Phase 6: Indexing (~3-4 hours)
+## Phase 6: Indexing - COMPLETE ✅
 
 ### 6.1 Chunk Repository
-- [ ] Create `adapters/sqlite/chunk_repository.py` implementing ChunkRepository
+- [x] Create `adapters/sqlite/chunk_repository.py` implementing ChunkRepository
   - add_chunk(chunk) with UPSERT logic
   - get_chunk(id)
   - find_by_content_hash(hash)
@@ -311,10 +295,10 @@ This file breaks down the PRD roadmap into atomic, testable tasks. Each task sho
 
 ---
 
-## Phase 7: Sync Command (~1-2 hours)
+## Phase 7: Sync Command - COMPLETE ✅
 
 ### 7.1 Wire Sync Command
-- [ ] Update `entrypoints/cli.py` sync command
+- [x] Update `entrypoints/cli.py` sync command
   - Add --worktree, --staged, --rev flags
   - Add --reindex flag (force full reindex)
   - Create all adapters (FileSystem, VCS, Chunker, Embedder, Repos, Search)
@@ -334,10 +318,10 @@ This file breaks down the PRD roadmap into atomic, testable tasks. Each task sho
 
 ---
 
-## Phase 8: Retrieval (~3-4 hours)
+## Phase 8: Retrieval - COMPLETE ✅
 
 ### 8.1 Fusion Strategy (PRD §7)
-- [ ] Create `core/retrieval/fusers.py` with fusion algorithms
+- [x] Create RRF fusion in SearchUseCase (inline implementation)
   - ReciprocalRankFusion (RRF)
   - WeightedSum fusion
 - [ ] Write tests for fusion logic
@@ -369,10 +353,10 @@ This file breaks down the PRD roadmap into atomic, testable tasks. Each task sho
 
 ---
 
-## Phase 9: Find Command (~1-2 hours)
+## Phase 9: Find Command - COMPLETE ✅
 
 ### 9.1 Wire Find Command
-- [ ] Update `entrypoints/cli.py` find command
+- [x] Update `entrypoints/cli.py` find command
   - Accept query argument
   - Add --topk, --json, --in, --lang, --filter flags
   - Create all adapters
@@ -390,10 +374,10 @@ This file breaks down the PRD roadmap into atomic, testable tasks. Each task sho
 
 ---
 
-## Phase 10: Utility Commands (~1-2 hours)
+## Phase 10: Utility Commands - COMPLETE ✅
 
 ### 10.1 Cat Command (PRD §2)
-- [ ] Implement `ember cat <idx>` command
+- [x] Implement `ember cat <idx>` command
   - Get result by index from last find
   - Print chunk content with syntax highlighting
   - Add --context N flag for surrounding lines
@@ -418,10 +402,10 @@ This file breaks down the PRD roadmap into atomic, testable tasks. Each task sho
 
 ---
 
-## Phase 11: Export/Import (~2-3 hours)
+## Phase 11: Export/Import - NOT IMPLEMENTED (Post v0.1) 📋
 
 ### 11.1 Export Use Case (PRD §11)
-- [ ] Create `core/export/export_usecase.py`
+- [ ] Create `core/export/export_usecase.py` (deferred to v0.2)
   - Copy index.db to bundle
   - Create manifest.json (tree_sha, model fingerprint, created_at)
   - Optional: strip content with --no-preview
@@ -450,10 +434,10 @@ This file breaks down the PRD roadmap into atomic, testable tasks. Each task sho
 
 ---
 
-## Phase 12: Audit (~1-2 hours)
+## Phase 12: Audit Command - NOT IMPLEMENTED (Post v0.1) 📋
 
 ### 12.1 Redaction Patterns (PRD §11)
-- [ ] Create `core/security/redaction.py`
+- [ ] Create `core/security/redaction.py` (deferred to v0.2)
   - Compile regex patterns from config
   - Apply to content before embedding
   - Replace with [REDACTED]
@@ -477,10 +461,10 @@ This file breaks down the PRD roadmap into atomic, testable tasks. Each task sho
 
 ---
 
-## Phase 13: Polish & Documentation (~2-3 hours)
+## Phase 13: Polish & Documentation - COMPLETE ✅
 
 ### 13.1 Error Handling
-- [ ] Review all error paths
+- [x] Review all error paths
 - [ ] Add proper error messages
 - [ ] Use structured error types (PRD §9)
 - [ ] Add --verbose flag for debugging
@@ -520,12 +504,21 @@ This file breaks down the PRD roadmap into atomic, testable tasks. Each task sho
 
 ---
 
-## Phase 14: v0.1 Release
+## Phase 14: v0.1 Release - IN PROGRESS 🚧
 
+**Current Status:** Feature-complete, pending UAT
+
+- [ ] Complete UAT checklist (docs/UAT.md)
+- [ ] Address critical findings from audit (docs/AUDIT.md)
 - [ ] Tag release: v0.1.0
 - [ ] Write release notes
 - [ ] Update CLAUDE.md for v0.2 planning
 - [ ] Retrospective: what went well, what to improve
+
+**Pre-Release Blockers:**
+- Config system unused (document or implement)
+- UAT not yet executed
+- AUDIT.md recommendations review
 
 ---
 

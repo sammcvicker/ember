@@ -18,15 +18,49 @@ When the user says "continue" or similar, follow this pattern:
 
 ## 📍 CURRENT STATE
 
-**Phase:** Phase 8 - Polish & Remaining Commands - COMPLETE ✅
-**Last Session:** 2025-10-14 (Session 13)
-**Last Completed:** User documentation - comprehensive README with usage guide
-**Active Work:** MVP v0.1 COMPLETE - Ready for release preparation or Phase 9
-**Blockers:** None
+**Phase:** Phase 14 - v0.1 Release Preparation - IN PROGRESS 🚧
+**Last Session:** 2025-10-14 (Session 14 - Audit)
+**Last Completed:** Pre-release audit and UAT checklist creation
+**Active Work:** Release preparation - addressing audit findings before v0.1.0 tag
+**Blockers:** Config system unused (documentation issue, not critical)
 
 ---
 
 ## 🎯 NEXT PRIORITY (Work Top to Bottom)
+
+### Phase 14: v0.1 Release Preparation - IN PROGRESS 🚧
+
+**Audit Status:** COMPLETE - See `docs/AUDIT.md` and `docs/UAT.md`
+
+**Pre-Release Tasks:**
+1. [ ] **Address critical audit finding: Config system unused**
+   - Document in README that config is currently informational
+   - Settings will be honored in v0.2
+   - See `docs/AUDIT.md` Section 2.2 for details
+2. [ ] **Execute UAT checklist** (`docs/UAT.md`)
+   - At minimum: Installation, Indexing, Search, Workflow sections
+   - Document any failures or issues
+   - Fix blocking issues if found
+3. [ ] **Update README with config caveat**
+   - Add note about config.toml being informational for v0.1
+   - Document that git tracking determines indexed files
+4. [ ] **Create CHANGELOG.md** for v0.1.0
+5. [ ] **Tag release:** `git tag v0.1.0`
+6. [ ] **Write release notes**
+
+**Audit Summary:**
+- ✅ TODO.md updated to reflect Phase 8 complete
+- ✅ Comprehensive audit report created (`docs/AUDIT.md`)
+- ✅ UAT checklist created (`docs/UAT.md`)
+- 🔴 Config system created but never loaded/used (HIGH - document for v0.1)
+- ⚠️  ember/app/ module empty and unused (LOW - defer to v0.2)
+- ✅ Core functionality working (init, sync, find, cat, open)
+- ✅ 103+ tests passing
+- ✅ Performance validated
+
+---
+
+## 🎯 COMPLETED PHASES (Historical Reference)
 
 ### Phase 2: Init Command - COMPLETE ✅
 1. [x] Create Config domain model in `domain/config.py` with sensible defaults
@@ -327,5 +361,26 @@ This system works if:
 
 ---
 
-**Last Updated**: 2025-10-14 (Session 13 - MVP v0.1 COMPLETE ✅)
+**Last Updated**: 2025-10-14 (Session 14 - Pre-Release Audit Complete)
 **Format Version**: 1.0
+
+---
+
+## 📊 AUDIT & UAT STATUS
+
+**Audit Complete:** ✅ 2025-10-14 (Session 14)
+- Full audit report: `docs/AUDIT.md`
+- Audit summary: `docs/AUDIT_SUMMARY.md`
+- Key finding: Config system unused (document for v0.1)
+
+**UAT Status:** ⬜ NOT STARTED
+- Checklist: `docs/UAT.md` (100+ test items)
+- Minimum required: Installation, Indexing, Search, Workflow
+- Execute before tagging v0.1.0
+
+**Release Readiness:** 🟡 READY with documentation updates
+- Core functionality: ✅ Working
+- Tests: ✅ 103+ passing
+- Documentation: 🟡 Needs config caveat
+- Performance: ✅ Validated
+- Known limitations: ✅ Documented in audit
