@@ -291,3 +291,232 @@ def valid():
     chunks = chunker.chunk_file(content, Path("broken.py"), "py")
     # Tree-sitter is resilient and may still extract some chunks
     assert isinstance(chunks, list)
+
+
+def test_tree_sitter_java_functions():
+    """Test tree-sitter extracts Java classes and methods."""
+    chunker = TreeSitterChunker()
+    content = """public class Calculator {
+    public Calculator() {
+        // Constructor
+    }
+
+    public int add(int a, int b) {
+        return a + b;
+    }
+
+    public int multiply(int a, int b) {
+        return a * b;
+    }
+}
+
+interface MathOperations {
+    int compute(int a, int b);
+}
+"""
+
+    chunks = chunker.chunk_file(content, Path("Calculator.java"), "java")
+
+    # Should extract class, interface, constructor, and methods
+    assert len(chunks) >= 4
+
+    # Check for class (may include constructor with same name)
+    class_chunks = [c for c in chunks if c.symbol == "Calculator"]
+    assert len(class_chunks) >= 1
+    # Find the class definition (largest chunk)
+    class_def = max(class_chunks, key=lambda c: c.end_line - c.start_line)
+    assert "class Calculator" in class_def.content
+
+    # Check for interface
+    interface_chunks = [c for c in chunks if c.symbol == "MathOperations"]
+    assert len(interface_chunks) == 1
+
+    # Check for methods
+    method_symbols = {c.symbol for c in chunks}
+    assert "add" in method_symbols
+    assert "multiply" in method_symbols
+
+
+def test_tree_sitter_c_functions():
+    """Test tree-sitter extracts C functions and structs."""
+    chunker = TreeSitterChunker()
+    content = """#include <stdio.h>
+
+struct Point {
+    int x;
+    int y;
+};
+
+int add(int a, int b) {
+    return a + b;
+}
+
+int multiply(int a, int b) {
+    return a * b;
+}
+
+void print_point(struct Point p) {
+    printf("Point(%d, %d)\\n", p.x, p.y);
+}
+"""
+
+    chunks = chunker.chunk_file(content, Path("math.c"), "c")
+
+    # Should extract struct and functions
+    assert len(chunks) >= 3
+
+    # Check for struct (may appear multiple times if used in function signatures)
+    struct_chunks = [c for c in chunks if c.symbol == "Point"]
+    assert len(struct_chunks) >= 1
+    # Find the struct definition
+    struct_def = [c for c in struct_chunks if "struct Point {" in c.content]
+    assert len(struct_def) >= 1
+
+    # Check for functions
+    function_symbols = {c.symbol for c in chunks}
+    assert "add" in function_symbols
+    assert "multiply" in function_symbols
+    assert "print_point" in function_symbols
+
+
+def test_tree_sitter_cpp_classes():
+    """Test tree-sitter extracts C++ classes and functions."""
+    chunker = TreeSitterChunker()
+    content = """#include <iostream>
+
+class Calculator {
+public:
+    int result;
+
+    Calculator() : result(0) {}
+
+    int add(int a, int b) {
+        return a + b;
+    }
+};
+
+struct Point {
+    int x, y;
+};
+
+int multiply(int a, int b) {
+    return a * b;
+}
+"""
+
+    chunks = chunker.chunk_file(content, Path("calc.cpp"), "cpp")
+
+    # Should extract class, struct, and functions
+    assert len(chunks) >= 3
+
+    # Check for class (may include constructor with same name)
+    class_chunks = [c for c in chunks if c.symbol == "Calculator"]
+    assert len(class_chunks) >= 1
+    # Find the class definition (largest chunk)
+    class_def = max(class_chunks, key=lambda c: c.end_line - c.start_line)
+    assert "class Calculator" in class_def.content
+
+    # Check for struct
+    struct_chunks = [c for c in chunks if c.symbol == "Point"]
+    assert len(struct_chunks) >= 1
+
+    # Check for function
+    function_symbols = {c.symbol for c in chunks}
+    assert "multiply" in function_symbols
+
+
+def test_tree_sitter_csharp_classes():
+    """Test tree-sitter extracts C# classes and methods."""
+    chunker = TreeSitterChunker()
+    content = """using System;
+
+namespace MathLib
+{
+    public class Calculator
+    {
+        public Calculator()
+        {
+            // Constructor
+        }
+
+        public int Add(int a, int b)
+        {
+            return a + b;
+        }
+
+        public int Multiply(int a, int b)
+        {
+            return a * b;
+        }
+    }
+
+    public interface IMathOperations
+    {
+        int Compute(int a, int b);
+    }
+}
+"""
+
+    chunks = chunker.chunk_file(content, Path("Calculator.cs"), "cs")
+
+    # Should extract class, interface, constructor, and methods
+    assert len(chunks) >= 4
+
+    # Check for class (may include constructor with same name)
+    class_chunks = [c for c in chunks if c.symbol == "Calculator"]
+    assert len(class_chunks) >= 1
+    # Find the class definition (largest chunk)
+    class_def = max(class_chunks, key=lambda c: c.end_line - c.start_line)
+    assert "class Calculator" in class_def.content
+
+    # Check for interface
+    interface_chunks = [c for c in chunks if c.symbol == "IMathOperations"]
+    assert len(interface_chunks) == 1
+
+    # Check for methods
+    method_symbols = {c.symbol for c in chunks}
+    assert "Add" in method_symbols
+    assert "Multiply" in method_symbols
+
+
+def test_tree_sitter_ruby_methods():
+    """Test tree-sitter extracts Ruby classes and methods."""
+    chunker = TreeSitterChunker()
+    content = """class Calculator
+  def initialize
+    @result = 0
+  end
+
+  def add(a, b)
+    a + b
+  end
+
+  def self.multiply(a, b)
+    a * b
+  end
+end
+
+module MathHelpers
+  def square(x)
+    x * x
+  end
+end
+"""
+
+    chunks = chunker.chunk_file(content, Path("calculator.rb"), "rb")
+
+    # Should extract class, module, and methods
+    assert len(chunks) >= 4
+
+    # Check for class
+    class_chunks = [c for c in chunks if c.symbol == "Calculator"]
+    assert len(class_chunks) == 1
+    assert "class Calculator" in class_chunks[0].content
+
+    # Check for module
+    module_chunks = [c for c in chunks if c.symbol == "MathHelpers"]
+    assert len(module_chunks) == 1
+
+    # Check for methods
+    method_symbols = {c.symbol for c in chunks}
+    assert "initialize" in method_symbols or "add" in method_symbols

@@ -5,8 +5,13 @@ Extracts semantic code units (functions, classes, methods) using tree-sitter AST
 
 from pathlib import Path
 
+import tree_sitter_c
+import tree_sitter_c_sharp
+import tree_sitter_cpp
 import tree_sitter_go
+import tree_sitter_java
 import tree_sitter_python
+import tree_sitter_ruby
 import tree_sitter_rust
 import tree_sitter_typescript
 from tree_sitter import Language, Parser
@@ -17,7 +22,7 @@ from ember.ports.chunkers import ChunkData
 class TreeSitterChunker:
     """Code-aware chunker using tree-sitter for AST-based extraction.
 
-    Supports Python, TypeScript, JavaScript, Go, and Rust.
+    Supports Python, TypeScript, JavaScript, Go, Rust, Java, C/C++, C#, and Ruby.
     Extracts functions, methods, and classes as semantic chunks.
     """
 
@@ -35,6 +40,18 @@ class TreeSitterChunker:
         "go": ("go", tree_sitter_go, "language"),
         "rs": ("rust", tree_sitter_rust, "language"),
         "rust": ("rust", tree_sitter_rust, "language"),
+        "java": ("java", tree_sitter_java, "language"),
+        "c": ("c", tree_sitter_c, "language"),
+        "cpp": ("cpp", tree_sitter_cpp, "language"),
+        "cc": ("cpp", tree_sitter_cpp, "language"),
+        "cxx": ("cpp", tree_sitter_cpp, "language"),
+        "c++": ("cpp", tree_sitter_cpp, "language"),
+        "h": ("c", tree_sitter_c, "language"),
+        "hpp": ("cpp", tree_sitter_cpp, "language"),
+        "cs": ("csharp", tree_sitter_c_sharp, "language"),
+        "csharp": ("csharp", tree_sitter_c_sharp, "language"),
+        "rb": ("ruby", tree_sitter_ruby, "language"),
+        "ruby": ("ruby", tree_sitter_ruby, "language"),
     }
 
     # Tree-sitter query patterns for extracting definitions
@@ -92,6 +109,56 @@ class TreeSitterChunker:
             (function_item
                 name: (identifier) @func.name) @func.def
             (impl_item) @impl.def
+        """,
+        "java": """
+            (class_declaration
+                name: (identifier) @class.name) @class.def
+            (interface_declaration
+                name: (identifier) @interface.name) @interface.def
+            (method_declaration
+                name: (identifier) @method.name) @method.def
+            (constructor_declaration
+                name: (identifier) @constructor.name) @constructor.def
+        """,
+        "c": """
+            (function_definition
+                declarator: (function_declarator
+                    declarator: (identifier) @func.name)) @func.def
+            (struct_specifier
+                name: (type_identifier) @struct.name) @struct.def
+        """,
+        "cpp": """
+            (function_definition
+                declarator: (function_declarator
+                    declarator: (identifier) @func.name)) @func.def
+            (function_definition
+                declarator: (function_declarator
+                    declarator: (qualified_identifier
+                        name: (identifier) @method.name))) @method.def
+            (class_specifier
+                name: (type_identifier) @class.name) @class.def
+            (struct_specifier
+                name: (type_identifier) @struct.name) @struct.def
+        """,
+        "csharp": """
+            (class_declaration
+                name: (identifier) @class.name) @class.def
+            (interface_declaration
+                name: (identifier) @interface.name) @interface.def
+            (method_declaration
+                name: (identifier) @method.name) @method.def
+            (constructor_declaration
+                name: (identifier) @constructor.name) @constructor.def
+        """,
+        "ruby": """
+            (method
+                name: (identifier) @method.name) @method.def
+            (singleton_method
+                name: (identifier) @method.name) @method.def
+            (class
+                name: (constant) @class.name) @class.def
+            (module
+                name: (constant) @module.name) @module.def
         """,
     }
 
