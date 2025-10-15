@@ -18,45 +18,33 @@ When the user says "continue" or similar, follow this pattern:
 
 ## 📍 CURRENT STATE
 
-**Phase:** Phase 14 - v0.1 Release Preparation - IN PROGRESS 🚧
-**Last Session:** 2025-10-14 (Session 14 - Audit)
-**Last Completed:** Pre-release audit and UAT checklist creation
-**Active Work:** Release preparation - addressing audit findings before v0.1.0 tag
-**Blockers:** Config system unused (documentation issue, not critical)
+**Phase:** v0.1.0 RELEASED ✅
+**Last Session:** 2025-10-15 (Session 15 - Release)
+**Last Completed:** v0.1.0 MVP release tagged and documented
+**Active Work:** None - ready for v0.2 planning or user feedback
+**Blockers:** None
 
 ---
 
 ## 🎯 NEXT PRIORITY (Work Top to Bottom)
 
-### Phase 14: v0.1 Release Preparation - IN PROGRESS 🚧
+### v0.1.0 MVP - RELEASED ✅
 
-**Audit Status:** COMPLETE - See `docs/AUDIT.md` and `docs/UAT.md`
+**Release Complete:** 2025-10-15
+- ✅ Config caveat documented in README
+- ✅ UAT executed (103 tests + manual smoke tests passing)
+- ✅ CHANGELOG.md created
+- ✅ Version set to 0.1.0 in pyproject.toml
+- ✅ Git tag v0.1.0 created
+- ✅ Release notes written (RELEASE_NOTES.md)
 
-**Pre-Release Tasks:**
-1. [ ] **Address critical audit finding: Config system unused**
-   - Document in README that config is currently informational
-   - Settings will be honored in v0.2
-   - See `docs/AUDIT.md` Section 2.2 for details
-2. [ ] **Execute UAT checklist** (`docs/UAT.md`)
-   - At minimum: Installation, Indexing, Search, Workflow sections
-   - Document any failures or issues
-   - Fix blocking issues if found
-3. [ ] **Update README with config caveat**
-   - Add note about config.toml being informational for v0.1
-   - Document that git tracking determines indexed files
-4. [ ] **Create CHANGELOG.md** for v0.1.0
-5. [ ] **Tag release:** `git tag v0.1.0`
-6. [ ] **Write release notes**
+**Next Steps Options:**
+1. **User feedback and bug fixes** - Wait for real-world usage
+2. **Start v0.2 planning** - Config loading, reranking, export/import
+3. **Documentation improvements** - Based on user questions
+4. **Community building** - GitHub polish, examples, tutorials
 
-**Audit Summary:**
-- ✅ TODO.md updated to reflect Phase 8 complete
-- ✅ Comprehensive audit report created (`docs/AUDIT.md`)
-- ✅ UAT checklist created (`docs/UAT.md`)
-- 🔴 Config system created but never loaded/used (HIGH - document for v0.1)
-- ⚠️  ember/app/ module empty and unused (LOW - defer to v0.2)
-- ✅ Core functionality working (init, sync, find, cat, open)
-- ✅ 103+ tests passing
-- ✅ Performance validated
+**No immediate tasks** - Await user direction or feedback
 
 ---
 
@@ -121,6 +109,23 @@ When the user says "continue" or similar, follow this pattern:
 6. [x] Implement incremental indexing (diff-based sync optimization with cleanup)
 7. [x] Performance testing on larger codebases (5 tests, docs/PERFORMANCE.md)
 8. [x] Documentation for users (README, usage examples)
+
+### Phase 14: v0.1 Release Preparation - COMPLETE ✅
+1. [x] Conduct comprehensive pre-release audit
+2. [x] Create UAT checklist with 100+ test items
+3. [x] Document config system limitation in README
+4. [x] Execute minimum UAT (Installation, Indexing, Search, Workflow)
+5. [x] Create CHANGELOG.md for v0.1.0
+6. [x] Verify version number in pyproject.toml
+7. [x] Create git tag v0.1.0
+8. [x] Write comprehensive release notes
+
+**Release Artifacts:**
+- docs/AUDIT.md - Pre-release audit findings
+- docs/AUDIT_SUMMARY.md - Executive summary
+- docs/UAT.md - User acceptance testing checklist
+- CHANGELOG.md - Version history
+- RELEASE_NOTES.md - v0.1.0 release documentation
 
 ### Phase 9: Next Steps (Optional - Post-MVP)
 - Complete remaining PRD commands (export, import, audit)
@@ -361,26 +366,29 @@ This system works if:
 
 ---
 
-**Last Updated**: 2025-10-14 (Session 14 - Pre-Release Audit Complete)
+**Last Updated**: 2025-10-15 (Session 15 - v0.1.0 Release)
 **Format Version**: 1.0
 
 ---
 
-## 📊 AUDIT & UAT STATUS
+## 📊 AUDIT & RELEASE STATUS
 
 **Audit Complete:** ✅ 2025-10-14 (Session 14)
 - Full audit report: `docs/AUDIT.md`
 - Audit summary: `docs/AUDIT_SUMMARY.md`
-- Key finding: Config system unused (document for v0.1)
+- Key finding: Config system unused (documented for v0.1)
 
-**UAT Status:** ⬜ NOT STARTED
+**UAT Complete:** ✅ 2025-10-15 (Session 15)
 - Checklist: `docs/UAT.md` (100+ test items)
-- Minimum required: Installation, Indexing, Search, Workflow
-- Execute before tagging v0.1.0
+- Executed: Installation, Indexing, Search, Workflow sections
+- All automated tests passing (103 tests)
+- Manual smoke tests passing
 
-**Release Readiness:** 🟡 READY with documentation updates
+**Release Status:** ✅ v0.1.0 RELEASED
 - Core functionality: ✅ Working
-- Tests: ✅ 103+ passing
-- Documentation: 🟡 Needs config caveat
+- Tests: ✅ 103 passing
+- Documentation: ✅ Complete with limitations noted
 - Performance: ✅ Validated
-- Known limitations: ✅ Documented in audit
+- Known limitations: ✅ Documented in README, CHANGELOG, RELEASE_NOTES
+- Git tag: ✅ v0.1.0 created
+- Release notes: ✅ Published
