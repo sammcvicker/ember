@@ -241,9 +241,22 @@ patterns = []  # Regex patterns for secret redaction (not yet implemented)
 max_file_mb = 5  # Skip files larger than this
 ```
 
-**Respects:**
-- `.gitignore` (automatically applied)
+> **⚠️ Important (v0.1 Limitation):**
+>
+> The `.ember/config.toml` file is **currently informational only**. Settings are not yet loaded or honored by v0.1 commands. Configuration will be fully implemented in v0.2.
+>
+> **What this means:**
+> - Changing `config.toml` settings has no effect in v0.1
+> - File indexing is determined by git tracking (see below), not `include`/`ignore` patterns
+> - Model selection, chunking strategy, and search defaults are hardcoded in v0.1
+> - The config file is created during `ember init` to document intended defaults for future use
+>
+> See [docs/AUDIT.md](docs/AUDIT.md) for details on this limitation.
+
+**Respects (v0.1):**
+- `.gitignore` (automatically applied - files tracked by git are indexed)
 - `.emberignore` (optional, same format as .gitignore)
+- **Git tracking**: Only files in `git ls-files` are indexed
 
 ---
 
@@ -433,7 +446,10 @@ A: Not yet, but this is planned. The architecture supports swapping models via t
 A: Ember currently only indexes text-based source code. Binary files are skipped.
 
 **Q: How do I exclude sensitive files?**
-A: Add patterns to `ignore` in `.ember/config.toml` or use `.emberignore`.
+A: In v0.1, use `.gitignore` or `.emberignore` to exclude files. Note that `.ember/config.toml` settings (including `ignore` patterns) are not yet active in v0.1.
+
+**Q: Why doesn't changing config.toml affect anything?**
+A: Configuration loading is not implemented in v0.1. The config file is created as documentation of intended defaults. Settings will be honored starting in v0.2. See the Configuration section for details.
 
 ---
 
@@ -448,6 +464,7 @@ A: Add patterns to `ignore` in `.ember/config.toml` or use `.emberignore`.
 - [ ] Audit command for secrets
 
 **v0.2** - Planned
+- Configuration loading (honor settings in config.toml)
 - Cross-encoder reranking
 - Explain command (why a result matched)
 - Watch mode (auto-sync on file changes)
