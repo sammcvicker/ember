@@ -210,11 +210,6 @@ class IndexingUseCase:
             if progress and files_to_index:
                 progress.on_complete()
 
-            # Clean up old tree SHA chunks (keeps only current tree_sha)
-            # This ensures we don't accumulate stale chunks across syncs
-            stale_deleted = self.chunk_repo.delete_old_tree_shas(tree_sha)
-            chunks_deleted += stale_deleted
-
             # Update metadata with new tree SHA
             self.meta_repo.set("last_tree_sha", tree_sha)
             self.meta_repo.set("last_sync_mode", request.sync_mode)
