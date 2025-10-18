@@ -186,9 +186,6 @@ def sync(
     else:
         sync_mode = "worktree"
 
-    if not ctx.obj.get("quiet", False):
-        click.echo(f"Indexing {sync_mode}...")
-
     try:
         # Initialize dependencies
         vcs = GitAdapter(repo_root)
