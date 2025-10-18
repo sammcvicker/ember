@@ -372,11 +372,11 @@ class IndexingUseCase:
         # Get relative path
         rel_path = file_path.relative_to(repo_root)
 
-        # Clean up old chunks for this file from previous tree SHAs
-        # This prevents accumulation of stale chunks across syncs
-        last_tree_sha = self.meta_repo.get("last_tree_sha")
-        if last_tree_sha and last_tree_sha != tree_sha:
-            self.chunk_repo.delete_by_path(path=rel_path, tree_sha=last_tree_sha)
+        # Clean up ALL old chunks for this file from any previous tree SHA
+        # This prevents accumulation of duplicate chunks across multiple syncs
+        # Since we're re-indexing this file now, we want to completely replace
+        # all old chunks with the new chunks
+        self.chunk_repo.delete_all_for_path(path=rel_path)
 
         # Read file content (returns bytes, decode to string)
         content_bytes = self.fs.read(file_path)
