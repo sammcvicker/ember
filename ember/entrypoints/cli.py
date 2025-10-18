@@ -355,35 +355,73 @@ def find(
                 )
             click.echo(json.dumps(output, indent=2))
         else:
-            # Human-readable output
+            # Human-readable output (ripgrep-style)
             if not results:
                 click.echo("No results found.")
                 return
 
-            click.echo(f"\nFound {len(results)} results:\n")
+            # Group results by file path for cleaner output
+            from collections import defaultdict
 
+            results_by_file = defaultdict(list)
             for result in results:
-                # Header with rank, path, symbol
-                symbol_info = (
-                    f" ({result.chunk.symbol})" if result.chunk.symbol else ""
-                )
-                click.echo(
-                    f"{result.rank}. {result.chunk.path}:{result.chunk.start_line}{symbol_info}"
-                )
+                results_by_file[result.chunk.path].append(result)
 
-                # Score info
-                click.echo(
-                    f"   Score: {result.score:.4f} "
-                    f"(BM25: {result.explanation.get('bm25_score', 0):.4f}, "
-                    f"Vector: {result.explanation.get('vector_score', 0):.4f})"
-                )
+            # Display grouped results
+            for file_path, file_results in results_by_file.items():
+                # Print filename in magenta
+                click.echo(click.style(str(file_path), fg="magenta", bold=True))
 
-                # Preview
-                preview = result.preview or result.format_preview(max_lines=3)
-                for line in preview.split("\n"):
-                    click.echo(f"   {line}")
+                for result in file_results:
+                    # Format: [rank] line_number: content
+                    # Rank in green (what users reference for cat/open)
+                    rank = click.style(f"[{result.rank}]", fg="green", bold=True)
+                    # Line number in dim gray (informational)
+                    line_num = click.style(
+                        f"{result.chunk.start_line}", dim=True
+                    )
 
-                click.echo()  # Blank line between results
+                    # Get preview content (first line only for compact display)
+                    preview = result.preview or result.format_preview(max_lines=1)
+                    content_lines = preview.split("\n")
+
+                    # Helper function to highlight symbol in text
+                    def highlight_symbol(text: str, symbol: str | None) -> str:
+                        if not symbol or symbol not in text:
+                            return text
+
+                        # Find and highlight all occurrences of the symbol
+                        parts = []
+                        remaining = text
+                        while symbol in remaining:
+                            idx = remaining.index(symbol)
+                            # Add text before symbol
+                            parts.append(remaining[:idx])
+                            # Add highlighted symbol
+                            parts.append(click.style(symbol, fg="red", bold=True))
+                            # Continue with text after symbol
+                            remaining = remaining[idx + len(symbol):]
+                        # Add any remaining text
+                        parts.append(remaining)
+                        return "".join(parts)
+
+                    # First line with rank and line number
+                    if content_lines:
+                        first_line = highlight_symbol(
+                            content_lines[0], result.chunk.symbol
+                        )
+                        click.echo(f"{rank} {line_num}:{first_line}")
+
+                        # Additional preview lines (indented, no line number)
+                        for line in content_lines[1:]:
+                            if line.strip():  # Skip empty lines
+                                highlighted_line = highlight_symbol(
+                                    line, result.chunk.symbol
+                                )
+                                click.echo(f"    {highlighted_line}")
+
+                # Blank line between files
+                click.echo()
 
     except RuntimeError as e:
         click.echo(f"Error: {e}", err=True)
@@ -443,13 +481,30 @@ def cat(ctx: click.Context, index: int, context: int) -> None:
         # Get the result (convert to 0-based)
         result = results[index - 1]
 
-        # Display header
+        # Display header in ripgrep-style
         path = result["path"]
-        symbol_info = f" ({result['symbol']})" if result.get("symbol") else ""
-        click.echo(f"\n{index}. {path}:{result['start_line']}{symbol_info}")
+
+        # Filename in magenta bold
+        click.echo(click.style(str(path), fg="magenta", bold=True))
+
+        # Rank in green bold, line number dimmed
+        rank = click.style(f"[{index}]", fg="green", bold=True)
+        line_num = click.style(f"{result['start_line']}", dim=True)
+
+        # Symbol in red bold (inline)
+        symbol_display = ""
+        if result.get("symbol"):
+            symbol_display = " " + click.style(
+                f"({result['symbol']})", fg="red", bold=True
+            )
+
+        click.echo(f"{rank} {line_num}:{symbol_display}")
         click.echo(
-            f"   Lines {result['start_line']}-{result['end_line']} "
-            f"({result['lang'] or 'text'})"
+            click.style(
+                f"Lines {result['start_line']}-{result['end_line']} "
+                f"({result['lang'] or 'text'})",
+                dim=True
+            )
         )
         click.echo()
 
@@ -587,8 +642,18 @@ def open_result(ctx: click.Context, index: int) -> None:
 
         # Show what we're doing (if not quiet)
         if not ctx.obj.get("quiet", False):
-            symbol_info = f" ({result['symbol']})" if result.get("symbol") else ""
-            click.echo(f"Opening {result['path']}:{line_num}{symbol_info} in {editor}")
+            # Use consistent ripgrep-style formatting
+            path_display = click.style(str(result['path']), fg="magenta", bold=True)
+            rank_display = click.style(f"[{index}]", fg="green", bold=True)
+            line_display = click.style(f"{line_num}", dim=True)
+
+            symbol_display = ""
+            if result.get("symbol"):
+                symbol_display = " " + click.style(
+                    f"({result['symbol']})", fg="red", bold=True
+                )
+
+            click.echo(f"Opening {path_display} {rank_display} {line_display}:{symbol_display} in {editor}")
 
         # Execute editor command
         subprocess.run(cmd, check=True)
