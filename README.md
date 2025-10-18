@@ -253,10 +253,22 @@ max_file_mb = 5  # Skip files larger than this
 >
 > See [docs/AUDIT.md](docs/AUDIT.md) for details on this limitation.
 
-**Respects (v0.1):**
-- `.gitignore` (automatically applied - files tracked by git are indexed)
-- `.emberignore` (optional, same format as .gitignore)
-- **Git tracking**: Only files in `git ls-files` are indexed
+**File Indexing (v0.1):**
+- **Code files only**: Only source code files are indexed (see supported extensions below)
+- **Git tracking**: Only files tracked by git are candidates for indexing
+- `.gitignore`: Automatically respected (untracked files are skipped)
+- `.emberignore`: Optional, same format as .gitignore
+
+**Indexed file extensions:**
+`.py`, `.pyi`, `.js`, `.jsx`, `.ts`, `.tsx`, `.mjs`, `.cjs`, `.go`, `.rs`, `.java`, `.kt`, `.scala`, `.c`, `.cpp`, `.cc`, `.cxx`, `.h`, `.hpp`, `.hh`, `.hxx`, `.cs`, `.rb`, `.php`, `.swift`, `.sh`, `.bash`, `.zsh`, `.vue`, `.svelte`, `.sql`, `.proto`, `.graphql`
+
+**Skipped files (not indexed):**
+- Documentation: `.md`, `.txt`, `.rst`, `.adoc`
+- Data/Config: `.json`, `.yaml`, `.yml`, `.toml`, `.xml`, `.csv`
+- Binary files: `.png`, `.jpg`, `.jpeg`, `.gif`, `.pdf`, `.zip`, etc.
+- Build artifacts: `.pyc`, `.class`, `.o`, `.so`, `.dll`, `.exe`
+- Lock files: `.lock`, `.sum`
+- Other non-code files
 
 ---
 
@@ -443,7 +455,7 @@ A: No. Everything runs locally. The embedding model downloads once from HuggingF
 A: Not yet, but this is planned. The architecture supports swapping models via the `Embedder` protocol.
 
 **Q: What about binary files / images / PDFs?**
-A: Ember currently only indexes text-based source code. Binary files are skipped.
+A: Ember only indexes source code files with recognized code extensions (see Configuration section). Binary files, documentation, and data files are automatically skipped during indexing.
 
 **Q: How do I exclude sensitive files?**
 A: In v0.1, use `.gitignore` or `.emberignore` to exclude files. Note that `.ember/config.toml` settings (including `ignore` patterns) are not yet active in v0.1.
