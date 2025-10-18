@@ -8,6 +8,7 @@ from pathlib import Path
 
 import blake3
 import click
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 
 from ember.adapters.local_models.jina_embedder import JinaCodeEmbedder
 from ember.adapters.fs.local import LocalFileSystem
@@ -25,6 +26,45 @@ from ember.core.config.init_usecase import InitRequest, InitUseCase
 from ember.core.indexing.index_usecase import IndexingUseCase, IndexRequest
 from ember.core.retrieval.search_usecase import SearchUseCase
 from ember.domain.entities import Query
+from ember.ports.progress import ProgressCallback
+
+
+class RichProgressCallback:
+    """Rich-based progress callback for visual progress reporting.
+
+    Uses Rich library to display a progress bar that updates as indexing progresses.
+    """
+
+    def __init__(self, progress: Progress) -> None:
+        """Initialize with a Rich Progress instance.
+
+        Args:
+            progress: Rich Progress instance to use for display.
+        """
+        self.progress = progress
+        self.task_id: int | None = None
+
+    def on_start(self, total: int, description: str) -> None:
+        """Create progress bar when operation starts."""
+        # Use transient=True to auto-hide when complete
+        self.task_id = self.progress.add_task(description, total=total)
+
+    def on_progress(self, current: int, item_description: str | None = None) -> None:
+        """Update progress bar with current item."""
+        if self.task_id is not None:
+            # Update the task description to show current file
+            if item_description:
+                self.progress.update(
+                    self.task_id, completed=current, description=f"[cyan]{item_description}"
+                )
+            else:
+                self.progress.update(self.task_id, completed=current)
+
+    def on_complete(self) -> None:
+        """Mark progress as complete and hide it."""
+        if self.task_id is not None:
+            # Remove the task to hide the progress bar
+            self.progress.remove_task(self.task_id)
 
 
 @click.group()
@@ -182,7 +222,7 @@ def sync(
             project_id=project_id,
         )
 
-        # Execute indexing
+        # Execute indexing with progress reporting (unless quiet mode)
         request = IndexRequest(
             repo_root=repo_root,
             sync_mode=sync_mode,
@@ -190,7 +230,21 @@ def sync(
             force_reindex=reindex,
         )
 
-        response = indexing_usecase.execute(request)
+        # Use progress bar unless in quiet mode
+        if ctx.obj.get("quiet", False):
+            # No progress reporting in quiet mode
+            response = indexing_usecase.execute(request)
+        else:
+            # Create Rich progress bar (transient=True makes it disappear when done)
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TaskProgressColumn(),
+                transient=True,
+            ) as progress:
+                callback = RichProgressCallback(progress)
+                response = indexing_usecase.execute(request, progress=callback)
 
         if not response.success:
             click.echo(f"Error during indexing: {response.error}", err=True)
