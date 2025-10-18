@@ -5,9 +5,11 @@ Uses jinaai/jina-embeddings-v2-base-code via sentence-transformers.
 
 import hashlib
 import warnings
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from sentence_transformers import SentenceTransformer
+# Lazy import - only load when actually needed
+if TYPE_CHECKING:
+    from sentence_transformers import SentenceTransformer
 
 
 class JinaCodeEmbedder:
@@ -45,9 +47,9 @@ class JinaCodeEmbedder:
         self._max_seq_length = max_seq_length
         self._batch_size = batch_size
         self._device = device
-        self._model: SentenceTransformer | None = None
+        self._model: "SentenceTransformer | None" = None
 
-    def _ensure_model_loaded(self) -> SentenceTransformer:
+    def _ensure_model_loaded(self) -> "SentenceTransformer":
         """Lazy-load the model on first use.
 
         Returns:
@@ -57,6 +59,9 @@ class JinaCodeEmbedder:
             RuntimeError: If model fails to load.
         """
         if self._model is None:
+            # Import here to avoid loading heavy dependencies at module import time
+            from sentence_transformers import SentenceTransformer
+
             try:
                 # Suppress the optimum warning when loading Jina model
                 # (optimum is optional, provides ONNX optimization)
