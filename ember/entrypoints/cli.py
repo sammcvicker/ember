@@ -10,24 +10,6 @@ import blake3
 import click
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 
-from ember.adapters.local_models.jina_embedder import JinaCodeEmbedder
-from ember.adapters.fs.local import LocalFileSystem
-from ember.adapters.fts.sqlite_fts import SQLiteFTS
-from ember.adapters.git_cmd.git_adapter import GitAdapter
-from ember.adapters.parsers.line_chunker import LineChunker
-from ember.adapters.parsers.tree_sitter_chunker import TreeSitterChunker
-from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
-from ember.adapters.sqlite.file_repository import SQLiteFileRepository
-from ember.adapters.sqlite.meta_repository import SQLiteMetaRepository
-from ember.adapters.sqlite.vector_repository import SQLiteVectorRepository
-from ember.adapters.vss.simple_vector_search import SimpleVectorSearch
-from ember.core.chunking.chunk_usecase import ChunkFileUseCase
-from ember.core.config.init_usecase import InitRequest, InitUseCase
-from ember.core.indexing.index_usecase import IndexingUseCase, IndexRequest
-from ember.core.retrieval.search_usecase import SearchUseCase
-from ember.domain.entities import Query
-from ember.ports.progress import ProgressCallback
-
 
 class RichProgressCallback:
     """Rich-based progress callback for visual progress reporting.
@@ -105,6 +87,9 @@ def init(ctx: click.Context, force: bool) -> None:
 
     Creates .ember/ directory with configuration and database.
     """
+    # Lazy import - only load when init is actually called
+    from ember.core.config.init_usecase import InitRequest, InitUseCase
+
     repo_root = Path.cwd().resolve()
 
     # Create use case and execute
@@ -187,6 +172,19 @@ def sync(
         sync_mode = "worktree"
 
     try:
+        # Lazy imports - only load heavy dependencies when sync is actually called
+        from ember.adapters.local_models.jina_embedder import JinaCodeEmbedder
+        from ember.adapters.fs.local import LocalFileSystem
+        from ember.adapters.git_cmd.git_adapter import GitAdapter
+        from ember.adapters.parsers.line_chunker import LineChunker
+        from ember.adapters.parsers.tree_sitter_chunker import TreeSitterChunker
+        from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
+        from ember.adapters.sqlite.file_repository import SQLiteFileRepository
+        from ember.adapters.sqlite.meta_repository import SQLiteMetaRepository
+        from ember.adapters.sqlite.vector_repository import SQLiteVectorRepository
+        from ember.core.chunking.chunk_usecase import ChunkFileUseCase
+        from ember.core.indexing.index_usecase import IndexingUseCase, IndexRequest
+
         # Initialize dependencies
         vcs = GitAdapter(repo_root)
         fs = LocalFileSystem()
@@ -329,6 +327,14 @@ def find(
         sys.exit(1)
 
     try:
+        # Lazy imports - only load heavy dependencies when find is actually called
+        from ember.adapters.local_models.jina_embedder import JinaCodeEmbedder
+        from ember.adapters.fts.sqlite_fts import SQLiteFTS
+        from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
+        from ember.adapters.vss.simple_vector_search import SimpleVectorSearch
+        from ember.core.retrieval.search_usecase import SearchUseCase
+        from ember.domain.entities import Query
+
         # Initialize dependencies
         text_search = SQLiteFTS(db_path)
         vector_search = SimpleVectorSearch(db_path)
