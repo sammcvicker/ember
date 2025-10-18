@@ -32,6 +32,7 @@ dependencies = [
     "sentence-transformers>=2.2.0",
     "torch>=2.0.0",
     "tomli-w>=1.2.0",
+    "rich>=13.0.0",
 ]
 
 [project.scripts]

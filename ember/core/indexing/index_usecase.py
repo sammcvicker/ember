@@ -18,6 +18,7 @@ from ember.domain.entities import Chunk
 from ember.ports.chunkers import ChunkData
 from ember.ports.embedders import Embedder
 from ember.ports.fs import FileSystem
+from ember.ports.progress import ProgressCallback
 from ember.ports.repositories import (
     ChunkRepository,
     FileRepository,
@@ -144,11 +145,14 @@ class IndexingUseCase:
         self.meta_repo = meta_repo
         self.project_id = project_id
 
-    def execute(self, request: IndexRequest) -> IndexResponse:
+    def execute(
+        self, request: IndexRequest, progress: ProgressCallback | None = None
+    ) -> IndexResponse:
         """Execute the indexing operation.
 
         Args:
             request: Indexing request with mode and filters.
+            progress: Optional progress callback for reporting progress.
 
         Returns:
             IndexResponse with statistics about what was indexed.
@@ -179,7 +183,17 @@ class IndexingUseCase:
             chunks_updated = 0
             vectors_stored = 0
 
-            for file_path in files_to_index:
+            # Report progress start
+            if progress and files_to_index:
+                sync_type = "incremental" if is_incremental else "full"
+                progress.on_start(len(files_to_index), f"Indexing files ({sync_type})")
+
+            for idx, file_path in enumerate(files_to_index, start=1):
+                # Report progress for current file
+                if progress:
+                    rel_path = file_path.relative_to(request.repo_root)
+                    progress.on_progress(idx, str(rel_path))
+
                 result = self._index_file(
                     file_path=file_path,
                     repo_root=request.repo_root,
@@ -191,6 +205,10 @@ class IndexingUseCase:
                 chunks_created += result["chunks_created"]
                 chunks_updated += result["chunks_updated"]
                 vectors_stored += result["vectors_stored"]
+
+            # Report completion
+            if progress and files_to_index:
+                progress.on_complete()
 
             # Clean up old tree SHA chunks (keeps only current tree_sha)
             # This ensures we don't accumulate stale chunks across syncs
