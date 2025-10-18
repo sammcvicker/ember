@@ -246,6 +246,38 @@ class SQLiteChunkRepository:
         finally:
             conn.close()
 
+    def delete_all_for_path(self, path: Path) -> int:
+        """Delete all chunks for a given file path across all tree SHAs.
+
+        This is used when re-indexing a file to remove all old chunks
+        before adding new ones, preventing duplicate accumulation across
+        multiple syncs.
+
+        Args:
+            path: File path relative to repository root.
+
+        Returns:
+            Number of chunks deleted.
+        """
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            path_str = str(path)
+
+            # Delete all chunks for this path regardless of tree_sha
+            cursor.execute(
+                """
+                DELETE FROM chunks
+                WHERE path = ?
+                """,
+                (path_str,),
+            )
+            deleted_count = cursor.rowcount
+            conn.commit()
+            return deleted_count
+        finally:
+            conn.close()
+
     def delete_old_tree_shas(self, current_tree_sha: str) -> int:
         """Delete all chunks that don't match the current tree SHA.
 

@@ -28,31 +28,35 @@ class IndexConfig:
     line_window: int = 120
     line_stride: int = 100
     overlap_lines: int = 15
-    include: list[str] = field(default_factory=lambda: [
-        "**/*.py",
-        "**/*.ts",
-        "**/*.tsx",
-        "**/*.js",
-        "**/*.jsx",
-        "**/*.go",
-        "**/*.rs",
-        "**/*.java",
-        "**/*.cpp",
-        "**/*.c",
-        "**/*.h",
-        "**/*.hpp",
-    ])
-    ignore: list[str] = field(default_factory=lambda: [
-        ".git/",
-        "node_modules/",
-        "dist/",
-        "build/",
-        "__pycache__/",
-        ".venv/",
-        "venv/",
-        "*.pyc",
-        ".DS_Store",
-    ])
+    include: list[str] = field(
+        default_factory=lambda: [
+            "**/*.py",
+            "**/*.ts",
+            "**/*.tsx",
+            "**/*.js",
+            "**/*.jsx",
+            "**/*.go",
+            "**/*.rs",
+            "**/*.java",
+            "**/*.cpp",
+            "**/*.c",
+            "**/*.h",
+            "**/*.hpp",
+        ]
+    )
+    ignore: list[str] = field(
+        default_factory=lambda: [
+            ".git/",
+            "node_modules/",
+            "dist/",
+            "build/",
+            "__pycache__/",
+            ".venv/",
+            "venv/",
+            "*.pyc",
+            ".DS_Store",
+        ]
+    )
 
 
 @dataclass(frozen=True)
@@ -79,11 +83,13 @@ class RedactionConfig:
         max_file_mb: Maximum file size to process (in megabytes)
     """
 
-    patterns: list[str] = field(default_factory=lambda: [
-        r"(?i)api_key\s*[:=]\s*['\"]?[A-Za-z0-9-_]{16,}",
-        r"(?i)secret\s*[:=]\s*['\"]?[A-Za-z0-9-_]{16,}",
-        r"(?i)password\s*[:=]\s*['\"]?[A-Za-z0-9-_]{8,}",
-    ])
+    patterns: list[str] = field(
+        default_factory=lambda: [
+            r"(?i)api_key\s*[:=]\s*['\"]?[A-Za-z0-9-_]{16,}",
+            r"(?i)secret\s*[:=]\s*['\"]?[A-Za-z0-9-_]{16,}",
+            r"(?i)password\s*[:=]\s*['\"]?[A-Za-z0-9-_]{8,}",
+        ]
+    )
     max_file_mb: int = 5
 
 
