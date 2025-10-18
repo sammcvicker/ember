@@ -26,6 +26,37 @@ from ember.ports.repositories import (
 )
 from ember.ports.vcs import VCS
 
+# Code file extensions to index (whitelist approach)
+# Only source code files are indexed - data, config, docs, and binary files are skipped
+CODE_FILE_EXTENSIONS = frozenset({
+    # Python
+    ".py", ".pyi",
+    # JavaScript/TypeScript
+    ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
+    # Go
+    ".go",
+    # Rust
+    ".rs",
+    # Java/JVM
+    ".java", ".kt", ".scala",
+    # C/C++
+    ".c", ".cpp", ".cc", ".cxx", ".h", ".hpp", ".hh", ".hxx",
+    # C#
+    ".cs",
+    # Ruby
+    ".rb",
+    # PHP
+    ".php",
+    # Swift
+    ".swift",
+    # Shell
+    ".sh", ".bash", ".zsh",
+    # Web frameworks
+    ".vue", ".svelte",
+    # Other
+    ".sql", ".proto", ".graphql",
+})
+
 
 @dataclass
 class IndexRequest:
@@ -257,6 +288,9 @@ class IndexingUseCase:
             files = [repo_root / f for f in relative_files]
             is_incremental = True
 
+        # Filter to only include code files (skip docs, data, binary files)
+        files = [f for f in files if self._is_code_file(f)]
+
         # Apply path filters if provided
         if path_filters:
             # Simple filtering for now (exact match or contains)
@@ -450,6 +484,18 @@ class IndexingUseCase:
             chunks.append(chunk)
 
         return chunks
+
+    def _is_code_file(self, file_path: Path) -> bool:
+        """Check if file is a code file that should be indexed.
+
+        Args:
+            file_path: Path to file.
+
+        Returns:
+            True if file should be indexed, False otherwise.
+        """
+        suffix = file_path.suffix.lower()
+        return suffix in CODE_FILE_EXTENSIONS
 
     def _detect_language(self, file_path: Path) -> str:
         """Detect language from file extension.
