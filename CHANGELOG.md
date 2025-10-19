@@ -5,6 +5,19 @@ All notable changes to Ember will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- Simplified CLAUDE.md to be more concise (~50% reduction)
+- Moved detailed maintainer procedures to MAINTAINER_GUIDE.md
+
+### Added
+- Created `develop` branch for ongoing development
+- Created GitHub milestones for release planning (0.2.0, Backlog)
+- Added MAINTAINER_GUIDE.md with comprehensive operational procedures
+
+---
+
 ## [0.1.0] - 2025-10-15
 
 ### Added
@@ -103,21 +116,4 @@ Measured on macOS (Apple Silicon):
 
 ---
 
-## [Unreleased]
-
-### Planned for v0.2
-- Configuration loading (honor settings in config.toml)
-- Cross-encoder reranking
-- Explain command
-- Watch mode
-- Export/import/audit commands
-
-### Planned for v0.3+
-- HTTP server for AI agents
-- Multi-project support
-- Custom embedding models
-- Advanced filtering and metadata
-
----
-
-[0.1.0]: https://github.com/yourusername/ember/releases/tag/v0.1.0
+[0.1.0]: https://github.com/sammcvicker/ember/releases/tag/v0.1.0
