@@ -10,11 +10,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Simplified CLAUDE.md to be more concise (~50% reduction)
 - Moved detailed maintainer procedures to MAINTAINER_GUIDE.md
+- Reorganized documentation structure for better discoverability
 
 ### Added
 - Created `develop` branch for ongoing development
 - Created GitHub milestones for release planning (0.2.0, Backlog)
 - Added MAINTAINER_GUIDE.md with comprehensive operational procedures
+- Added docs/ARCHITECTURE.md with detailed technical architecture guide
+- Created docs/archive/ for historical documentation
+
+### Removed
+- Moved historical v0.1.0 docs to docs/archive/ (AUDIT.md, UAT.md, progress.md)
 
 ---
 
