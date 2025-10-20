@@ -6,7 +6,6 @@ embedding, and incremental sync with proper cleanup of old chunks.
 
 import sqlite3
 from pathlib import Path
-from unittest.mock import Mock
 
 import pytest
 
@@ -22,7 +21,6 @@ from ember.adapters.sqlite.schema import init_database
 from ember.adapters.sqlite.vector_repository import SQLiteVectorRepository
 from ember.core.chunking.chunk_usecase import ChunkFileUseCase
 from ember.core.indexing.index_usecase import IndexingUseCase, IndexRequest
-from ember.domain.entities import Chunk
 
 
 @pytest.fixture

@@ -5,7 +5,7 @@ Uses jinaai/jina-embeddings-v2-base-code via sentence-transformers.
 
 import hashlib
 import warnings
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 # Lazy import - only load when actually needed
 if TYPE_CHECKING:
@@ -47,7 +47,7 @@ class JinaCodeEmbedder:
         self._max_seq_length = max_seq_length
         self._batch_size = batch_size
         self._device = device
-        self._model: "SentenceTransformer | None" = None
+        self._model: SentenceTransformer | None = None
 
     def _ensure_model_loaded(self) -> "SentenceTransformer":
         """Lazy-load the model on first use.

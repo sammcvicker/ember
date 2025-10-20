@@ -7,23 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-- Removed repetitive error message when running `ember init` with existing .ember/ directory
-
-### Changed
-- Simplified CLAUDE.md to be more concise (~50% reduction)
-- Moved detailed maintainer procedures to MAINTAINER_GUIDE.md
-- Reorganized documentation structure for better discoverability
-
 ### Added
+- **Functional config system**: `.ember/config.toml` settings are now loaded and respected (#25)
+  - `search.topk`: Default number of search results (overridable with `-k` flag)
+  - `index.line_window`: Lines per chunk for line-based chunking
+  - `index.line_stride`: Stride between chunks
+  - Graceful fallback to defaults if config is missing or invalid
+  - Added `ConfigProvider` Protocol in ports layer
+  - Added `TomlConfigProvider` adapter for config loading
+  - Added 8 new tests for config functionality (5 unit, 3 integration)
 - Created `develop` branch for ongoing development
 - Created GitHub milestones for release planning (0.2.0, Backlog)
 - Added MAINTAINER_GUIDE.md with comprehensive operational procedures
 - Added docs/ARCHITECTURE.md with detailed technical architecture guide
 - Created docs/archive/ for historical documentation
 
+### Changed
+- Simplified CLAUDE.md to be more concise (~50% reduction)
+- Moved detailed maintainer procedures to MAINTAINER_GUIDE.md
+- Reorganized documentation structure for better discoverability
+- Updated README to document functional config settings
+- Updated README to reflect 116 passing tests (up from 103)
+
+### Fixed
+- Removed repetitive error message when running `ember init` with existing .ember/ directory
+
 ### Removed
 - Moved historical v0.1.0 docs to docs/archive/ (AUDIT.md, UAT.md, progress.md)
+- Removed "config is informational only" warning from README
 
 ---
 
