@@ -414,6 +414,7 @@ class IndexingUseCase:
         chunks_updated = 0
         vectors_stored = 0
 
+        # First pass: store all chunks and track statistics
         for chunk in chunks:
             # Check if chunk already exists (by content hash)
             existing = self.chunk_repo.find_by_content_hash(chunk.content_hash)
@@ -427,14 +428,22 @@ class IndexingUseCase:
             else:
                 chunks_updated += 1
 
-            # Embed and store vector
-            embeddings = self.embedder.embed_texts([chunk.content])
-            self.vector_repo.add(
-                chunk_id=chunk.id,
-                embedding=embeddings[0],
-                model_fingerprint=self.embedder.fingerprint(),
-            )
-            vectors_stored += 1
+        # Second pass: batch embed all chunks at once for efficiency
+        if chunks:
+            # Collect all chunk contents
+            contents = [chunk.content for chunk in chunks]
+
+            # Single batch embedding call
+            embeddings = self.embedder.embed_texts(contents)
+
+            # Store vectors for each chunk
+            for chunk, embedding in zip(chunks, embeddings, strict=True):
+                self.vector_repo.add(
+                    chunk_id=chunk.id,
+                    embedding=embedding,
+                    model_fingerprint=self.embedder.fingerprint(),
+                )
+                vectors_stored += 1
 
         # Track file
         self.file_repo.track_file(

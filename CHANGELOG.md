@@ -31,6 +31,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Created docs/archive/ for historical documentation
 
 ### Changed
+- **Batch embedding optimization**: Indexing is now ~27-38% faster due to batched embeddings (#14)
+  - Refactored `_index_file()` to batch all chunks from a file in a single embedding call
+  - Reduces embedding overhead from N calls per file to 1 call per file
+  - Medium codebase (200 files): 55.34s → 40.09s (1.38x speedup)
+  - Benefits increase with files that have more chunks
+  - No architectural changes, same search quality
 - **Fast test suite**: Default test run now completes in ~1-2s (57x faster) (#20)
   - Marked slow tests (performance tests, auto-sync tests, embedding tests) with `@pytest.mark.slow`
   - Configured pytest to skip slow tests by default with `-m 'not slow'`
