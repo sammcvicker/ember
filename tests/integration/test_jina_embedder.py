@@ -121,7 +121,7 @@ class Stack:
 
         # Similar code should have similar embeddings (cosine similarity)
         def cosine_sim(a, b):
-            dot = sum(x * y for x, y in zip(a, b))
+            dot = sum(x * y for x, y in zip(a, b, strict=False))
             return dot  # Already normalized, so dot product = cosine
 
         similarity = cosine_sim(embeddings[0], embeddings[1])

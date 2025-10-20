@@ -4,7 +4,6 @@ Tests the complete hybrid search flow including BM25, vector search,
 RRF fusion, filtering, and result ranking.
 """
 
-import sqlite3
 from pathlib import Path
 
 import pytest
@@ -115,7 +114,7 @@ def search_usecase(db_path: Path, sample_chunks: list[Chunk]) -> SearchUseCase:
     contents = [chunk.content for chunk in sample_chunks]
     embeddings = embedder.embed_texts(contents)
 
-    for chunk, embedding in zip(sample_chunks, embeddings):
+    for chunk, embedding in zip(sample_chunks, embeddings, strict=False):
         vector_repo.add(chunk.id, embedding, embedder.fingerprint())
 
     # Create use case

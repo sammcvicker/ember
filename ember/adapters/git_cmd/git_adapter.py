@@ -2,9 +2,8 @@
 
 import subprocess
 from pathlib import Path
-from typing import Literal
 
-from ember.ports.vcs import FileStatus, VCS
+from ember.ports.vcs import FileStatus
 
 
 class GitAdapter:

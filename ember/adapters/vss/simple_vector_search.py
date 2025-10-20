@@ -65,7 +65,7 @@ class SimpleVectorSearch:
             Cosine similarity in range [-1, 1] (higher = more similar).
         """
         # Since vectors from Jina are L2 normalized, cosine similarity = dot product
-        dot_product = sum(a * b for a, b in zip(vec1, vec2))
+        dot_product = sum(a * b for a, b in zip(vec1, vec2, strict=False))
         return dot_product
 
     def add(self, chunk_id: str, vector: list[float]) -> None:

@@ -4,7 +4,6 @@ These tests measure real-world performance characteristics to ensure
 the system scales appropriately for typical codebases.
 """
 
-import shutil
 import subprocess
 import tempfile
 import time
@@ -13,8 +12,8 @@ from typing import NamedTuple
 
 import pytest
 
-from ember.adapters.fts.sqlite_fts import SQLiteFTS
 from ember.adapters.fs.local import LocalFileSystem
+from ember.adapters.fts.sqlite_fts import SQLiteFTS
 from ember.adapters.git_cmd.git_adapter import GitAdapter
 from ember.adapters.local_models.jina_embedder import JinaCodeEmbedder
 from ember.adapters.parsers.line_chunker import LineChunker
@@ -159,7 +158,7 @@ class PerformanceTestFixture:
                 "import json",
                 "import logging",
                 "",
-                f"logger = logging.getLogger(__name__)",
+                "logger = logging.getLogger(__name__)",
                 "",
             ]
 
@@ -196,7 +195,7 @@ class PerformanceTestFixture:
                 f"def main_{module_name}():",
                 '    """Entry point for this module."""',
                 "    config = {'debug': True, 'timeout': 30}",
-                f"    handler = Handler0(config)",
+                "    handler = Handler0(config)",
                 "    data = ['test', 'sample', 'data']",
                 "    results = handler.process(data)",
                 "    logger.info(f'Processed {{len(results)}} items')",
@@ -275,7 +274,7 @@ def test_initial_indexing_small(perf_fixture: PerformanceTestFixture):
     )
 
     print(f"\n{'='*60}")
-    print(f"Small Codebase Initial Indexing")
+    print("Small Codebase Initial Indexing")
     print(f"{'='*60}")
     print(f"Files indexed: {metrics.file_count}")
     print(f"Chunks created: {metrics.chunk_count}")
@@ -310,7 +309,7 @@ def test_initial_indexing_medium(perf_fixture: PerformanceTestFixture):
     )
 
     print(f"\n{'='*60}")
-    print(f"Medium Codebase Initial Indexing")
+    print("Medium Codebase Initial Indexing")
     print(f"{'='*60}")
     print(f"Files indexed: {metrics.file_count}")
     print(f"Chunks created: {metrics.chunk_count}")
@@ -353,7 +352,7 @@ def test_incremental_sync_performance(perf_fixture: PerformanceTestFixture):
     )
 
     print(f"\n{'='*60}")
-    print(f"Incremental Sync Performance")
+    print("Incremental Sync Performance")
     print(f"{'='*60}")
     print(f"Total files: {num_files}")
     print(f"Modified files: {num_modified}")
@@ -398,7 +397,7 @@ def test_search_performance(perf_fixture: PerformanceTestFixture):
     avg_duration = total_duration / len(queries)
 
     print(f"\n{'='*60}")
-    print(f"Search Performance")
+    print("Search Performance")
     print(f"{'='*60}")
     print(f"Queries tested: {len(queries)}")
     print(f"Average query time: {avg_duration*1000:.1f}ms")
@@ -443,7 +442,7 @@ def test_database_size_scaling(perf_fixture: PerformanceTestFixture):
               f"DB Size: {db_size_mb:6.2f}MB | Per File: {db_size_mb/num_files:.3f}MB")
 
     print(f"\n{'='*60}")
-    print(f"Database Size Scaling")
+    print("Database Size Scaling")
     print(f"{'='*60}")
     for r in results:
         print(f"{r['files']:3d} files -> {r['db_size_mb']:6.2f}MB ({r['mb_per_file']:.3f}MB/file)")

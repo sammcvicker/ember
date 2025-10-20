@@ -8,7 +8,7 @@ from pathlib import Path
 
 import blake3
 import click
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 
 
 class RichProgressCallback:
@@ -171,11 +171,16 @@ def sync(
     else:
         sync_mode = "worktree"
 
+    # Load config
+    from ember.adapters.config.toml_config_provider import TomlConfigProvider
+    config_provider = TomlConfigProvider()
+    config = config_provider.load(ember_dir)
+
     try:
         # Lazy imports - only load heavy dependencies when sync is actually called
-        from ember.adapters.local_models.jina_embedder import JinaCodeEmbedder
         from ember.adapters.fs.local import LocalFileSystem
         from ember.adapters.git_cmd.git_adapter import GitAdapter
+        from ember.adapters.local_models.jina_embedder import JinaCodeEmbedder
         from ember.adapters.parsers.line_chunker import LineChunker
         from ember.adapters.parsers.tree_sitter_chunker import TreeSitterChunker
         from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
@@ -196,9 +201,12 @@ def sync(
         file_repo = SQLiteFileRepository(db_path)
         meta_repo = SQLiteMetaRepository(db_path)
 
-        # Initialize chunking use case
+        # Initialize chunking use case with config settings
         tree_sitter = TreeSitterChunker()
-        line_chunker = LineChunker()
+        line_chunker = LineChunker(
+            window_size=config.index.line_window,
+            stride=config.index.line_stride,
+        )
         chunk_usecase = ChunkFileUseCase(tree_sitter, line_chunker)
 
         # Compute project ID (hash of repo root path)
@@ -282,8 +290,8 @@ def sync(
     "--topk",
     "-k",
     type=int,
-    default=20,
-    help="Number of results to return.",
+    default=None,
+    help="Number of results to return (default: from config).",
 )
 @click.option(
     "--json",
@@ -307,7 +315,7 @@ def sync(
 def find(
     ctx: click.Context,
     query: str,
-    topk: int,
+    topk: int | None,
     json_output: bool,
     path_filter: str | None,
     lang_filter: str | None,
@@ -326,10 +334,19 @@ def find(
         click.echo("Run 'ember init' first", err=True)
         sys.exit(1)
 
+    # Load config
+    from ember.adapters.config.toml_config_provider import TomlConfigProvider
+    config_provider = TomlConfigProvider()
+    config = config_provider.load(ember_dir)
+
+    # Use config default for topk if not specified
+    if topk is None:
+        topk = config.search.topk
+
     try:
         # Lazy imports - only load heavy dependencies when find is actually called
-        from ember.adapters.local_models.jina_embedder import JinaCodeEmbedder
         from ember.adapters.fts.sqlite_fts import SQLiteFTS
+        from ember.adapters.local_models.jina_embedder import JinaCodeEmbedder
         from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
         from ember.adapters.vss.simple_vector_search import SimpleVectorSearch
         from ember.core.retrieval.search_usecase import SearchUseCase
