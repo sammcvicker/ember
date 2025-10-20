@@ -43,6 +43,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Created docs/archive/ for historical documentation
 
 ### Changed
+- **Eliminated double encoding overhead in indexing**: Optimized file processing for faster indexing (#35)
+  - Use original file bytes for hashing and size calculation (no re-encoding)
+  - Compute embedding model fingerprint once per file instead of per-chunk
+  - Decode file content only once for chunking
+  - Expected 15-25% speedup for large files (>1MB), 5-10% for multi-chunk files
+  - Pure performance optimization - no behavior changes
 - **Auto-sync now uses progress bars**: Refactored to reuse sync command's progress display pattern (#28)
   - Eliminated code duplication between `sync` command and auto-sync
   - Auto-sync now shows the same professional progress bars as regular sync
