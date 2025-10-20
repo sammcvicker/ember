@@ -28,6 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `index.line_stride`: Stride between chunks
   - Graceful fallback to defaults if config is missing or invalid
   - Added `ConfigProvider` Protocol in ports layer
+- **Code quality review slash command**: Added `/audit` command for systematic code review (#22)
+  - Runs cyclomatic complexity analysis using radon
+  - Systematically reviews codebase using sub-agents
+  - Creates GitHub issues for tech debt and improvements (doesn't fix them)
+  - Includes code snippets and line references for context preservation
+  - Focuses on reflection about architectural decisions and trade-offs
   - Added `TomlConfigProvider` adapter for config loading
   - Added 8 new tests for config functionality (5 unit, 3 integration)
 - Created `develop` branch for ongoing development
