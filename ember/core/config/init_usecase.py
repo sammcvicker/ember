@@ -87,7 +87,7 @@ class InitUseCase:
         if ember_dir.exists():
             if not request.force:
                 raise FileExistsError(
-                    f"Directory {ember_dir} already exists. Use --force to reinitialize."
+                    f"Directory {ember_dir} already exists"
                 )
             was_reinitialized = True
 

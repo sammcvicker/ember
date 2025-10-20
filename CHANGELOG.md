@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Removed repetitive error message when running `ember init` with existing .ember/ directory
+
 ### Changed
 - Simplified CLAUDE.md to be more concise (~50% reduction)
 - Moved detailed maintainer procedures to MAINTAINER_GUIDE.md
