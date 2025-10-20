@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Model loading progress indicator**: Shows separate progress when loading embedding model during sync (#31)
+  - Prevents first file from appearing abnormally slow (model loads in ~2-3s)
+  - Shows "Loading embedding model..." progress bar before file indexing begins
+  - Only displayed when model needs to be loaded (not on subsequent syncs)
+  - Works with both full and incremental sync
+  - More accurate file indexing metrics (no longer skewed by model loading time)
 - **Auto-sync on search**: `ember find` now automatically syncs the index before searching (#26)
   - Detects stale index by comparing current git tree SHA vs last indexed SHA
   - Runs incremental sync automatically if changes detected (typically <2s overhead)

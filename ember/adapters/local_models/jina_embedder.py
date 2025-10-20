@@ -126,6 +126,17 @@ class JinaCodeEmbedder:
         config_hash = hashlib.sha256(config_str.encode()).hexdigest()[:16]
         return f"{self.MODEL_NAME}:v2:{config_hash}"
 
+    def ensure_loaded(self) -> None:
+        """Ensure the model is loaded into memory.
+
+        This method can be called proactively to load the model before
+        the first embedding call, making the first embedding faster.
+        If the model is already loaded, this is a no-op.
+
+        Useful for showing explicit loading progress to users.
+        """
+        self._ensure_model_loaded()
+
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
         """Embed a batch of texts into vectors.
 

@@ -177,6 +177,15 @@ class IndexingUseCase:
                     tree_sha=tree_sha,
                 )
 
+            # Eagerly load embedding model before indexing to avoid misleading
+            # progress on first file (model loading can take 2-3 seconds)
+            if files_to_index and hasattr(self.embedder, "ensure_loaded"):
+                if progress:
+                    progress.on_start(1, "Loading embedding model")
+                self.embedder.ensure_loaded()  # type: ignore[attr-defined]
+                if progress:
+                    progress.on_complete()
+
             # Index each file
             files_indexed = 0
             chunks_created = 0
