@@ -311,6 +311,12 @@ def sync(
     type=str,
     help="Filter results by language (e.g., 'py', 'ts').",
 )
+@click.option(
+    "--no-sync",
+    "no_sync",
+    is_flag=True,
+    help="Skip auto-sync check before searching (faster but may return stale results).",
+)
 @click.pass_context
 def find(
     ctx: click.Context,
@@ -319,6 +325,7 @@ def find(
     json_output: bool,
     path_filter: str | None,
     lang_filter: str | None,
+    no_sync: bool,
 ) -> None:
     """Search for code matching the query.
 
@@ -342,6 +349,99 @@ def find(
     # Use config default for topk if not specified
     if topk is None:
         topk = config.search.topk
+
+    # Auto-sync: Check if index is stale and sync if needed (unless --no-sync)
+    if not no_sync:
+        from ember.adapters.git_cmd.git_adapter import GitAdapter
+        from ember.adapters.sqlite.meta_repository import SQLiteMetaRepository
+
+        try:
+            vcs = GitAdapter(repo_root)
+            meta_repo = SQLiteMetaRepository(db_path)
+
+            # Get current worktree tree SHA
+            current_tree_sha = vcs.get_worktree_tree_sha()
+
+            # Get last indexed tree SHA
+            last_tree_sha = meta_repo.get("last_tree_sha")
+
+            # If tree SHAs differ, index is stale - auto-sync
+            if last_tree_sha != current_tree_sha:
+                if not json_output:
+                    click.echo("Detected changes, syncing index...", err=True)
+
+                # Import dependencies for sync
+                from ember.adapters.fs.local import LocalFileSystem
+                from ember.adapters.local_models.jina_embedder import JinaCodeEmbedder
+                from ember.adapters.parsers.line_chunker import LineChunker
+                from ember.adapters.parsers.tree_sitter_chunker import TreeSitterChunker
+                from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
+                from ember.adapters.sqlite.file_repository import SQLiteFileRepository
+                from ember.adapters.sqlite.vector_repository import SQLiteVectorRepository
+                from ember.core.chunking.chunk_usecase import ChunkFileUseCase
+                from ember.core.indexing.index_usecase import IndexingUseCase, IndexRequest
+
+                # Initialize dependencies
+                fs = LocalFileSystem()
+                embedder = JinaCodeEmbedder()
+
+                # Initialize repositories
+                chunk_repo = SQLiteChunkRepository(db_path)
+                vector_repo = SQLiteVectorRepository(db_path)
+                file_repo = SQLiteFileRepository(db_path)
+
+                # Initialize chunking use case with config settings
+                tree_sitter = TreeSitterChunker()
+                line_chunker = LineChunker(
+                    window_size=config.index.line_window,
+                    stride=config.index.line_stride,
+                )
+                chunk_usecase = ChunkFileUseCase(tree_sitter, line_chunker)
+
+                # Compute project ID
+                import blake3
+                project_id = blake3.blake3(str(repo_root).encode("utf-8")).hexdigest()
+
+                # Create indexing use case
+                indexing_usecase = IndexingUseCase(
+                    vcs=vcs,
+                    fs=fs,
+                    chunk_usecase=chunk_usecase,
+                    embedder=embedder,
+                    chunk_repo=chunk_repo,
+                    vector_repo=vector_repo,
+                    file_repo=file_repo,
+                    meta_repo=meta_repo,
+                    project_id=project_id,
+                )
+
+                # Execute incremental sync (quietly for JSON output)
+                request = IndexRequest(
+                    repo_root=repo_root,
+                    sync_mode="worktree",
+                    path_filters=[],
+                    force_reindex=False,
+                )
+
+                import time
+                start_time = time.time()
+                response = indexing_usecase.execute(request)
+                elapsed_time = time.time() - start_time
+
+                # Show sync completion (unless JSON output)
+                if not json_output and response.success:
+                    if response.files_indexed > 0:
+                        click.echo(
+                            f"✓ Synced {response.files_indexed} file(s) in {elapsed_time:.1f}s",
+                            err=True,
+                        )
+                    else:
+                        click.echo("✓ Index up to date", err=True)
+
+        except Exception as e:
+            # If staleness check fails, continue with search anyway
+            if ctx.obj.get("verbose", False):
+                click.echo(f"Warning: Could not check index staleness: {e}", err=True)
 
     try:
         # Lazy imports - only load heavy dependencies when find is actually called
