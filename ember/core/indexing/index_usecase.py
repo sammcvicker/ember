@@ -381,12 +381,6 @@ class IndexingUseCase:
         # Get relative path
         rel_path = file_path.relative_to(repo_root)
 
-        # Clean up ALL old chunks for this file from any previous tree SHA
-        # This prevents accumulation of duplicate chunks across multiple syncs
-        # Since we're re-indexing this file now, we want to completely replace
-        # all old chunks with the new chunks
-        self.chunk_repo.delete_all_for_path(path=rel_path)
-
         # Read file content (returns bytes, decode to string)
         content_bytes = self.fs.read(file_path)
         content = content_bytes.decode("utf-8", errors="replace")
@@ -403,8 +397,15 @@ class IndexingUseCase:
         chunk_response = self.chunk_usecase.execute(chunk_request)
 
         if not chunk_response.success:
-            # Skip files that fail to chunk
+            # Skip files that fail to chunk - preserve existing chunks to avoid data loss
             return {"chunks_created": 0, "chunks_updated": 0, "vectors_stored": 0}
+
+        # Clean up ALL old chunks for this file from any previous tree SHA
+        # This prevents accumulation of duplicate chunks across multiple syncs
+        # Since we're re-indexing this file now, we want to completely replace
+        # all old chunks with the new chunks
+        # NOTE: This is done AFTER validation to prevent data loss if chunking fails
+        self.chunk_repo.delete_all_for_path(path=rel_path)
 
         # Compute file hash
         file_hash = blake3.blake3(content.encode("utf-8")).hexdigest()

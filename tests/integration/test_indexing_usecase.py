@@ -367,3 +367,66 @@ def test_incremental_sync_deleted_file(
     utils_chunks = cursor.fetchone()[0]
     assert utils_chunks == 0
     conn.close()
+
+
+@pytest.mark.slow
+def test_chunking_failure_preserves_existing_chunks(
+    indexing_usecase: IndexingUseCase, git_repo: Path, db_path: Path
+) -> None:
+    """Test that when chunking fails, existing chunks are preserved (no data loss).
+
+    This is a regression test for issue #33: if chunking fails during re-indexing,
+    the old chunks should be preserved rather than deleted.
+    """
+    # Initial sync - index math.py successfully
+    request1 = IndexRequest(repo_root=git_repo, force_reindex=True)
+    response1 = indexing_usecase.execute(request1)
+    assert response1.success
+
+    # Get initial math.py chunks
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM chunks WHERE path = 'math.py'")
+    initial_math_chunks = cursor.fetchone()[0]
+    assert initial_math_chunks > 0, "Should have chunks for math.py"
+
+    # Get the chunk IDs to verify they're the same later
+    cursor.execute("SELECT id FROM chunks WHERE path = 'math.py' ORDER BY id")
+    initial_chunk_ids = [row[0] for row in cursor.fetchall()]
+
+    # Mock the chunk_usecase to fail
+    from unittest.mock import Mock
+    from ember.core.chunking.chunk_usecase import ChunkFileResponse
+
+    original_execute = indexing_usecase.chunk_usecase.execute
+
+    def mock_chunk_execute(request):
+        # Fail only for math.py, succeed for others
+        if "math.py" in str(request.path):
+            return ChunkFileResponse(chunks=[], strategy="tree-sitter", success=False, error="Simulated chunking failure")
+        return original_execute(request)
+
+    indexing_usecase.chunk_usecase.execute = mock_chunk_execute
+
+    # Try to re-index (force reindex to ensure it tries to process math.py)
+    request2 = IndexRequest(repo_root=git_repo, force_reindex=True)
+    response2 = indexing_usecase.execute(request2)
+
+    # Should still succeed overall (just skips the failed file)
+    assert response2.success
+
+    # CRITICAL: Verify math.py chunks are STILL THERE (not deleted)
+    cursor.execute("SELECT COUNT(*) FROM chunks WHERE path = 'math.py'")
+    final_math_chunks = cursor.fetchone()[0]
+    assert final_math_chunks == initial_math_chunks, \
+        f"Chunks should be preserved on failure, but went from {initial_math_chunks} to {final_math_chunks}"
+
+    # Verify the chunk IDs are the same (i.e., chunks weren't deleted and recreated)
+    cursor.execute("SELECT id FROM chunks WHERE path = 'math.py' ORDER BY id")
+    final_chunk_ids = [row[0] for row in cursor.fetchall()]
+    assert final_chunk_ids == initial_chunk_ids, "Chunk IDs should be unchanged"
+
+    conn.close()
+
+    # Restore original method
+    indexing_usecase.chunk_usecase.execute = original_execute
