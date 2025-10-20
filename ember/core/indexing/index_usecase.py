@@ -7,6 +7,7 @@ This use case orchestrates the complete indexing pipeline:
 4. Store chunks and vectors
 """
 
+import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -26,6 +27,8 @@ from ember.ports.repositories import (
     VectorRepository,
 )
 from ember.ports.vcs import VCS
+
+logger = logging.getLogger(__name__)
 
 # Code file extensions to index (whitelist approach)
 # Only source code files are indexed - data, config, docs, and binary files are skipped
@@ -157,9 +160,12 @@ class IndexingUseCase:
         Returns:
             IndexResponse with statistics about what was indexed.
         """
+        logger.info(f"Starting indexing for {request.repo_root} (mode: {request.sync_mode})")
+
         try:
             # Get current tree SHA based on sync mode
             tree_sha = self._get_tree_sha(request.repo_root, request.sync_mode)
+            logger.debug(f"Tree SHA for indexing: {tree_sha}")
 
             # Get files to index (returns tuple of files and is_incremental flag)
             files_to_index, is_incremental = self._get_files_to_index(
@@ -169,6 +175,9 @@ class IndexingUseCase:
                 request.force_reindex,
             )
 
+            sync_type = "incremental" if is_incremental else "full"
+            logger.info(f"Indexing {len(files_to_index)} file(s) ({sync_type} sync)")
+
             # Handle deletions for incremental sync
             chunks_deleted = 0
             if is_incremental:
@@ -176,10 +185,13 @@ class IndexingUseCase:
                     repo_root=request.repo_root,
                     tree_sha=tree_sha,
                 )
+                if chunks_deleted > 0:
+                    logger.info(f"Deleted {chunks_deleted} chunk(s) from removed files")
 
             # Eagerly load embedding model before indexing to avoid misleading
             # progress on first file (model loading can take 2-3 seconds)
             if files_to_index and hasattr(self.embedder, "ensure_loaded"):
+                logger.debug("Loading embedding model")
                 if progress:
                     progress.on_start(1, "Loading embedding model")
                 self.embedder.ensure_loaded()  # type: ignore[attr-defined]
@@ -194,7 +206,6 @@ class IndexingUseCase:
 
             # Report progress start
             if progress and files_to_index:
-                sync_type = "incremental" if is_incremental else "full"
                 progress.on_start(len(files_to_index), f"Indexing files ({sync_type})")
 
             for idx, file_path in enumerate(files_to_index, start=1):
@@ -224,6 +235,12 @@ class IndexingUseCase:
             self.meta_repo.set("last_sync_mode", request.sync_mode)
             self.meta_repo.set("model_fingerprint", self.embedder.fingerprint())
 
+            logger.info(
+                f"Indexing complete: {files_indexed} files, "
+                f"{chunks_created} chunks created, {chunks_updated} updated, "
+                f"{chunks_deleted} deleted, {vectors_stored} vectors stored"
+            )
+
             return IndexResponse(
                 files_indexed=files_indexed,
                 chunks_created=chunks_created,
@@ -236,7 +253,14 @@ class IndexingUseCase:
                 error=None,
             )
 
-        except Exception as e:
+        except (KeyboardInterrupt, SystemExit):
+            # Always let these propagate - user requested termination
+            logger.info("Indexing interrupted by user")
+            raise
+
+        except FileNotFoundError as e:
+            # File was deleted between detection and indexing
+            logger.warning(f"File not found during indexing: {e}")
             return IndexResponse(
                 files_indexed=0,
                 chunks_created=0,
@@ -246,7 +270,82 @@ class IndexingUseCase:
                 tree_sha="",
                 is_incremental=False,
                 success=False,
-                error=str(e),
+                error=f"File not found: {e}. The file may have been deleted during indexing.",
+            )
+
+        except PermissionError as e:
+            # Permission denied reading file or accessing repository
+            logger.error(f"Permission denied during indexing: {e}")
+            return IndexResponse(
+                files_indexed=0,
+                chunks_created=0,
+                chunks_updated=0,
+                chunks_deleted=0,
+                vectors_stored=0,
+                tree_sha="",
+                is_incremental=False,
+                success=False,
+                error=f"Permission denied: {e}. Check file and directory permissions.",
+            )
+
+        except OSError as e:
+            # I/O errors (disk full, network filesystem issues, etc.)
+            logger.error(f"I/O error during indexing: {e}")
+            return IndexResponse(
+                files_indexed=0,
+                chunks_created=0,
+                chunks_updated=0,
+                chunks_deleted=0,
+                vectors_stored=0,
+                tree_sha="",
+                is_incremental=False,
+                success=False,
+                error=f"I/O error: {e}. Check disk space and filesystem access.",
+            )
+
+        except ValueError as e:
+            # Invalid configuration or parameters
+            logger.error(f"Invalid configuration during indexing: {e}")
+            return IndexResponse(
+                files_indexed=0,
+                chunks_created=0,
+                chunks_updated=0,
+                chunks_deleted=0,
+                vectors_stored=0,
+                tree_sha="",
+                is_incremental=False,
+                success=False,
+                error=f"Configuration error: {e}",
+            )
+
+        except RuntimeError as e:
+            # Git errors, repository state errors, etc.
+            logger.error(f"Runtime error during indexing: {e}")
+            return IndexResponse(
+                files_indexed=0,
+                chunks_created=0,
+                chunks_updated=0,
+                chunks_deleted=0,
+                vectors_stored=0,
+                tree_sha="",
+                is_incremental=False,
+                success=False,
+                error=f"Indexing error: {e}",
+            )
+
+        except Exception:
+            # Unexpected errors - log full traceback for debugging
+            logger.exception("Unexpected error during indexing")
+            return IndexResponse(
+                files_indexed=0,
+                chunks_created=0,
+                chunks_updated=0,
+                chunks_deleted=0,
+                vectors_stored=0,
+                tree_sha="",
+                is_incremental=False,
+                success=False,
+                error="Internal error during indexing. Check logs for details.",
             )
 
     def _get_tree_sha(self, repo_root: Path, sync_mode: str) -> str:

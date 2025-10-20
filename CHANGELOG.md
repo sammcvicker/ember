@@ -69,6 +69,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated README with clarified test running instructions
 
 ### Fixed
+- **IndexingUseCase error handling improvements**: Replaced blanket exception handling with structured error handling (#34)
+  - Added specific exception handlers for common error types (FileNotFoundError, PermissionError, OSError, ValueError, RuntimeError)
+  - KeyboardInterrupt and SystemExit now propagate correctly (no longer caught and hidden)
+  - Added comprehensive logging throughout execute() method (info, debug, warning, error levels)
+  - Error messages are now actionable - tell users what to fix instead of generic "something failed"
+  - Unexpected errors use logger.exception() to capture full traceback for debugging
+  - All 96 tests passing with no regressions
 - **GitAdapter robustness improvements**: Fixed multiple error handling and edge case issues (#37)
   - Added helper method `_format_git_error()` to provide contextual error messages with exit codes
   - Fixed empty stderr issue - error messages now include git exit code and context instead of empty strings
