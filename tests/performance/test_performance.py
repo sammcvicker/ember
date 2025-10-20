@@ -253,6 +253,7 @@ def perf_fixture():
         yield fixture
 
 
+@pytest.mark.slow
 def test_initial_indexing_small(perf_fixture: PerformanceTestFixture):
     """Test initial indexing performance with a small codebase (~50 files)."""
     # Create a small codebase
@@ -290,6 +291,7 @@ def test_initial_indexing_small(perf_fixture: PerformanceTestFixture):
     assert duration < 120  # Should complete in under 2 minutes for 50 files
 
 
+@pytest.mark.slow
 def test_initial_indexing_medium(perf_fixture: PerformanceTestFixture):
     """Test initial indexing performance with a medium codebase (~200 files)."""
     num_files = 200
@@ -324,6 +326,7 @@ def test_initial_indexing_medium(perf_fixture: PerformanceTestFixture):
     assert duration < 600  # Should complete in under 10 minutes for 200 files
 
 
+@pytest.mark.slow
 def test_incremental_sync_performance(perf_fixture: PerformanceTestFixture):
     """Test incremental sync performance after modifying a subset of files."""
     # Create initial codebase
@@ -367,6 +370,7 @@ def test_incremental_sync_performance(perf_fixture: PerformanceTestFixture):
     assert duration < 60  # Should be fast for small number of changes
 
 
+@pytest.mark.slow
 def test_search_performance(perf_fixture: PerformanceTestFixture):
     """Test search query performance."""
     # Create and index a codebase
@@ -408,6 +412,7 @@ def test_search_performance(perf_fixture: PerformanceTestFixture):
     assert avg_duration < 1.0  # Average query under 1 second
 
 
+@pytest.mark.slow
 def test_database_size_scaling(perf_fixture: PerformanceTestFixture):
     """Test how database size scales with codebase size."""
     sizes_to_test = [10, 50, 100]

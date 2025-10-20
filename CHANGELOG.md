@@ -31,11 +31,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Created docs/archive/ for historical documentation
 
 ### Changed
+- **Fast test suite**: Default test run now completes in ~1-2s (57x faster) (#20)
+  - Marked slow tests (performance tests, auto-sync tests, embedding tests) with `@pytest.mark.slow`
+  - Configured pytest to skip slow tests by default with `-m 'not slow'`
+  - Fast tests: 91 tests in ~1.5s (unit + fast integration tests)
+  - Slow tests: 29 tests (can be run explicitly with `uv run pytest -m slow`)
+  - Dramatically improves developer iteration speed
 - Simplified CLAUDE.md to be more concise (~50% reduction)
 - Moved detailed maintainer procedures to MAINTAINER_GUIDE.md
 - Reorganized documentation structure for better discoverability
 - Updated README to document functional config settings
 - Updated README to reflect 120 passing tests (up from 103)
+- Updated README with clarified test running instructions
 
 ### Fixed
 - Removed repetitive error message when running `ember init` with existing .ember/ directory

@@ -399,20 +399,20 @@ uv run pyright
 ### Running Tests
 
 ```bash
-# All tests
+# Fast tests only (default - skips slow tests, runs in ~1-2s)
 uv run pytest
+
+# Run slow tests (includes performance and integration tests with embeddings)
+uv run pytest -m slow
+
+# All tests (fast + slow, takes several minutes)
+uv run pytest -m ""
 
 # Unit tests only
 uv run pytest tests/unit/
 
 # Integration tests
 uv run pytest tests/integration/
-
-# Performance tests (slow)
-uv run pytest tests/performance/
-
-# Skip slow tests
-uv run pytest -m "not slow"
 
 # With coverage
 uv run pytest --cov=ember --cov-report=term-missing
