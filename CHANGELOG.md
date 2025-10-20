@@ -69,6 +69,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated README with clarified test running instructions
 
 ### Fixed
+- **Data loss risk in indexing**: Fixed potential chunk deletion when re-indexing fails (#33)
+  - Moved chunk deletion to occur AFTER validating chunking succeeds
+  - When chunking fails, existing chunks are now preserved instead of deleted
+  - Prevents silent data loss when files fail to parse or chunk
+  - Added regression test to verify existing chunks preserved on chunking failure
 - **Model loading now uses local cache**: Fixed HuggingFace connection timeouts
   - Added `local_files_only=True` to force using cached model files
   - Prevents network calls to HuggingFace when model is already cached
