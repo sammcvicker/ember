@@ -413,7 +413,7 @@ class IndexingUseCase:
         chunk_response = self.chunk_usecase.execute(chunk_request)
 
         if not chunk_response.success:
-            # Skip files that fail to chunk
+            # Skip files that fail to chunk - preserve existing chunks to avoid data loss
             return {"chunks_created": 0, "chunks_updated": 0, "vectors_stored": 0}
 
         # Create Chunk entities from ChunkData
