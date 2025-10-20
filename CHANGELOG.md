@@ -69,6 +69,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated README with clarified test running instructions
 
 ### Fixed
+- **GitAdapter robustness improvements**: Fixed multiple error handling and edge case issues (#37)
+  - Added helper method `_format_git_error()` to provide contextual error messages with exit codes
+  - Fixed empty stderr issue - error messages now include git exit code and context instead of empty strings
+  - Fixed index modification risk in `get_worktree_tree_sha()` - now uses try/finally to ensure index is always restored
+  - Added empty repository detection - provides clear error message when repository has no commits
+  - Added logging for unknown git status codes (C, T, X) - no longer silently skipped
+  - Added UTF-8 decode error handling with graceful fallback for non-UTF-8 filenames
+  - Extracted magic constant `EMPTY_TREE_SHA` and documented it
+  - Added comprehensive test coverage for edge cases (empty repos, index restoration, error messages)
 - **Data loss risk in indexing**: Fixed potential chunk deletion when re-indexing fails (#33)
   - Moved chunk deletion to occur AFTER validating chunking succeeds
   - When chunking fails, existing chunks are now preserved instead of deleted

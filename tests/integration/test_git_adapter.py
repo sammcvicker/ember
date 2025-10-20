@@ -238,3 +238,144 @@ def test_diff_files_returns_empty_for_identical_trees(git_adapter: GitAdapter):
     tree = git_adapter.get_tree_sha("HEAD")
     changes = git_adapter.diff_files(tree, tree)
     assert changes == []
+
+
+def test_empty_repository_detection(tmp_path: Path):
+    """Test that empty repository (no commits) is detected with clear error message."""
+    repo = tmp_path / "empty_repo"
+    repo.mkdir()
+
+    # Initialize git repo but don't make any commits
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.name", "Test User"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+
+    adapter = GitAdapter(repo)
+
+    # Should raise clear error about no commits
+    with pytest.raises(RuntimeError, match="has no commits yet"):
+        adapter.get_tree_sha("HEAD")
+
+
+def test_worktree_tree_sha_restores_index_on_error(git_adapter: GitAdapter, git_repo: Path):
+    """Test that index is restored even if error occurs during worktree tree computation."""
+    # Stage a file
+    (git_repo / "staged.txt").write_text("Staged content\n")
+    subprocess.run(["git", "add", "staged.txt"], cwd=git_repo, check=True, capture_output=True)
+
+    # Get current index state
+    result = subprocess.run(
+        ["git", "diff", "--cached", "--name-only"],
+        cwd=git_repo,
+        check=True,
+        capture_output=True,
+    )
+    staged_before = result.stdout.decode().strip()
+    assert "staged.txt" in staged_before
+
+    # Call get_worktree_tree_sha (should succeed)
+    git_adapter.get_worktree_tree_sha()
+
+    # Verify index was restored (staged.txt should still be staged)
+    result = subprocess.run(
+        ["git", "diff", "--cached", "--name-only"],
+        cwd=git_repo,
+        check=True,
+        capture_output=True,
+    )
+    staged_after = result.stdout.decode().strip()
+    assert staged_after == staged_before, "Index should be restored after get_worktree_tree_sha"
+
+
+def test_error_messages_include_exit_code(tmp_path: Path):
+    """Test that error messages include git exit code and context."""
+    repo = tmp_path / "test_repo"
+    repo.mkdir()
+
+    # Initialize git repo
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.name", "Test User"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+
+    # Create a commit
+    (repo / "file.txt").write_text("test\n")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "Initial"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+
+    adapter = GitAdapter(repo)
+
+    # Try to get tree for invalid ref
+    with pytest.raises(RuntimeError) as exc_info:
+        adapter.get_tree_sha("invalid-ref-12345")
+
+    error_msg = str(exc_info.value)
+    # Should include exit code
+    assert "exit code" in error_msg.lower()
+
+
+def test_list_tracked_files(git_adapter: GitAdapter):
+    """Test listing all tracked files in repository."""
+    files = git_adapter.list_tracked_files()
+
+    # Should include the files from fixture
+    file_strs = [str(f) for f in files]
+    assert "file1.txt" in file_strs
+    assert "file2.py" in file_strs
+
+
+def test_list_tracked_files_empty_repo_with_commit(tmp_path: Path):
+    """Test listing tracked files in repo with no tracked files."""
+    repo = tmp_path / "test_repo"
+    repo.mkdir()
+
+    # Initialize and create empty commit
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.name", "Test User"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "commit", "--allow-empty", "-m", "Empty commit"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+
+    adapter = GitAdapter(repo)
+    files = adapter.list_tracked_files()
+
+    # Should return empty list for repo with no files
+    assert files == []
