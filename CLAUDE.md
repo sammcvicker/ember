@@ -16,7 +16,7 @@
 - 103 automated tests passing ✅
 - Clean architecture with ports/adapters ✅
 
-**Current Focus:** Setting up maintainer infrastructure and planning v0.2.0
+**Current Focus:** Implementing v0.2.0 features (see `docs/SCOPE_v0.2.0.md`)
 
 ---
 
@@ -24,14 +24,13 @@
 
 See [GitHub milestone](https://github.com/sammcvicker/ember/milestone/1) for all issues.
 
-**Priority Issues:**
-1. **#19** - Fix repetitive error messages (bug)
-2. **#17** - Organize and update documentation
-3. **#18** - Formalize gh issue workflow (this PR!)
-4. **#16** - Roadmap and scope for 0.2.0 (planning)
-5. **#14** - Batch embedding optimization (2-4x speedup)
+**Scope:** See `docs/SCOPE_v0.2.0.md` for full roadmap
 
-**To be determined:** Additional features for 0.2.0 (user input needed)
+**Priority Issues:**
+1. **#25** - Implement functional config system (enhancement)
+2. **#26** - Auto-sync on search for zero-friction workflow (enhancement)
+3. **#14** - Batch embedding optimization (2-6x speedup)
+4. **#20** - Fast test suite (<10s target)
 
 ---
 
@@ -174,5 +173,5 @@ See `docs/decisions/` for full ADRs:
 
 ---
 
-**Last Updated:** 2025-10-19 (Infrastructure setup for v0.2.0)
+**Last Updated:** 2025-10-19 (v0.2.0 scope finalized, ready for implementation)
 **Format Version:** 2.0 (Simplified)
