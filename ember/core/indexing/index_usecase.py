@@ -381,9 +381,19 @@ class IndexingUseCase:
         # Get relative path
         rel_path = file_path.relative_to(repo_root)
 
-        # Read file content (returns bytes, decode to string)
+        # Read file content (returns bytes)
         content_bytes = self.fs.read(file_path)
-        content = content_bytes.decode("utf-8", errors="replace")
+
+        # Compute file hash and size from original bytes (avoids re-encoding)
+        file_hash = blake3.blake3(content_bytes).hexdigest()
+        file_size = len(content_bytes)
+
+        # Decode to string for chunking (decode once)
+        try:
+            content = content_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            # Fall back to replace mode if strict UTF-8 fails
+            content = content_bytes.decode("utf-8", errors="replace")
 
         # Detect language from file extension
         lang = self._detect_language(file_path)
@@ -406,9 +416,6 @@ class IndexingUseCase:
         # all old chunks with the new chunks
         # NOTE: This is done AFTER validation to prevent data loss if chunking fails
         self.chunk_repo.delete_all_for_path(path=rel_path)
-
-        # Compute file hash
-        file_hash = blake3.blake3(content.encode("utf-8")).hexdigest()
 
         # Create Chunk entities from ChunkData
         chunks = self._create_chunks(
@@ -446,20 +453,23 @@ class IndexingUseCase:
             # Single batch embedding call
             embeddings = self.embedder.embed_texts(contents)
 
+            # Compute fingerprint once (avoids repeated function calls)
+            model_fingerprint = self.embedder.fingerprint()
+
             # Store vectors for each chunk
             for chunk, embedding in zip(chunks, embeddings, strict=True):
                 self.vector_repo.add(
                     chunk_id=chunk.id,
                     embedding=embedding,
-                    model_fingerprint=self.embedder.fingerprint(),
+                    model_fingerprint=model_fingerprint,
                 )
                 vectors_stored += 1
 
-        # Track file
+        # Track file (use pre-computed file_size, avoids re-encoding)
         self.file_repo.track_file(
             path=file_path,
             file_hash=file_hash,
-            size=len(content.encode("utf-8")),
+            size=file_size,
             mtime=time.time(),
         )
 
