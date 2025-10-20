@@ -51,6 +51,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated README with clarified test running instructions
 
 ### Fixed
+- **Model loading now uses local cache**: Fixed HuggingFace connection timeouts
+  - Added `local_files_only=True` to force using cached model files
+  - Prevents network calls to HuggingFace when model is already cached
+  - Falls back to downloading if model not cached locally
+  - Eliminates "ReadTimeoutError" when HuggingFace is slow/unreachable
 - Removed repetitive error message when running `ember init` with existing .ember/ directory
 
 ### Removed

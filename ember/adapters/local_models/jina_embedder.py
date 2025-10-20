@@ -71,11 +71,24 @@ class JinaCodeEmbedder:
                         message=".*optimum is not installed.*",
                         category=UserWarning,
                     )
-                    self._model = SentenceTransformer(
-                        self.MODEL_NAME,
-                        trust_remote_code=True,
-                        device=self._device,
-                    )
+
+                    # Try to load from local cache first to avoid network calls
+                    # This prevents timeouts when HuggingFace is slow/unreachable
+                    try:
+                        self._model = SentenceTransformer(
+                            self.MODEL_NAME,
+                            trust_remote_code=True,
+                            device=self._device,
+                            local_files_only=True,  # Use cached model, no network
+                        )
+                    except (OSError, ValueError):
+                        # Model not cached yet, download from HuggingFace
+                        self._model = SentenceTransformer(
+                            self.MODEL_NAME,
+                            trust_remote_code=True,
+                            device=self._device,
+                        )
+
                 self._model.max_seq_length = self._max_seq_length
             except Exception as e:
                 raise RuntimeError(
