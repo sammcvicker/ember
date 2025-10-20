@@ -49,6 +49,68 @@ class RichProgressCallback:
             self.progress.remove_task(self.task_id)
 
 
+def _create_indexing_usecase(repo_root: Path, db_path: Path, config):
+    """Create IndexingUseCase with all dependencies.
+
+    Helper function to avoid code duplication between sync command and auto-sync.
+
+    Args:
+        repo_root: Repository root path.
+        db_path: Path to SQLite database.
+        config: Configuration object with index settings.
+
+    Returns:
+        Initialized IndexingUseCase instance.
+    """
+    # Lazy imports - only load heavy dependencies when needed
+    from ember.adapters.fs.local import LocalFileSystem
+    from ember.adapters.git_cmd.git_adapter import GitAdapter
+    from ember.adapters.local_models.jina_embedder import JinaCodeEmbedder
+    from ember.adapters.parsers.line_chunker import LineChunker
+    from ember.adapters.parsers.tree_sitter_chunker import TreeSitterChunker
+    from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
+    from ember.adapters.sqlite.file_repository import SQLiteFileRepository
+    from ember.adapters.sqlite.meta_repository import SQLiteMetaRepository
+    from ember.adapters.sqlite.vector_repository import SQLiteVectorRepository
+    from ember.core.chunking.chunk_usecase import ChunkFileUseCase
+    from ember.core.indexing.index_usecase import IndexingUseCase
+
+    # Initialize dependencies
+    vcs = GitAdapter(repo_root)
+    fs = LocalFileSystem()
+    embedder = JinaCodeEmbedder()
+
+    # Initialize repositories
+    chunk_repo = SQLiteChunkRepository(db_path)
+    vector_repo = SQLiteVectorRepository(db_path)
+    file_repo = SQLiteFileRepository(db_path)
+    meta_repo = SQLiteMetaRepository(db_path)
+
+    # Initialize chunking use case with config settings
+    tree_sitter = TreeSitterChunker()
+    line_chunker = LineChunker(
+        window_size=config.index.line_window,
+        stride=config.index.line_stride,
+    )
+    chunk_usecase = ChunkFileUseCase(tree_sitter, line_chunker)
+
+    # Compute project ID (hash of repo root path)
+    project_id = blake3.blake3(str(repo_root).encode("utf-8")).hexdigest()
+
+    # Create and return indexing use case
+    return IndexingUseCase(
+        vcs=vcs,
+        fs=fs,
+        chunk_usecase=chunk_usecase,
+        embedder=embedder,
+        chunk_repo=chunk_repo,
+        vector_repo=vector_repo,
+        file_repo=file_repo,
+        meta_repo=meta_repo,
+        project_id=project_id,
+    )
+
+
 @click.group()
 @click.version_option(version="0.1.0", prog_name="ember")
 @click.option(
@@ -177,53 +239,11 @@ def sync(
     config = config_provider.load(ember_dir)
 
     try:
-        # Lazy imports - only load heavy dependencies when sync is actually called
-        from ember.adapters.fs.local import LocalFileSystem
-        from ember.adapters.git_cmd.git_adapter import GitAdapter
-        from ember.adapters.local_models.jina_embedder import JinaCodeEmbedder
-        from ember.adapters.parsers.line_chunker import LineChunker
-        from ember.adapters.parsers.tree_sitter_chunker import TreeSitterChunker
-        from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
-        from ember.adapters.sqlite.file_repository import SQLiteFileRepository
-        from ember.adapters.sqlite.meta_repository import SQLiteMetaRepository
-        from ember.adapters.sqlite.vector_repository import SQLiteVectorRepository
-        from ember.core.chunking.chunk_usecase import ChunkFileUseCase
-        from ember.core.indexing.index_usecase import IndexingUseCase, IndexRequest
+        # Import only what's needed for this command
+        from ember.core.indexing.index_usecase import IndexRequest
 
-        # Initialize dependencies
-        vcs = GitAdapter(repo_root)
-        fs = LocalFileSystem()
-        embedder = JinaCodeEmbedder()
-
-        # Initialize repositories
-        chunk_repo = SQLiteChunkRepository(db_path)
-        vector_repo = SQLiteVectorRepository(db_path)
-        file_repo = SQLiteFileRepository(db_path)
-        meta_repo = SQLiteMetaRepository(db_path)
-
-        # Initialize chunking use case with config settings
-        tree_sitter = TreeSitterChunker()
-        line_chunker = LineChunker(
-            window_size=config.index.line_window,
-            stride=config.index.line_stride,
-        )
-        chunk_usecase = ChunkFileUseCase(tree_sitter, line_chunker)
-
-        # Compute project ID (hash of repo root path)
-        project_id = blake3.blake3(str(repo_root).encode("utf-8")).hexdigest()
-
-        # Create indexing use case
-        indexing_usecase = IndexingUseCase(
-            vcs=vcs,
-            fs=fs,
-            chunk_usecase=chunk_usecase,
-            embedder=embedder,
-            chunk_repo=chunk_repo,
-            vector_repo=vector_repo,
-            file_repo=file_repo,
-            meta_repo=meta_repo,
-            project_id=project_id,
-        )
+        # Create indexing use case with all dependencies
+        indexing_usecase = _create_indexing_usecase(repo_root, db_path, config)
 
         # Execute indexing with progress reporting (unless quiet mode)
         request = IndexRequest(
@@ -367,55 +387,12 @@ def find(
 
             # If tree SHAs differ, index is stale - auto-sync
             if last_tree_sha != current_tree_sha:
-                if not json_output:
-                    click.echo("Detected changes, syncing index...", err=True)
+                from ember.core.indexing.index_usecase import IndexRequest
 
-                # Import dependencies for sync
-                from ember.adapters.fs.local import LocalFileSystem
-                from ember.adapters.local_models.jina_embedder import JinaCodeEmbedder
-                from ember.adapters.parsers.line_chunker import LineChunker
-                from ember.adapters.parsers.tree_sitter_chunker import TreeSitterChunker
-                from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
-                from ember.adapters.sqlite.file_repository import SQLiteFileRepository
-                from ember.adapters.sqlite.vector_repository import SQLiteVectorRepository
-                from ember.core.chunking.chunk_usecase import ChunkFileUseCase
-                from ember.core.indexing.index_usecase import IndexingUseCase, IndexRequest
+                # Create indexing use case with all dependencies
+                indexing_usecase = _create_indexing_usecase(repo_root, db_path, config)
 
-                # Initialize dependencies
-                fs = LocalFileSystem()
-                embedder = JinaCodeEmbedder()
-
-                # Initialize repositories
-                chunk_repo = SQLiteChunkRepository(db_path)
-                vector_repo = SQLiteVectorRepository(db_path)
-                file_repo = SQLiteFileRepository(db_path)
-
-                # Initialize chunking use case with config settings
-                tree_sitter = TreeSitterChunker()
-                line_chunker = LineChunker(
-                    window_size=config.index.line_window,
-                    stride=config.index.line_stride,
-                )
-                chunk_usecase = ChunkFileUseCase(tree_sitter, line_chunker)
-
-                # Compute project ID
-                import blake3
-                project_id = blake3.blake3(str(repo_root).encode("utf-8")).hexdigest()
-
-                # Create indexing use case
-                indexing_usecase = IndexingUseCase(
-                    vcs=vcs,
-                    fs=fs,
-                    chunk_usecase=chunk_usecase,
-                    embedder=embedder,
-                    chunk_repo=chunk_repo,
-                    vector_repo=vector_repo,
-                    file_repo=file_repo,
-                    meta_repo=meta_repo,
-                    project_id=project_id,
-                )
-
-                # Execute incremental sync (quietly for JSON output)
+                # Execute incremental sync
                 request = IndexRequest(
                     repo_root=repo_root,
                     sync_mode="worktree",
@@ -423,20 +400,31 @@ def find(
                     force_reindex=False,
                 )
 
-                import time
-                start_time = time.time()
-                response = indexing_usecase.execute(request)
-                elapsed_time = time.time() - start_time
+                # Use progress bars (like regular sync) unless in JSON mode
+                if json_output:
+                    # Silent mode for JSON output
+                    response = indexing_usecase.execute(request)
+                else:
+                    # Show progress bars (outputs to stderr by default)
+                    with Progress(
+                        SpinnerColumn(),
+                        TextColumn("[progress.description]{task.description}"),
+                        BarColumn(),
+                        TaskProgressColumn(),
+                        transient=True,
+                    ) as progress:
+                        callback = RichProgressCallback(progress)
+                        response = indexing_usecase.execute(request, progress=callback)
 
-                # Show sync completion (unless JSON output)
-                if not json_output and response.success:
-                    if response.files_indexed > 0:
-                        click.echo(
-                            f"✓ Synced {response.files_indexed} file(s) in {elapsed_time:.1f}s",
-                            err=True,
-                        )
-                    else:
-                        click.echo("✓ Index up to date", err=True)
+                    # Show completion message
+                    if response.success:
+                        if response.files_indexed > 0:
+                            click.echo(
+                                f"✓ Synced {response.files_indexed} file(s)",
+                                err=True,
+                            )
+                        else:
+                            click.echo("✓ Index up to date", err=True)
 
         except Exception as e:
             # If staleness check fails, continue with search anyway

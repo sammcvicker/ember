@@ -37,6 +37,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Created docs/archive/ for historical documentation
 
 ### Changed
+- **Auto-sync now uses progress bars**: Refactored to reuse sync command's progress display pattern (#28)
+  - Eliminated code duplication between `sync` command and auto-sync
+  - Auto-sync now shows the same professional progress bars as regular sync
+  - Extracted `_create_indexing_usecase()` helper function for consistency
+  - Reduced ~50 lines of duplicated dependency initialization code
+  - Better architecture: follows DRY principle while maintaining clean separation
 - **Batch embedding optimization**: Indexing is now ~27-38% faster due to batched embeddings (#14)
   - Refactored `_index_file()` to batch all chunks from a file in a single embedding call
   - Reduces embedding overhead from N calls per file to 1 call per file
