@@ -44,8 +44,9 @@ def auto_sync_repo(tmp_path: Path) -> Path:
     cwd = os.getcwd()
     os.chdir(repo)
     try:
-        from ember.entrypoints.cli import init, sync
         from click.testing import CliRunner
+
+        from ember.entrypoints.cli import init, sync
 
         runner = CliRunner()
         result = runner.invoke(init, [], obj={}, catch_exceptions=False)
@@ -60,9 +61,11 @@ def auto_sync_repo(tmp_path: Path) -> Path:
     return repo
 
 
+@pytest.mark.slow
 def test_auto_sync_on_stale_index(auto_sync_repo: Path) -> None:
     """Test that find auto-syncs when index is stale."""
     import os
+
     from click.testing import CliRunner
 
     from ember.entrypoints.cli import find
@@ -98,9 +101,11 @@ def test_auto_sync_on_stale_index(auto_sync_repo: Path) -> None:
     assert "bar" in result.stdout
 
 
+@pytest.mark.slow
 def test_auto_sync_skipped_with_no_sync_flag(auto_sync_repo: Path) -> None:
     """Test that --no-sync flag skips auto-sync."""
     import os
+
     from click.testing import CliRunner
 
     from ember.entrypoints.cli import find
@@ -137,9 +142,11 @@ def test_auto_sync_skipped_with_no_sync_flag(auto_sync_repo: Path) -> None:
     assert "baz" not in result.stdout
 
 
+@pytest.mark.slow
 def test_auto_sync_noop_when_up_to_date(auto_sync_repo: Path) -> None:
     """Test that auto-sync is a no-op when index is up to date."""
     import os
+
     from click.testing import CliRunner
 
     from ember.entrypoints.cli import find
@@ -168,9 +175,11 @@ def test_auto_sync_noop_when_up_to_date(auto_sync_repo: Path) -> None:
         os.chdir(cwd)
 
 
+@pytest.mark.slow
 def test_auto_sync_with_json_output(auto_sync_repo: Path) -> None:
     """Test that auto-sync works with --json output."""
     import os
+
     from click.testing import CliRunner
 
     from ember.entrypoints.cli import find

@@ -64,7 +64,7 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --cov=ember --cov-report=term-missing"
+addopts = "-v --cov=ember --cov-report=term-missing -m 'not slow'"
 markers = [
     "slow: marks tests as slow (require model download or heavy computation)",
 ]
