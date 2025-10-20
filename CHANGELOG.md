@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Auto-sync on search**: `ember find` now automatically syncs the index before searching (#26)
+  - Detects stale index by comparing current git tree SHA vs last indexed SHA
+  - Runs incremental sync automatically if changes detected (typically <2s overhead)
+  - Shows clear progress: "Detected changes, syncing index... ✓ Synced N file(s) in X.Xs"
+  - Ensures users never get stale search results
+  - Added `--no-sync` flag to skip auto-sync for power users who want maximum speed
+  - Silent in JSON mode (messages go to stderr, not stdout)
+  - Added 4 new integration tests for auto-sync behavior
 - **Functional config system**: `.ember/config.toml` settings are now loaded and respected (#25)
   - `search.topk`: Default number of search results (overridable with `-k` flag)
   - `index.line_window`: Lines per chunk for line-based chunking
@@ -27,7 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Moved detailed maintainer procedures to MAINTAINER_GUIDE.md
 - Reorganized documentation structure for better discoverability
 - Updated README to document functional config settings
-- Updated README to reflect 116 passing tests (up from 103)
+- Updated README to reflect 120 passing tests (up from 103)
 
 ### Fixed
 - Removed repetitive error message when running `ember init` with existing .ember/ directory
