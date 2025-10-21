@@ -43,6 +43,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Created docs/archive/ for historical documentation
 
 ### Changed
+- **Replaced brute-force vector search with sqlite-vec**: Migrated from in-memory similarity search to optimized sqlite-vec extension (#41)
+  - Replaced `SimpleVectorSearch` with `SqliteVecAdapter` using sqlite-vec for efficient k-NN queries
+  - Uses vec0 virtual table with cosine distance metric (optimal for normalized embeddings)
+  - Automatic synchronization from VectorRepository's vectors table to vec_chunks
+  - Maintains backward compatibility with existing VectorSearch protocol
+  - Better performance and scalability for larger codebases
+  - Added sqlite-vec>=0.1.6 dependency
 - **Auto-sync now uses progress bars**: Refactored to reuse sync command's progress display pattern (#28)
   - Eliminated code duplication between `sync` command and auto-sync
   - Auto-sync now shows the same professional progress bars as regular sync

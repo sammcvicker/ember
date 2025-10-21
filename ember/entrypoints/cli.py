@@ -436,13 +436,13 @@ def find(
         from ember.adapters.fts.sqlite_fts import SQLiteFTS
         from ember.adapters.local_models.jina_embedder import JinaCodeEmbedder
         from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
-        from ember.adapters.vss.simple_vector_search import SimpleVectorSearch
+        from ember.adapters.vss.sqlite_vec_adapter import SqliteVecAdapter
         from ember.core.retrieval.search_usecase import SearchUseCase
         from ember.domain.entities import Query
 
         # Initialize dependencies
         text_search = SQLiteFTS(db_path)
-        vector_search = SimpleVectorSearch(db_path)
+        vector_search = SqliteVecAdapter(db_path)
         chunk_repo = SQLiteChunkRepository(db_path)
         embedder = JinaCodeEmbedder()
 

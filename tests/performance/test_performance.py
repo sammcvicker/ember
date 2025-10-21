@@ -23,7 +23,7 @@ from ember.adapters.sqlite.file_repository import SQLiteFileRepository
 from ember.adapters.sqlite.meta_repository import SQLiteMetaRepository
 from ember.adapters.sqlite.schema import init_database
 from ember.adapters.sqlite.vector_repository import SQLiteVectorRepository
-from ember.adapters.vss.simple_vector_search import SimpleVectorSearch
+from ember.adapters.vss.sqlite_vec_adapter import SqliteVecAdapter
 from ember.core.chunking.chunk_usecase import ChunkFileUseCase
 from ember.core.indexing.index_usecase import IndexingUseCase, IndexRequest
 from ember.core.retrieval.search_usecase import SearchUseCase
@@ -104,7 +104,7 @@ class PerformanceTestFixture:
 
         # Search
         self.text_search = SQLiteFTS(self.db_path)
-        self.vector_search = SimpleVectorSearch(self.db_path)
+        self.vector_search = SqliteVecAdapter(self.db_path)
         self.search_usecase = SearchUseCase(
             text_search=self.text_search,
             vector_search=self.vector_search,

@@ -12,7 +12,7 @@ from ember.adapters.fts.sqlite_fts import SQLiteFTS
 from ember.adapters.local_models.jina_embedder import JinaCodeEmbedder
 from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
 from ember.adapters.sqlite.vector_repository import SQLiteVectorRepository
-from ember.adapters.vss.simple_vector_search import SimpleVectorSearch
+from ember.adapters.vss.sqlite_vec_adapter import SqliteVecAdapter
 from ember.core.retrieval.search_usecase import SearchUseCase
 from ember.domain.entities import Chunk, Query
 
@@ -97,7 +97,7 @@ def search_usecase(db_path: Path, sample_chunks: list[Chunk]) -> SearchUseCase:
     vector_repo = SQLiteVectorRepository(db_path)
     text_search = SQLiteFTS(db_path)
     embedder = JinaCodeEmbedder()
-    vector_search = SimpleVectorSearch(db_path)
+    vector_search = SqliteVecAdapter(db_path)
 
     # Store chunks
     for chunk in sample_chunks:
@@ -258,7 +258,7 @@ def test_rrf_fusion_basic(db_path: Path) -> None:
     vector_repo = SQLiteVectorRepository(db_path)
     text_search = SQLiteFTS(db_path)
     embedder = JinaCodeEmbedder()
-    vector_search = SimpleVectorSearch(vector_repo)
+    vector_search = SqliteVecAdapter(db_path)
 
     use_case = SearchUseCase(
         text_search=text_search,
@@ -295,7 +295,7 @@ def test_rrf_fusion_single_ranker(db_path: Path) -> None:
     vector_repo = SQLiteVectorRepository(db_path)
     text_search = SQLiteFTS(db_path)
     embedder = JinaCodeEmbedder()
-    vector_search = SimpleVectorSearch(vector_repo)
+    vector_search = SqliteVecAdapter(db_path)
 
     use_case = SearchUseCase(
         text_search=text_search,
