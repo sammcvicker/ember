@@ -1,6 +1,6 @@
 [project]
 name = "ember"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local codebase embedding and search CLI - fast, deterministic, agent-friendly"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -33,6 +33,7 @@ dependencies = [
     "torch>=2.0.0",
     "tomli-w>=1.2.0",
     "rich>=13.0.0",
+    "sqlite-vec>=0.1.6",
 ]
 
 [project.scripts]
@@ -44,6 +45,7 @@ dev = [
     "pyright>=1.1.0",
     "pytest>=8.0.0",
     "pytest-cov>=4.0.0",
+    "radon>=6.0.0",
 ]
 
 [tool.ruff]
@@ -64,7 +66,7 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --cov=ember --cov-report=term-missing"
+addopts = "-v --cov=ember --cov-report=term-missing -m 'not slow'"
 markers = [
     "slow: marks tests as slow (require model download or heavy computation)",
 ]

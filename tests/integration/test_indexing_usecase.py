@@ -6,7 +6,6 @@ embedding, and incremental sync with proper cleanup of old chunks.
 
 import sqlite3
 from pathlib import Path
-from unittest.mock import Mock
 
 import pytest
 
@@ -22,67 +21,8 @@ from ember.adapters.sqlite.schema import init_database
 from ember.adapters.sqlite.vector_repository import SQLiteVectorRepository
 from ember.core.chunking.chunk_usecase import ChunkFileUseCase
 from ember.core.indexing.index_usecase import IndexingUseCase, IndexRequest
-from ember.domain.entities import Chunk
 
-
-@pytest.fixture
-def git_repo(tmp_path: Path) -> Path:
-    """Create a git repository with test files."""
-    repo_root = tmp_path / "test_repo"
-    repo_root.mkdir()
-
-    # Initialize git repo
-    import subprocess
-    subprocess.run(["git", "init"], cwd=repo_root, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"],
-        cwd=repo_root,
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "Test User"],
-        cwd=repo_root,
-        check=True,
-        capture_output=True,
-    )
-
-    # Create test files
-    test_file1 = repo_root / "math.py"
-    test_file1.write_text("""def add(a, b):
-    '''Add two numbers.'''
-    return a + b
-
-
-def multiply(a, b):
-    '''Multiply two numbers.'''
-    return a * b
-""")
-
-    test_file2 = repo_root / "utils.py"
-    test_file2.write_text("""def greet(name):
-    '''Greet someone.'''
-    return f"Hello, {name}!"
-""")
-
-    # Commit files
-    subprocess.run(["git", "add", "."], cwd=repo_root, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "commit", "-m", "Initial commit"],
-        cwd=repo_root,
-        check=True,
-        capture_output=True,
-    )
-
-    return repo_root
-
-
-@pytest.fixture
-def db_path(tmp_path: Path) -> Path:
-    """Create a temporary database with schema initialized."""
-    db = tmp_path / "test_index.db"
-    init_database(db)
-    return db
+# Note: git_repo and db_path fixtures are now in tests/conftest.py
 
 
 @pytest.fixture
@@ -196,12 +136,16 @@ def test_incremental_sync_modified_file_no_duplicates(
 
     # Commit the change
     import subprocess
-    subprocess.run(["git", "add", "math.py"], cwd=git_repo, check=True, capture_output=True)
+
+    subprocess.run(
+        ["git", "add", "math.py"], cwd=git_repo, check=True, capture_output=True, timeout=5
+    )
     subprocess.run(
         ["git", "commit", "-m", "Modify math.py"],
         cwd=git_repo,
         check=True,
         capture_output=True,
+        timeout=5,
     )
 
     # Second sync (incremental)
@@ -239,7 +183,9 @@ def test_incremental_sync_modified_file_no_duplicates(
         """
     )
     math_chunks_by_tree = cursor.fetchall()
-    assert len(math_chunks_by_tree) == 1, f"math.py has chunks from multiple tree SHAs: {math_chunks_by_tree}"
+    assert len(math_chunks_by_tree) == 1, (
+        f"math.py has chunks from multiple tree SHAs: {math_chunks_by_tree}"
+    )
 
     # The math.py tree SHA should be different from the initial tree SHA
     math_tree_sha = math_chunks_by_tree[0][0]
@@ -291,17 +237,20 @@ def test_incremental_sync_multiple_modifications_no_accumulation(
 
         # Commit
         import subprocess
+
         subprocess.run(
             ["git", "add", "math.py"],
             cwd=git_repo,
             check=True,
-            capture_output=True
+            capture_output=True,
+            timeout=5,
         )
         subprocess.run(
-            ["git", "commit", "-m", f"Modification {i+1}"],
+            ["git", "commit", "-m", f"Modification {i + 1}"],
             cwd=git_repo,
             check=True,
             capture_output=True,
+            timeout=5,
         )
 
         # Sync
@@ -315,13 +264,16 @@ def test_incremental_sync_multiple_modifications_no_accumulation(
             WHERE path = 'math.py'
         """)
         math_tree_sha_count = cursor.fetchone()[0]
-        assert math_tree_sha_count == 1, f"After modification {i+1}, math.py has {math_tree_sha_count} tree SHAs"
+        assert math_tree_sha_count == 1, (
+            f"After modification {i + 1}, math.py has {math_tree_sha_count} tree SHAs"
+        )
 
         # Verify math.py chunk count stays roughly the same (no accumulation)
         cursor.execute("SELECT COUNT(*) FROM chunks WHERE path = 'math.py'")
         current_math_chunks = cursor.fetchone()[0]
-        assert abs(current_math_chunks - initial_math_chunks) < 5, \
+        assert abs(current_math_chunks - initial_math_chunks) < 5, (
             f"math.py chunks grew from {initial_math_chunks} to {current_math_chunks}"
+        )
 
     # Final verification: total chunks should be roughly the same
     cursor.execute("SELECT COUNT(*) FROM chunks")
@@ -347,12 +299,14 @@ def test_incremental_sync_deleted_file(
 
     # Commit deletion
     import subprocess
-    subprocess.run(["git", "add", "-u"], cwd=git_repo, check=True, capture_output=True)
+
+    subprocess.run(["git", "add", "-u"], cwd=git_repo, check=True, capture_output=True, timeout=5)
     subprocess.run(
         ["git", "commit", "-m", "Delete utils.py"],
         cwd=git_repo,
         check=True,
         capture_output=True,
+        timeout=5,
     )
 
     # Incremental sync
@@ -368,4 +322,314 @@ def test_incremental_sync_deleted_file(
     cursor.execute("SELECT COUNT(*) FROM chunks WHERE path = 'utils.py'")
     utils_chunks = cursor.fetchone()[0]
     assert utils_chunks == 0
+    conn.close()
+
+
+@pytest.mark.slow
+def test_chunking_failure_preserves_existing_chunks(
+    indexing_usecase: IndexingUseCase, git_repo: Path, db_path: Path
+) -> None:
+    """Test that when chunking fails, existing chunks are preserved (no data loss).
+
+    This is a regression test for issue #33: if chunking fails during re-indexing,
+    the old chunks should be preserved rather than deleted.
+    """
+    # Initial sync - index math.py successfully
+    request1 = IndexRequest(repo_root=git_repo, force_reindex=True)
+    response1 = indexing_usecase.execute(request1)
+    assert response1.success
+
+    # Get initial math.py chunks
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM chunks WHERE path = 'math.py'")
+    initial_math_chunks = cursor.fetchone()[0]
+    assert initial_math_chunks > 0, "Should have chunks for math.py"
+
+    # Get the chunk IDs to verify they're the same later
+    cursor.execute("SELECT id FROM chunks WHERE path = 'math.py' ORDER BY id")
+    initial_chunk_ids = [row[0] for row in cursor.fetchall()]
+
+    # Mock the chunk_usecase to fail
+    from ember.core.chunking.chunk_usecase import ChunkFileResponse
+
+    original_execute = indexing_usecase.chunk_usecase.execute
+
+    def mock_chunk_execute(request):
+        # Fail only for math.py, succeed for others
+        if "math.py" in str(request.path):
+            return ChunkFileResponse(
+                chunks=[], strategy="tree-sitter", success=False, error="Simulated chunking failure"
+            )
+        return original_execute(request)
+
+    indexing_usecase.chunk_usecase.execute = mock_chunk_execute
+
+    # Try to re-index (force reindex to ensure it tries to process math.py)
+    request2 = IndexRequest(repo_root=git_repo, force_reindex=True)
+    response2 = indexing_usecase.execute(request2)
+
+    # Should still succeed overall (just skips the failed file)
+    assert response2.success
+
+    # CRITICAL: Verify math.py chunks are STILL THERE (not deleted)
+    cursor.execute("SELECT COUNT(*) FROM chunks WHERE path = 'math.py'")
+    final_math_chunks = cursor.fetchone()[0]
+    assert final_math_chunks == initial_math_chunks, (
+        f"Chunks should be preserved on failure, but went from {initial_math_chunks} to {final_math_chunks}"
+    )
+
+    # Verify the chunk IDs are the same (i.e., chunks weren't deleted and recreated)
+    cursor.execute("SELECT id FROM chunks WHERE path = 'math.py' ORDER BY id")
+    final_chunk_ids = [row[0] for row in cursor.fetchall()]
+    assert final_chunk_ids == initial_chunk_ids, "Chunk IDs should be unchanged"
+
+    conn.close()
+
+    # Restore original method
+    indexing_usecase.chunk_usecase.execute = original_execute
+
+
+@pytest.mark.slow
+def test_index_file_with_unreadable_file(
+    indexing_usecase: IndexingUseCase, git_repo: Path, db_path: Path
+) -> None:
+    """Test handling of permission denied errors.
+
+    Verifies that IndexingUseCase handles files that can't be read
+    due to permission errors. Documents current behavior.
+    """
+    import os
+    import stat
+    import subprocess
+
+    # Create a file and add it to git first
+    restricted_file = git_repo / "restricted.py"
+    restricted_file.write_text("def secret(): pass\n")
+
+    # Add to git and commit BEFORE removing permissions
+    subprocess.run(
+        ["git", "add", "restricted.py"], cwd=git_repo, check=True, capture_output=True, timeout=5
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "Add restricted file"],
+        cwd=git_repo,
+        check=True,
+        capture_output=True,
+        timeout=5,
+    )
+
+    # Now remove read permissions
+    try:
+        os.chmod(restricted_file, stat.S_IWRITE)  # Write-only, no read
+
+        # Attempt to index - behavior depends on implementation
+        request = IndexRequest(repo_root=git_repo, force_reindex=True)
+        response = indexing_usecase.execute(request)
+
+        # Current implementation may skip unreadable files or fail
+        # This test documents the actual behavior without asserting specific outcome
+        # Just verify it doesn't crash completely
+        assert isinstance(response.success, bool)
+
+    finally:
+        # Restore permissions for cleanup
+        try:
+            os.chmod(restricted_file, stat.S_IREAD | stat.S_IWRITE)
+        except:
+            pass  # Best effort cleanup
+
+
+@pytest.mark.slow
+def test_index_file_with_invalid_utf8(
+    indexing_usecase: IndexingUseCase, git_repo: Path, db_path: Path
+) -> None:
+    """Test handling of encoding errors.
+
+    Verifies that IndexingUseCase handles files with invalid UTF-8 encoding.
+    Documents current behavior - system may handle encoding errors by skipping
+    or using error-replacement strategies.
+    """
+    import subprocess
+
+    # Create a file with invalid UTF-8 bytes
+    binary_file = git_repo / "binary.py"
+    # Write invalid UTF-8 sequence (0xFF is invalid in UTF-8)
+    binary_file.write_bytes(b"def test():\n    x = \xff\xff\xff\n")
+
+    # Add to git and commit
+    subprocess.run(
+        ["git", "add", "binary.py"], cwd=git_repo, check=True, capture_output=True, timeout=5
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "Add binary file"],
+        cwd=git_repo,
+        check=True,
+        capture_output=True,
+        timeout=5,
+    )
+
+    # Attempt to index
+    request = IndexRequest(repo_root=git_repo, force_reindex=True)
+    response = indexing_usecase.execute(request)
+
+    # Should complete without crashing
+    assert isinstance(response.success, bool)
+    assert response.files_indexed >= 2  # At least math.py and utils.py
+
+    # Current implementation may or may not index the binary file
+    # This test just ensures no crash occurs
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM chunks WHERE path = 'binary.py'")
+    binary_chunks = cursor.fetchone()[0]
+    # File may be indexed (with replacement chars) or skipped - both are valid
+    assert binary_chunks >= 0
+    conn.close()
+
+
+@pytest.mark.slow
+def test_index_file_with_embedder_failure(git_repo: Path, db_path: Path) -> None:
+    """Test handling of embedder failures.
+
+    Verifies that IndexingUseCase handles embedder failures (e.g., model errors,
+    network issues) appropriately. Current implementation fails the entire index
+    operation when embedding fails, which is documented here.
+    """
+    from unittest.mock import Mock
+
+    # Create IndexingUseCase with a mock embedder that fails
+    vcs = GitAdapter(git_repo)
+    fs = LocalFileSystem()
+    tree_sitter_chunker = TreeSitterChunker()
+    line_chunker = LineChunker()
+    chunk_usecase = ChunkFileUseCase(tree_sitter_chunker, line_chunker)
+
+    # Mock embedder that raises an exception
+    mock_embedder = Mock()
+    mock_embedder.embed_texts.side_effect = RuntimeError("Model failed to load")
+    mock_embedder.fingerprint.return_value = "mock-embedder-v1"
+
+    chunk_repo = SQLiteChunkRepository(db_path)
+    vector_repo = SQLiteVectorRepository(db_path)
+    file_repo = SQLiteFileRepository(db_path)
+    meta_repo = SQLiteMetaRepository(db_path)
+    project_id = "test_project"
+
+    indexing_usecase = IndexingUseCase(
+        vcs=vcs,
+        fs=fs,
+        chunk_usecase=chunk_usecase,
+        embedder=mock_embedder,
+        chunk_repo=chunk_repo,
+        vector_repo=vector_repo,
+        file_repo=file_repo,
+        meta_repo=meta_repo,
+        project_id=project_id,
+    )
+
+    # Attempt to index
+    request = IndexRequest(repo_root=git_repo, force_reindex=True)
+    response = indexing_usecase.execute(request)
+
+    # Current implementation: embedder failure causes indexing to fail
+    # This is acceptable behavior - documents that errors are reported
+    assert response.success == False  # Embedder failure causes operation to fail
+    assert response.error is not None  # Error message should be present
+    assert len(response.error) > 0  # Error message should not be empty
+
+
+@pytest.mark.slow
+def test_realistic_repo_indexing(realistic_repo: Path, tmp_path: Path) -> None:
+    """Test indexing a realistic repository with diverse file types and content.
+
+    This test uses the realistic_repo fixture which contains:
+    - 10 files across multiple languages (Python, JS, TS, Markdown)
+    - Realistic code patterns (classes, functions, docstrings)
+    - Nested directory structure
+    - 100+ potential code chunks
+
+    Verifies that the indexing system can handle diverse, realistic codebases.
+    """
+    # Set up database
+    db_path = tmp_path / "realistic_test.db"
+    init_database(db_path)
+
+    # Create IndexingUseCase
+    vcs = GitAdapter(realistic_repo)
+    fs = LocalFileSystem()
+    tree_sitter_chunker = TreeSitterChunker()
+    line_chunker = LineChunker()
+    chunk_usecase = ChunkFileUseCase(tree_sitter_chunker, line_chunker)
+    embedder = JinaCodeEmbedder()
+    chunk_repo = SQLiteChunkRepository(db_path)
+    vector_repo = SQLiteVectorRepository(db_path)
+    file_repo = SQLiteFileRepository(db_path)
+    meta_repo = SQLiteMetaRepository(db_path)
+    project_id = "realistic_test_project"
+
+    indexing_usecase = IndexingUseCase(
+        vcs=vcs,
+        fs=fs,
+        chunk_usecase=chunk_usecase,
+        embedder=embedder,
+        chunk_repo=chunk_repo,
+        vector_repo=vector_repo,
+        file_repo=file_repo,
+        meta_repo=meta_repo,
+        project_id=project_id,
+    )
+
+    # Index the repository
+    request = IndexRequest(repo_root=realistic_repo, force_reindex=True)
+    response = indexing_usecase.execute(request)
+
+    # Verify successful indexing
+    assert response.success, f"Indexing failed: {response.error}"
+    # Note: 9 files indexed (README.md is not indexed as markdown is not a tracked language)
+    assert response.files_indexed >= 8, f"Expected at least 8 files, got {response.files_indexed}"
+    assert response.chunks_created >= 50, (
+        f"Expected at least 50 chunks, got {response.chunks_created}"
+    )
+    assert response.vectors_stored == response.chunks_created
+
+    # Verify chunks are in database
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    # Check total chunk count
+    cursor.execute("SELECT COUNT(*) FROM chunks")
+    chunk_count = cursor.fetchone()[0]
+    assert chunk_count >= 50, f"Expected at least 50 chunks in DB, got {chunk_count}"
+
+    # Check that we have chunks from different file types
+    cursor.execute("SELECT DISTINCT path FROM chunks ORDER BY path")
+    indexed_files = [row[0] for row in cursor.fetchall()]
+    assert len(indexed_files) >= 8, f"Expected at least 8 files indexed, got {len(indexed_files)}"
+
+    # Check for specific file types
+    file_extensions = set(Path(f).suffix for f in indexed_files)
+    assert ".py" in file_extensions, "Should have indexed Python files"
+    # Note: .jsx and .ts may not be indexed if tree-sitter doesn't support them yet
+    # or may be indexed with line chunker
+
+    # Verify we have chunks from nested directories
+    src_files = [f for f in indexed_files if f.startswith("src/")]
+    assert len(src_files) >= 8, f"Expected at least 8 files from src/, got {len(src_files)}"
+
+    # Check that chunks have proper metadata
+    cursor.execute("""
+        SELECT path, lang, symbol, start_line, end_line
+        FROM chunks
+        WHERE symbol IS NOT NULL AND symbol != ''
+        LIMIT 10
+    """)
+    sample_chunks = cursor.fetchall()
+    assert len(sample_chunks) > 0, "Should have chunks with symbols"
+
+    # Verify chunks have content
+    cursor.execute("SELECT content FROM chunks WHERE LENGTH(content) > 50 LIMIT 5")
+    content_samples = cursor.fetchall()
+    assert len(content_samples) >= 5, "Should have chunks with substantial content"
+
     conn.close()

@@ -8,19 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from ember.adapters.sqlite import SQLiteFileRepository, init_database
+from ember.adapters.sqlite import SQLiteFileRepository
 
-
-@pytest.fixture
-def db_path(tmp_path: Path) -> Path:
-    """Create a temporary database with schema initialized.
-
-    Returns:
-        Path to the test database file.
-    """
-    db = tmp_path / "test.db"
-    init_database(db)
-    return db
+# Note: db_path fixture is now in tests/conftest.py
 
 
 @pytest.fixture
@@ -150,9 +140,7 @@ def test_track_file_with_absolute_path(file_repo: SQLiteFileRepository, tmp_path
     assert state is not None
 
 
-def test_track_multiple_files_independence(
-    file_repo: SQLiteFileRepository, tmp_path: Path
-):
+def test_track_multiple_files_independence(file_repo: SQLiteFileRepository, tmp_path: Path):
     """Test that tracking multiple files maintains independence."""
     file1 = tmp_path / "file1.py"
     file2 = tmp_path / "file2.py"

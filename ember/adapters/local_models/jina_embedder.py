@@ -5,7 +5,7 @@ Uses jinaai/jina-embeddings-v2-base-code via sentence-transformers.
 
 import hashlib
 import warnings
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 # Lazy import - only load when actually needed
 if TYPE_CHECKING:
@@ -47,7 +47,7 @@ class JinaCodeEmbedder:
         self._max_seq_length = max_seq_length
         self._batch_size = batch_size
         self._device = device
-        self._model: "SentenceTransformer | None" = None
+        self._model: SentenceTransformer | None = None
 
     def _ensure_model_loaded(self) -> "SentenceTransformer":
         """Lazy-load the model on first use.
@@ -71,16 +71,27 @@ class JinaCodeEmbedder:
                         message=".*optimum is not installed.*",
                         category=UserWarning,
                     )
-                    self._model = SentenceTransformer(
-                        self.MODEL_NAME,
-                        trust_remote_code=True,
-                        device=self._device,
-                    )
+
+                    # Try to load from local cache first to avoid network calls
+                    # This prevents timeouts when HuggingFace is slow/unreachable
+                    try:
+                        self._model = SentenceTransformer(
+                            self.MODEL_NAME,
+                            trust_remote_code=True,
+                            device=self._device,
+                            local_files_only=True,  # Use cached model, no network
+                        )
+                    except (OSError, ValueError):
+                        # Model not cached yet, download from HuggingFace
+                        self._model = SentenceTransformer(
+                            self.MODEL_NAME,
+                            trust_remote_code=True,
+                            device=self._device,
+                        )
+
                 self._model.max_seq_length = self._max_seq_length
             except Exception as e:
-                raise RuntimeError(
-                    f"Failed to load {self.MODEL_NAME}: {e}"
-                ) from e
+                raise RuntimeError(f"Failed to load {self.MODEL_NAME}: {e}") from e
         return self._model
 
     @property
@@ -112,6 +123,17 @@ class JinaCodeEmbedder:
         config_str = "|".join(config_parts)
         config_hash = hashlib.sha256(config_str.encode()).hexdigest()[:16]
         return f"{self.MODEL_NAME}:v2:{config_hash}"
+
+    def ensure_loaded(self) -> None:
+        """Ensure the model is loaded into memory.
+
+        This method can be called proactively to load the model before
+        the first embedding call, making the first embedding faster.
+        If the model is already loaded, this is a no-op.
+
+        Useful for showing explicit loading progress to users.
+        """
+        self._ensure_model_loaded()
 
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
         """Embed a batch of texts into vectors.
@@ -146,6 +168,4 @@ class JinaCodeEmbedder:
             return [emb.tolist() for emb in embeddings]
 
         except Exception as e:
-            raise RuntimeError(
-                f"Failed to embed {len(texts)} texts: {e}"
-            ) from e
+            raise RuntimeError(f"Failed to embed {len(texts)} texts: {e}") from e

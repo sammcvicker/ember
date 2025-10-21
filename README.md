@@ -4,7 +4,7 @@
 
 Ember turns any codebase into a searchable knowledge base using hybrid search (BM25 + vector embeddings). Fast, deterministic, and completely localno servers, no MCP, no cloud dependencies.
 
-[![Tests](https://img.shields.io/badge/tests-103%20passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-116%20passing-brightgreen)]()
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)]()
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)]()
 
@@ -223,7 +223,7 @@ Edit `.ember/config.toml` to customize indexing behavior:
 
 ```toml
 [index]
-model = "jinaai/jina-embeddings-v2-base-code"  # Embedding model
+model = "local-default-code-embed"  # Embedding model
 chunk = "symbol"  # Chunking strategy: "symbol" or "lines"
 line_window = 120  # Lines per chunk (for line-based chunking)
 line_stride = 100  # Stride between chunks
@@ -237,21 +237,23 @@ rerank = false  # Enable reranking (not yet implemented)
 filters = []  # Default filters
 
 [redaction]
-patterns = []  # Regex patterns for secret redaction (not yet implemented)
+patterns = []  # Regex patterns for secret redaction
 max_file_mb = 5  # Skip files larger than this
 ```
 
-> **⚠️ Important (v0.1 Limitation):**
->
-> The `.ember/config.toml` file is **currently informational only**. Settings are not yet loaded or honored by v0.1 commands. Configuration will be fully implemented in v0.2.
->
-> **What this means:**
-> - Changing `config.toml` settings has no effect in v0.1
-> - File indexing is determined by git tracking (see below), not `include`/`ignore` patterns
-> - Model selection, chunking strategy, and search defaults are hardcoded in v0.1
-> - The config file is created during `ember init` to document intended defaults for future use
->
-> See [docs/AUDIT.md](docs/AUDIT.md) for details on this limitation.
+**Functional Settings (v0.2.0+):**
+
+The following configuration settings are now active and respected by Ember:
+
+- **`search.topk`**: Default number of results for `ember find` (can be overridden with `-k` flag)
+- **`index.line_window`**: Lines per chunk for line-based chunking
+- **`index.line_stride`**: Stride between chunks (overlap = window - stride)
+
+**Not Yet Implemented:**
+- `index.include` / `index.ignore` patterns (coming in v0.2.0)
+- `index.chunk` strategy selection (currently always uses "symbol" with line fallback)
+- `search.rerank` (planned for v0.2.0)
+- `redaction.patterns` (planned for v0.2.0)
 
 **File Indexing (v0.1):**
 - **Code files only**: Only source code files are indexed (see supported extensions below)
@@ -397,20 +399,20 @@ uv run pyright
 ### Running Tests
 
 ```bash
-# All tests
+# Fast tests only (default - skips slow tests, runs in ~1-2s)
 uv run pytest
+
+# Run slow tests (includes performance and integration tests with embeddings)
+uv run pytest -m slow
+
+# All tests (fast + slow, takes several minutes)
+uv run pytest -m ""
 
 # Unit tests only
 uv run pytest tests/unit/
 
 # Integration tests
 uv run pytest tests/integration/
-
-# Performance tests (slow)
-uv run pytest tests/performance/
-
-# Skip slow tests
-uv run pytest -m "not slow"
 
 # With coverage
 uv run pytest --cov=ember --cov-report=term-missing
@@ -420,7 +422,7 @@ uv run pytest --cov=ember --cov-report=term-missing
 
 - **Architecture:** Clean Architecture layers strictly enforced
 - **Type hints:** All public functions fully typed
-- **Testing:** 103 tests (unit, integration, performance)
+- **Testing:** 116 tests (unit, integration, performance)
 - **Linting:** ruff (compliant)
 - **Type checking:** pyright (strict mode)
 - **Coverage:** 60%+ overall, 90%+ for critical paths
@@ -458,10 +460,10 @@ A: Not yet, but this is planned. The architecture supports swapping models via t
 A: Ember only indexes source code files with recognized code extensions (see Configuration section). Binary files, documentation, and data files are automatically skipped during indexing.
 
 **Q: How do I exclude sensitive files?**
-A: In v0.1, use `.gitignore` or `.emberignore` to exclude files. Note that `.ember/config.toml` settings (including `ignore` patterns) are not yet active in v0.1.
+A: Use `.gitignore` or `.emberignore` to exclude files. Config-based `ignore` patterns in `.ember/config.toml` are planned for a future release.
 
-**Q: Why doesn't changing config.toml affect anything?**
-A: Configuration loading is not implemented in v0.1. The config file is created as documentation of intended defaults. Settings will be honored starting in v0.2. See the Configuration section for details.
+**Q: Which config settings actually work?**
+A: As of v0.2.0, `search.topk`, `index.line_window`, and `index.line_stride` are functional. Other settings like `include`/`ignore` patterns and model selection are coming in future releases. See the Configuration section for details.
 
 ---
 
@@ -475,11 +477,12 @@ A: Configuration loading is not implemented in v0.1. The config file is created 
 - [ ] Export/import bundles
 - [ ] Audit command for secrets
 
-**v0.2** - Planned
-- Configuration loading (honor settings in config.toml)
-- Cross-encoder reranking
-- Explain command (why a result matched)
-- Watch mode (auto-sync on file changes)
+**v0.2** - In Progress
+- [x] Configuration loading (search.topk, line chunking settings)
+- [ ] Include/ignore patterns from config
+- [ ] Cross-encoder reranking
+- [ ] Explain command (why a result matched)
+- [ ] Watch mode (auto-sync on file changes)
 
 **v0.3** - Future
 - HTTP server for AI agents

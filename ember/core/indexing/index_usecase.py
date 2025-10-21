@@ -7,6 +7,7 @@ This use case orchestrates the complete indexing pipeline:
 4. Store chunks and vectors
 """
 
+import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -27,36 +28,60 @@ from ember.ports.repositories import (
 )
 from ember.ports.vcs import VCS
 
+logger = logging.getLogger(__name__)
+
 # Code file extensions to index (whitelist approach)
 # Only source code files are indexed - data, config, docs, and binary files are skipped
-CODE_FILE_EXTENSIONS = frozenset({
-    # Python
-    ".py", ".pyi",
-    # JavaScript/TypeScript
-    ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
-    # Go
-    ".go",
-    # Rust
-    ".rs",
-    # Java/JVM
-    ".java", ".kt", ".scala",
-    # C/C++
-    ".c", ".cpp", ".cc", ".cxx", ".h", ".hpp", ".hh", ".hxx",
-    # C#
-    ".cs",
-    # Ruby
-    ".rb",
-    # PHP
-    ".php",
-    # Swift
-    ".swift",
-    # Shell
-    ".sh", ".bash", ".zsh",
-    # Web frameworks
-    ".vue", ".svelte",
-    # Other
-    ".sql", ".proto", ".graphql",
-})
+CODE_FILE_EXTENSIONS = frozenset(
+    {
+        # Python
+        ".py",
+        ".pyi",
+        # JavaScript/TypeScript
+        ".js",
+        ".jsx",
+        ".ts",
+        ".tsx",
+        ".mjs",
+        ".cjs",
+        # Go
+        ".go",
+        # Rust
+        ".rs",
+        # Java/JVM
+        ".java",
+        ".kt",
+        ".scala",
+        # C/C++
+        ".c",
+        ".cpp",
+        ".cc",
+        ".cxx",
+        ".h",
+        ".hpp",
+        ".hh",
+        ".hxx",
+        # C#
+        ".cs",
+        # Ruby
+        ".rb",
+        # PHP
+        ".php",
+        # Swift
+        ".swift",
+        # Shell
+        ".sh",
+        ".bash",
+        ".zsh",
+        # Web frameworks
+        ".vue",
+        ".svelte",
+        # Other
+        ".sql",
+        ".proto",
+        ".graphql",
+    }
+)
 
 
 @dataclass
@@ -157,9 +182,12 @@ class IndexingUseCase:
         Returns:
             IndexResponse with statistics about what was indexed.
         """
+        logger.info(f"Starting indexing for {request.repo_root} (mode: {request.sync_mode})")
+
         try:
             # Get current tree SHA based on sync mode
             tree_sha = self._get_tree_sha(request.repo_root, request.sync_mode)
+            logger.debug(f"Tree SHA for indexing: {tree_sha}")
 
             # Get files to index (returns tuple of files and is_incremental flag)
             files_to_index, is_incremental = self._get_files_to_index(
@@ -169,6 +197,9 @@ class IndexingUseCase:
                 request.force_reindex,
             )
 
+            sync_type = "incremental" if is_incremental else "full"
+            logger.info(f"Indexing {len(files_to_index)} file(s) ({sync_type} sync)")
+
             # Handle deletions for incremental sync
             chunks_deleted = 0
             if is_incremental:
@@ -176,6 +207,18 @@ class IndexingUseCase:
                     repo_root=request.repo_root,
                     tree_sha=tree_sha,
                 )
+                if chunks_deleted > 0:
+                    logger.info(f"Deleted {chunks_deleted} chunk(s) from removed files")
+
+            # Eagerly load embedding model before indexing to avoid misleading
+            # progress on first file (model loading can take 2-3 seconds)
+            if files_to_index and hasattr(self.embedder, "ensure_loaded"):
+                logger.debug("Loading embedding model")
+                if progress:
+                    progress.on_start(1, "Loading embedding model")
+                self.embedder.ensure_loaded()  # type: ignore[attr-defined]
+                if progress:
+                    progress.on_complete()
 
             # Index each file
             files_indexed = 0
@@ -185,7 +228,6 @@ class IndexingUseCase:
 
             # Report progress start
             if progress and files_to_index:
-                sync_type = "incremental" if is_incremental else "full"
                 progress.on_start(len(files_to_index), f"Indexing files ({sync_type})")
 
             for idx, file_path in enumerate(files_to_index, start=1):
@@ -215,6 +257,12 @@ class IndexingUseCase:
             self.meta_repo.set("last_sync_mode", request.sync_mode)
             self.meta_repo.set("model_fingerprint", self.embedder.fingerprint())
 
+            logger.info(
+                f"Indexing complete: {files_indexed} files, "
+                f"{chunks_created} chunks created, {chunks_updated} updated, "
+                f"{chunks_deleted} deleted, {vectors_stored} vectors stored"
+            )
+
             return IndexResponse(
                 files_indexed=files_indexed,
                 chunks_created=chunks_created,
@@ -227,7 +275,14 @@ class IndexingUseCase:
                 error=None,
             )
 
-        except Exception as e:
+        except (KeyboardInterrupt, SystemExit):
+            # Always let these propagate - user requested termination
+            logger.info("Indexing interrupted by user")
+            raise
+
+        except FileNotFoundError as e:
+            # File was deleted between detection and indexing
+            logger.warning(f"File not found during indexing: {e}")
             return IndexResponse(
                 files_indexed=0,
                 chunks_created=0,
@@ -237,7 +292,82 @@ class IndexingUseCase:
                 tree_sha="",
                 is_incremental=False,
                 success=False,
-                error=str(e),
+                error=f"File not found: {e}. The file may have been deleted during indexing.",
+            )
+
+        except PermissionError as e:
+            # Permission denied reading file or accessing repository
+            logger.error(f"Permission denied during indexing: {e}")
+            return IndexResponse(
+                files_indexed=0,
+                chunks_created=0,
+                chunks_updated=0,
+                chunks_deleted=0,
+                vectors_stored=0,
+                tree_sha="",
+                is_incremental=False,
+                success=False,
+                error=f"Permission denied: {e}. Check file and directory permissions.",
+            )
+
+        except OSError as e:
+            # I/O errors (disk full, network filesystem issues, etc.)
+            logger.error(f"I/O error during indexing: {e}")
+            return IndexResponse(
+                files_indexed=0,
+                chunks_created=0,
+                chunks_updated=0,
+                chunks_deleted=0,
+                vectors_stored=0,
+                tree_sha="",
+                is_incremental=False,
+                success=False,
+                error=f"I/O error: {e}. Check disk space and filesystem access.",
+            )
+
+        except ValueError as e:
+            # Invalid configuration or parameters
+            logger.error(f"Invalid configuration during indexing: {e}")
+            return IndexResponse(
+                files_indexed=0,
+                chunks_created=0,
+                chunks_updated=0,
+                chunks_deleted=0,
+                vectors_stored=0,
+                tree_sha="",
+                is_incremental=False,
+                success=False,
+                error=f"Configuration error: {e}",
+            )
+
+        except RuntimeError as e:
+            # Git errors, repository state errors, etc.
+            logger.error(f"Runtime error during indexing: {e}")
+            return IndexResponse(
+                files_indexed=0,
+                chunks_created=0,
+                chunks_updated=0,
+                chunks_deleted=0,
+                vectors_stored=0,
+                tree_sha="",
+                is_incremental=False,
+                success=False,
+                error=f"Indexing error: {e}",
+            )
+
+        except Exception:
+            # Unexpected errors - log full traceback for debugging
+            logger.exception("Unexpected error during indexing")
+            return IndexResponse(
+                files_indexed=0,
+                chunks_created=0,
+                chunks_updated=0,
+                chunks_deleted=0,
+                vectors_stored=0,
+                tree_sha="",
+                is_incremental=False,
+                success=False,
+                error="Internal error during indexing. Check logs for details.",
             )
 
     def _get_tree_sha(self, repo_root: Path, sync_mode: str) -> str:
@@ -294,9 +424,7 @@ class IndexingUseCase:
 
             # Get added and modified files (deletions handled separately)
             relative_files = [
-                path
-                for status, path in changes
-                if status in ("added", "modified", "renamed")
+                path for status, path in changes if status in ("added", "modified", "renamed")
             ]
             files = [repo_root / f for f in relative_files]
             is_incremental = True
@@ -344,9 +472,7 @@ class IndexingUseCase:
         total_deleted = 0
         for file_path in deleted_files:
             # Delete all chunks for this file (using last_tree_sha since file no longer exists in new tree)
-            deleted_count = self.chunk_repo.delete_by_path(
-                path=file_path, tree_sha=last_tree_sha
-            )
+            deleted_count = self.chunk_repo.delete_by_path(path=file_path, tree_sha=last_tree_sha)
             total_deleted += deleted_count
 
         return total_deleted
@@ -372,15 +498,19 @@ class IndexingUseCase:
         # Get relative path
         rel_path = file_path.relative_to(repo_root)
 
-        # Clean up ALL old chunks for this file from any previous tree SHA
-        # This prevents accumulation of duplicate chunks across multiple syncs
-        # Since we're re-indexing this file now, we want to completely replace
-        # all old chunks with the new chunks
-        self.chunk_repo.delete_all_for_path(path=rel_path)
-
-        # Read file content (returns bytes, decode to string)
+        # Read file content (returns bytes)
         content_bytes = self.fs.read(file_path)
-        content = content_bytes.decode("utf-8", errors="replace")
+
+        # Compute file hash and size from original bytes (avoids re-encoding)
+        file_hash = blake3.blake3(content_bytes).hexdigest()
+        file_size = len(content_bytes)
+
+        # Decode to string for chunking (decode once)
+        try:
+            content = content_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            # Fall back to replace mode if strict UTF-8 fails
+            content = content_bytes.decode("utf-8", errors="replace")
 
         # Detect language from file extension
         lang = self._detect_language(file_path)
@@ -394,11 +524,15 @@ class IndexingUseCase:
         chunk_response = self.chunk_usecase.execute(chunk_request)
 
         if not chunk_response.success:
-            # Skip files that fail to chunk
+            # Skip files that fail to chunk - preserve existing chunks to avoid data loss
             return {"chunks_created": 0, "chunks_updated": 0, "vectors_stored": 0}
 
-        # Compute file hash
-        file_hash = blake3.blake3(content.encode("utf-8")).hexdigest()
+        # Clean up ALL old chunks for this file from any previous tree SHA
+        # This prevents accumulation of duplicate chunks across multiple syncs
+        # Since we're re-indexing this file now, we want to completely replace
+        # all old chunks with the new chunks
+        # NOTE: This is done AFTER validation to prevent data loss if chunking fails
+        self.chunk_repo.delete_all_for_path(path=rel_path)
 
         # Create Chunk entities from ChunkData
         chunks = self._create_chunks(
@@ -414,6 +548,7 @@ class IndexingUseCase:
         chunks_updated = 0
         vectors_stored = 0
 
+        # First pass: store all chunks and track statistics
         for chunk in chunks:
             # Check if chunk already exists (by content hash)
             existing = self.chunk_repo.find_by_content_hash(chunk.content_hash)
@@ -427,20 +562,31 @@ class IndexingUseCase:
             else:
                 chunks_updated += 1
 
-            # Embed and store vector
-            embeddings = self.embedder.embed_texts([chunk.content])
-            self.vector_repo.add(
-                chunk_id=chunk.id,
-                embedding=embeddings[0],
-                model_fingerprint=self.embedder.fingerprint(),
-            )
-            vectors_stored += 1
+        # Second pass: batch embed all chunks at once for efficiency
+        if chunks:
+            # Collect all chunk contents
+            contents = [chunk.content for chunk in chunks]
 
-        # Track file
+            # Single batch embedding call
+            embeddings = self.embedder.embed_texts(contents)
+
+            # Compute fingerprint once (avoids repeated function calls)
+            model_fingerprint = self.embedder.fingerprint()
+
+            # Store vectors for each chunk
+            for chunk, embedding in zip(chunks, embeddings, strict=True):
+                self.vector_repo.add(
+                    chunk_id=chunk.id,
+                    embedding=embedding,
+                    model_fingerprint=model_fingerprint,
+                )
+                vectors_stored += 1
+
+        # Track file (use pre-computed file_size, avoids re-encoding)
         self.file_repo.track_file(
             path=file_path,
             file_hash=file_hash,
-            size=len(content.encode("utf-8")),
+            size=file_size,
             mtime=time.time(),
         )
 

@@ -71,9 +71,7 @@ def test_init_creates_valid_database_schema(tmp_path: Path) -> None:
     cursor = conn.cursor()
 
     # Check all required tables exist
-    cursor.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-    )
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
     tables = {row[0] for row in cursor.fetchall()}
 
     required_tables = {"chunks", "chunk_text", "vectors", "meta", "tags", "files"}
@@ -160,9 +158,7 @@ def test_init_database_has_fts5_triggers(tmp_path: Path) -> None:
     cursor = conn.cursor()
 
     # Check triggers exist
-    cursor.execute(
-        "SELECT name FROM sqlite_master WHERE type='trigger' ORDER BY name"
-    )
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='trigger' ORDER BY name")
     triggers = {row[0] for row in cursor.fetchall()}
 
     assert "chunks_ai" in triggers  # After insert

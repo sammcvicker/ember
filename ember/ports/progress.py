@@ -3,7 +3,6 @@
 Defines callback interface for reporting progress during indexing and other operations.
 """
 
-from pathlib import Path
 from typing import Protocol
 
 
