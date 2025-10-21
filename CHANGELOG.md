@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Daemon-based model server for instant searches** (#46)
+  - Keeps embedding model loaded in memory for near-instant searches
+  - **18.6x faster** than direct mode: 43ms average vs 806ms
+  - First search after daemon starts: ~1s (one-time model loading cost)
+  - Subsequent searches: ~20ms (model already loaded)
+  - Auto-starts transparently on first `ember find` or `ember sync` command
+  - Auto-shuts down after 15 minutes of inactivity (configurable)
+  - Manual daemon management: `ember daemon start|stop|status|restart`
+  - Graceful fallback to direct mode if daemon fails
+  - Configuration in `.ember/config.toml`:
+    ```toml
+    [model]
+    mode = "daemon"  # or "direct" to disable daemon
+    daemon_timeout = 900  # seconds (default: 15 min)
+    ```
+  - Eliminates the 2+ second model initialization delay on every command
+  - Makes ember feel instant and effortless ("be like water")
+
 ## [0.2.0] - 2025-10-20
 
 ### Changed

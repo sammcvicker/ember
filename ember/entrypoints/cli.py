@@ -19,6 +19,32 @@ from ember.core.cli_utils import (
 from ember.core.presentation import ResultPresenter
 
 
+def _create_embedder(config):
+    """Create embedder based on configuration.
+
+    Args:
+        config: EmberConfig with model settings
+
+    Returns:
+        Embedder instance (daemon client or direct)
+    """
+    if config.model.mode == "daemon":
+        # Use daemon mode (default)
+        from ember.adapters.daemon.client import DaemonEmbedderClient
+        from ember.adapters.daemon.lifecycle import DaemonLifecycle
+
+        # Ensure daemon is running
+        lifecycle = DaemonLifecycle(idle_timeout=config.model.daemon_timeout)
+        lifecycle.ensure_running()
+
+        return DaemonEmbedderClient(fallback=True)
+    else:
+        # Use direct mode (fallback or explicit config)
+        from ember.adapters.local_models.jina_embedder import JinaCodeEmbedder
+
+        return JinaCodeEmbedder()
+
+
 def _create_indexing_usecase(repo_root: Path, db_path: Path, config):
     """Create IndexingUseCase with all dependencies.
 
@@ -35,7 +61,6 @@ def _create_indexing_usecase(repo_root: Path, db_path: Path, config):
     # Lazy imports - only load heavy dependencies when needed
     from ember.adapters.fs.local import LocalFileSystem
     from ember.adapters.git_cmd.git_adapter import GitAdapter
-    from ember.adapters.local_models.jina_embedder import JinaCodeEmbedder
     from ember.adapters.parsers.line_chunker import LineChunker
     from ember.adapters.parsers.tree_sitter_chunker import TreeSitterChunker
     from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
@@ -48,7 +73,7 @@ def _create_indexing_usecase(repo_root: Path, db_path: Path, config):
     # Initialize dependencies
     vcs = GitAdapter(repo_root)
     fs = LocalFileSystem()
-    embedder = JinaCodeEmbedder()
+    embedder = _create_embedder(config)
 
     # Initialize repositories
     chunk_repo = SQLiteChunkRepository(db_path)
@@ -346,7 +371,6 @@ def find(
     try:
         # Lazy imports - only load heavy dependencies when find is actually called
         from ember.adapters.fts.sqlite_fts import SQLiteFTS
-        from ember.adapters.local_models.jina_embedder import JinaCodeEmbedder
         from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
         from ember.adapters.vss.sqlite_vec_adapter import SqliteVecAdapter
         from ember.core.retrieval.search_usecase import SearchUseCase
@@ -356,7 +380,7 @@ def find(
         text_search = SQLiteFTS(db_path)
         vector_search = SqliteVecAdapter(db_path)
         chunk_repo = SQLiteChunkRepository(db_path)
-        embedder = JinaCodeEmbedder()
+        embedder = _create_embedder(config)
 
         # Create search use case
         search_usecase = SearchUseCase(
@@ -621,6 +645,98 @@ def audit(ctx: click.Context) -> None:
 # Register import and open commands with proper names
 cli.add_command(import_bundle, name="import")
 cli.add_command(open_result, name="open")
+
+
+# Daemon management commands
+@cli.group()
+def daemon() -> None:
+    """Manage the embedding daemon server.
+
+    The daemon keeps the embedding model loaded in memory for instant searches.
+    It starts automatically when needed and shuts down after idle timeout.
+    """
+    pass
+
+
+@daemon.command()
+@click.option("--foreground", "-f", is_flag=True, help="Run in foreground (blocks)")
+def start(foreground: bool) -> None:
+    """Start the daemon server."""
+    from ember.adapters.daemon.lifecycle import DaemonLifecycle
+
+    lifecycle = DaemonLifecycle()
+
+    if lifecycle.is_running():
+        click.echo("✓ Daemon is already running")
+        return
+
+    click.echo("Starting daemon...")
+    try:
+        lifecycle.start(foreground=foreground)
+        if not foreground:
+            click.echo("✓ Daemon started successfully")
+    except RuntimeError as e:
+        click.echo(f"✗ Failed to start daemon: {e}", err=True)
+        sys.exit(1)
+
+
+@daemon.command()
+def stop() -> None:
+    """Stop the daemon server."""
+    from ember.adapters.daemon.lifecycle import DaemonLifecycle
+
+    lifecycle = DaemonLifecycle()
+
+    if not lifecycle.is_running():
+        click.echo("Daemon is not running")
+        return
+
+    click.echo("Stopping daemon...")
+    if lifecycle.stop():
+        click.echo("✓ Daemon stopped successfully")
+    else:
+        click.echo("✗ Failed to stop daemon", err=True)
+        sys.exit(1)
+
+
+@daemon.command()
+def restart() -> None:
+    """Restart the daemon server."""
+    from ember.adapters.daemon.lifecycle import DaemonLifecycle
+
+    lifecycle = DaemonLifecycle()
+    click.echo("Restarting daemon...")
+
+    if lifecycle.restart():
+        click.echo("✓ Daemon restarted successfully")
+    else:
+        click.echo("✗ Failed to restart daemon", err=True)
+        sys.exit(1)
+
+
+@daemon.command()
+def status() -> None:
+    """Show daemon status."""
+    from ember.adapters.daemon.lifecycle import DaemonLifecycle
+
+    lifecycle = DaemonLifecycle()
+    status = lifecycle.status()
+
+    # Display status
+    if status["running"]:
+        click.echo(f"✓ Daemon is running (PID {status['pid']})")
+    else:
+        click.echo("✗ Daemon is not running")
+
+    # Show details
+    click.echo("\nDetails:")
+    click.echo(f"  Status: {status['status']}")
+    click.echo(f"  Socket: {status['socket']}")
+    click.echo(f"  PID file: {status['pid_file']}")
+    click.echo(f"  Log file: {status['log_file']}")
+
+    if status.get("message"):
+        click.echo(f"\n{status['message']}")
 
 
 def main() -> int:
