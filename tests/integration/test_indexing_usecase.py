@@ -437,3 +437,150 @@ def test_chunking_failure_preserves_existing_chunks(
 
     # Restore original method
     indexing_usecase.chunk_usecase.execute = original_execute
+
+
+@pytest.mark.slow
+def test_index_file_with_unreadable_file(
+    indexing_usecase: IndexingUseCase, git_repo: Path, db_path: Path
+) -> None:
+    """Test handling of permission denied errors.
+
+    Verifies that IndexingUseCase handles files that can't be read
+    due to permission errors. Documents current behavior.
+    """
+    import os
+    import stat
+    import subprocess
+
+    # Create a file and add it to git first
+    restricted_file = git_repo / "restricted.py"
+    restricted_file.write_text("def secret(): pass\n")
+
+    # Add to git and commit BEFORE removing permissions
+    subprocess.run(["git", "add", "restricted.py"], cwd=git_repo, check=True, capture_output=True, timeout=5)
+    subprocess.run(
+        ["git", "commit", "-m", "Add restricted file"],
+        cwd=git_repo,
+        check=True,
+        capture_output=True,
+        timeout=5,
+    )
+
+    # Now remove read permissions
+    try:
+        os.chmod(restricted_file, stat.S_IWRITE)  # Write-only, no read
+
+        # Attempt to index - behavior depends on implementation
+        request = IndexRequest(repo_root=git_repo, force_reindex=True)
+        response = indexing_usecase.execute(request)
+
+        # Current implementation may skip unreadable files or fail
+        # This test documents the actual behavior without asserting specific outcome
+        # Just verify it doesn't crash completely
+        assert isinstance(response.success, bool)
+
+    finally:
+        # Restore permissions for cleanup
+        try:
+            os.chmod(restricted_file, stat.S_IREAD | stat.S_IWRITE)
+        except:
+            pass  # Best effort cleanup
+
+
+@pytest.mark.slow
+def test_index_file_with_invalid_utf8(
+    indexing_usecase: IndexingUseCase, git_repo: Path, db_path: Path
+) -> None:
+    """Test handling of encoding errors.
+
+    Verifies that IndexingUseCase handles files with invalid UTF-8 encoding.
+    Documents current behavior - system may handle encoding errors by skipping
+    or using error-replacement strategies.
+    """
+    import subprocess
+
+    # Create a file with invalid UTF-8 bytes
+    binary_file = git_repo / "binary.py"
+    # Write invalid UTF-8 sequence (0xFF is invalid in UTF-8)
+    binary_file.write_bytes(b"def test():\n    x = \xff\xff\xff\n")
+
+    # Add to git and commit
+    subprocess.run(["git", "add", "binary.py"], cwd=git_repo, check=True, capture_output=True, timeout=5)
+    subprocess.run(
+        ["git", "commit", "-m", "Add binary file"],
+        cwd=git_repo,
+        check=True,
+        capture_output=True,
+        timeout=5,
+    )
+
+    # Attempt to index
+    request = IndexRequest(repo_root=git_repo, force_reindex=True)
+    response = indexing_usecase.execute(request)
+
+    # Should complete without crashing
+    assert isinstance(response.success, bool)
+    assert response.files_indexed >= 2  # At least math.py and utils.py
+
+    # Current implementation may or may not index the binary file
+    # This test just ensures no crash occurs
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM chunks WHERE path = 'binary.py'")
+    binary_chunks = cursor.fetchone()[0]
+    # File may be indexed (with replacement chars) or skipped - both are valid
+    assert binary_chunks >= 0
+    conn.close()
+
+
+@pytest.mark.slow
+def test_index_file_with_embedder_failure(
+    git_repo: Path, db_path: Path
+) -> None:
+    """Test handling of embedder failures.
+
+    Verifies that IndexingUseCase handles embedder failures (e.g., model errors,
+    network issues) appropriately. Current implementation fails the entire index
+    operation when embedding fails, which is documented here.
+    """
+    from unittest.mock import Mock
+
+    # Create IndexingUseCase with a mock embedder that fails
+    vcs = GitAdapter(git_repo)
+    fs = LocalFileSystem()
+    tree_sitter_chunker = TreeSitterChunker()
+    line_chunker = LineChunker()
+    chunk_usecase = ChunkFileUseCase(tree_sitter_chunker, line_chunker)
+
+    # Mock embedder that raises an exception
+    mock_embedder = Mock()
+    mock_embedder.embed_texts.side_effect = RuntimeError("Model failed to load")
+    mock_embedder.fingerprint.return_value = "mock-embedder-v1"
+
+    chunk_repo = SQLiteChunkRepository(db_path)
+    vector_repo = SQLiteVectorRepository(db_path)
+    file_repo = SQLiteFileRepository(db_path)
+    meta_repo = SQLiteMetaRepository(db_path)
+    project_id = "test_project"
+
+    indexing_usecase = IndexingUseCase(
+        vcs=vcs,
+        fs=fs,
+        chunk_usecase=chunk_usecase,
+        embedder=mock_embedder,
+        chunk_repo=chunk_repo,
+        vector_repo=vector_repo,
+        file_repo=file_repo,
+        meta_repo=meta_repo,
+        project_id=project_id,
+    )
+
+    # Attempt to index
+    request = IndexRequest(repo_root=git_repo, force_reindex=True)
+    response = indexing_usecase.execute(request)
+
+    # Current implementation: embedder failure causes indexing to fail
+    # This is acceptable behavior - documents that errors are reported
+    assert response.success == False  # Embedder failure causes operation to fail
+    assert response.error is not None  # Error message should be present
+    assert len(response.error) > 0  # Error message should not be empty

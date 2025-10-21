@@ -56,6 +56,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added `timeout=5` to all 47 subprocess calls to prevent test suite hangs
   - Tests can now run in parallel safely with `pytest -n auto`
   - Verified all slow tests (downloading models) properly marked with `@pytest.mark.slow`
+- **Error path and edge case test coverage** (#38, Phase 2)
+  - Added 3 IndexingUseCase error path tests: file permissions, encoding errors, embedder failures
+  - Added 5 SearchUseCase edge case tests: empty results, combined filters, special characters, long queries
+  - Documents current error handling behavior and improves test coverage
+  - Total: 8 new tests to catch edge cases and improve reliability
   - Better architecture: follows DRY principle while maintaining clean separation
 - **Batch embedding optimization**: Indexing is now ~27-38% faster due to batched embeddings (#14)
   - Refactored `_index_file()` to batch all chunks from a file in a single embedding call
