@@ -48,13 +48,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Auto-sync now shows the same professional progress bars as regular sync
   - Extracted `_create_indexing_usecase()` helper function for consistency
   - Reduced ~50 lines of duplicated dependency initialization code
-- **TreeSitterChunker refactoring**: Extracted LanguageRegistry to reduce complexity and duplication (#36, Phase 1)
-  - Created `LanguageRegistry` class for centralized language configuration management
-  - Eliminated 75% code duplication in language query patterns (163 lines → single source of truth)
-  - Reduced TreeSitterChunker from 293 lines to 130 lines (56% reduction)
-  - Implemented lazy parser initialization (load languages only when used)
-  - Reduced cyclomatic complexity and improved maintainability
-  - No behavioral changes, all 114 tests passing with 100% coverage on new code
+- **TreeSitterChunker refactoring**: Major complexity reduction through extraction (#36, Phases 1-3)
+  - **Phase 1 - LanguageRegistry**: Created centralized language configuration management
+    - Eliminated 75% code duplication in language query patterns (163 lines → single source of truth)
+    - Implemented lazy parser initialization (load languages only when used)
+  - **Phase 2 - DefinitionMatcher**: Extracted complex AST matching logic
+    - Isolated name-to-definition matching in standalone, testable class
+    - Reduced chunk_file method complexity significantly
+  - **Phase 3 - Logging**: Added comprehensive error logging
+    - Specific logging for encoding errors, parse failures, and query execution errors
+    - Debug logging for unsupported languages and extraction results
+  - **Overall Impact**:
+    - Reduced TreeSitterChunker from 293 lines to 109 lines (63% reduction)
+    - Reduced cyclomatic complexity from C-16 toward target of C-10
+    - Improved testability with 11 new DefinitionMatcher tests
+    - All 125 tests passing with 100% coverage on new code
+    - No behavioral changes, fully backward compatible
 
 ### Fixed
 - **Test isolation and reliability improvements** (#38, Phase 1 Quick Wins)
