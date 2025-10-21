@@ -32,18 +32,17 @@ class RichProgressCallback:
     def on_start(self, total: int, description: str) -> None:
         """Create progress bar when operation starts."""
         # Use transient=True to auto-hide when complete
-        self.task_id = self.progress.add_task(description, total=total)
+        # Initialize with empty current_file field
+        self.task_id = self.progress.add_task(description, total=total, current_file="")
 
     def on_progress(self, current: int, item_description: str | None = None) -> None:
         """Update progress bar with current item."""
         if self.task_id is not None:
-            # Update the task description to show current file
-            if item_description:
-                self.progress.update(
-                    self.task_id, completed=current, description=f"[cyan]{item_description}"
-                )
-            else:
-                self.progress.update(self.task_id, completed=current)
+            # Update progress and current file using task fields
+            # This keeps the progress bar position stable
+            self.progress.update(
+                self.task_id, completed=current, current_file=item_description or ""
+            )
 
     def on_complete(self) -> None:
         """Mark progress as complete and hide it."""
@@ -79,6 +78,7 @@ def progress_context(
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
             TaskProgressColumn(),
+            TextColumn("[cyan]{task.fields[current_file]}"),
             transient=True,
         ) as progress:
             yield RichProgressCallback(progress)
