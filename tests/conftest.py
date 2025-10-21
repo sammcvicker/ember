@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from ember.adapters.sqlite.schema import init_database
 from ember.domain.entities import Chunk
 
 
@@ -68,6 +69,81 @@ def sample_chunks() -> list[Chunk]:
         )
         chunks.append(chunk)
     return chunks
+
+
+@pytest.fixture
+def git_repo(tmp_path: Path) -> Path:
+    """Create a standard git repository with test files.
+
+    Creates a git repository with:
+    - Two Python files (math.py, utils.py)
+    - Proper git configuration
+    - Initial commit
+
+    Returns:
+        Path to the git repository root.
+    """
+    repo_root = tmp_path / "test_repo"
+    repo_root.mkdir()
+
+    # Initialize git repo
+    subprocess.run(["git", "init"], cwd=repo_root, check=True, capture_output=True, timeout=5)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=repo_root,
+        check=True,
+        capture_output=True,
+        timeout=5,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test User"],
+        cwd=repo_root,
+        check=True,
+        capture_output=True,
+        timeout=5,
+    )
+
+    # Create test files
+    math_file = repo_root / "math.py"
+    math_file.write_text("""def add(a, b):
+    '''Add two numbers.'''
+    return a + b
+
+
+def multiply(a, b):
+    '''Multiply two numbers.'''
+    return a * b
+""")
+
+    utils_file = repo_root / "utils.py"
+    utils_file.write_text("""def greet(name):
+    '''Greet someone.'''
+    return f"Hello, {name}!"
+""")
+
+    # Commit files
+    subprocess.run(["git", "add", "."], cwd=repo_root, check=True, capture_output=True, timeout=5)
+    subprocess.run(
+        ["git", "commit", "-m", "Initial commit"],
+        cwd=repo_root,
+        check=True,
+        capture_output=True,
+        timeout=5,
+    )
+
+    return repo_root
+
+
+@pytest.fixture
+def db_path(tmp_path: Path) -> Path:
+    """Create a temporary database with schema initialized.
+
+    Returns:
+        Path to the initialized test database.
+    """
+    db = tmp_path / "test.db"
+    init_database(db)
+    return db
 
 
 @pytest.fixture

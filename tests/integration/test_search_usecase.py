@@ -11,19 +11,12 @@ import pytest
 from ember.adapters.fts.sqlite_fts import SQLiteFTS
 from ember.adapters.local_models.jina_embedder import JinaCodeEmbedder
 from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
-from ember.adapters.sqlite.schema import init_database
 from ember.adapters.sqlite.vector_repository import SQLiteVectorRepository
 from ember.adapters.vss.simple_vector_search import SimpleVectorSearch
 from ember.core.retrieval.search_usecase import SearchUseCase
 from ember.domain.entities import Chunk, Query
 
-
-@pytest.fixture
-def db_path(tmp_path: Path) -> Path:
-    """Create a temporary database with schema initialized."""
-    db = tmp_path / "test_search.db"
-    init_database(db)
-    return db
+# Note: db_path fixture is now in tests/conftest.py
 
 
 @pytest.fixture

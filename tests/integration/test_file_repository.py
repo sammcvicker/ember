@@ -8,19 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from ember.adapters.sqlite import SQLiteFileRepository, init_database
+from ember.adapters.sqlite import SQLiteFileRepository
 
-
-@pytest.fixture
-def db_path(tmp_path: Path) -> Path:
-    """Create a temporary database with schema initialized.
-
-    Returns:
-        Path to the test database file.
-    """
-    db = tmp_path / "test.db"
-    init_database(db)
-    return db
+# Note: db_path fixture is now in tests/conftest.py
 
 
 @pytest.fixture

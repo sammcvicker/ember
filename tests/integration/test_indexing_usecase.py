@@ -22,68 +22,7 @@ from ember.adapters.sqlite.vector_repository import SQLiteVectorRepository
 from ember.core.chunking.chunk_usecase import ChunkFileUseCase
 from ember.core.indexing.index_usecase import IndexingUseCase, IndexRequest
 
-
-@pytest.fixture
-def git_repo(tmp_path: Path) -> Path:
-    """Create a git repository with test files."""
-    repo_root = tmp_path / "test_repo"
-    repo_root.mkdir()
-
-    # Initialize git repo
-    import subprocess
-    subprocess.run(["git", "init"], cwd=repo_root, check=True, capture_output=True, timeout=5)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"],
-        cwd=repo_root,
-        check=True,
-        capture_output=True,
-        timeout=5,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "Test User"],
-        cwd=repo_root,
-        check=True,
-        capture_output=True,
-        timeout=5,
-    )
-
-    # Create test files
-    test_file1 = repo_root / "math.py"
-    test_file1.write_text("""def add(a, b):
-    '''Add two numbers.'''
-    return a + b
-
-
-def multiply(a, b):
-    '''Multiply two numbers.'''
-    return a * b
-""")
-
-    test_file2 = repo_root / "utils.py"
-    test_file2.write_text("""def greet(name):
-    '''Greet someone.'''
-    return f"Hello, {name}!"
-""")
-
-    # Commit files
-    subprocess.run(["git", "add", "."], cwd=repo_root, check=True, capture_output=True, timeout=5)
-    subprocess.run(
-        ["git", "commit", "-m", "Initial commit"],
-        cwd=repo_root,
-        check=True,
-        capture_output=True,
-        timeout=5,
-    )
-
-    return repo_root
-
-
-@pytest.fixture
-def db_path(tmp_path: Path) -> Path:
-    """Create a temporary database with schema initialized."""
-    db = tmp_path / "test_index.db"
-    init_database(db)
-    return db
+# Note: git_repo and db_path fixtures are now in tests/conftest.py
 
 
 @pytest.fixture
