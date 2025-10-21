@@ -5,7 +5,6 @@ Handles serialization and formatting of search results for different output mode
 
 import json
 from collections import defaultdict
-from pathlib import Path
 from typing import Any
 
 import click

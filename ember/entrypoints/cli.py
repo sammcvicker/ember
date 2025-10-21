@@ -12,7 +12,6 @@ import click
 from ember.core.cli_utils import (
     check_and_auto_sync,
     format_result_header,
-    highlight_symbol,
     load_cached_results,
     progress_context,
     validate_result_index,
@@ -206,6 +205,7 @@ def sync(
 
     # Load config
     from ember.adapters.config.toml_config_provider import TomlConfigProvider
+
     config_provider = TomlConfigProvider()
     config = config_provider.load(ember_dir)
 
@@ -325,6 +325,7 @@ def find(
 
     # Load config
     from ember.adapters.config.toml_config_provider import TomlConfigProvider
+
     config_provider = TomlConfigProvider()
     config = config_provider.load(ember_dir)
 
@@ -438,9 +439,8 @@ def cat(ctx: click.Context, index: int, context: int) -> None:
         format_result_header(result, index, show_symbol=True)
         click.echo(
             click.style(
-                f"Lines {result['start_line']}-{result['end_line']} "
-                f"({result['lang'] or 'text'})",
-                dim=True
+                f"Lines {result['start_line']}-{result['end_line']} ({result['lang'] or 'text'})",
+                dim=True,
             )
         )
         click.echo()
@@ -450,7 +450,7 @@ def cat(ctx: click.Context, index: int, context: int) -> None:
 
         # If context requested, read file and show surrounding lines
         if context > 0:
-            file_path = repo_root / path
+            file_path = repo_root / result["path"]
             if file_path.exists():
                 try:
                     file_lines = file_path.read_text(errors="replace").splitlines()
@@ -468,18 +468,16 @@ def cat(ctx: click.Context, index: int, context: int) -> None:
                         if start_line <= line_num <= end_line:
                             click.echo(f"{line_num:5} | {line_content}")
                         else:
-                            click.echo(
-                                click.style(f"{line_num:5} | {line_content}", dim=True)
-                            )
+                            click.echo(click.style(f"{line_num:5} | {line_content}", dim=True))
                 except Exception as e:
                     # Fall back to just chunk content if file read fails
                     click.echo(
-                        f"Warning: Could not read context from {path}: {e}", err=True
+                        f"Warning: Could not read context from {result['path']}: {e}", err=True
                     )
                     click.echo(content)
             else:
                 click.echo(
-                    f"Warning: File {path} not found, showing chunk only", err=True
+                    f"Warning: File {result['path']} not found, showing chunk only", err=True
                 )
                 click.echo(content)
         else:

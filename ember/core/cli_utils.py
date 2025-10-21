@@ -5,9 +5,10 @@ Shared utilities to reduce duplication across CLI commands.
 
 import json
 import sys
+from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Generator
+from typing import Any
 
 import click
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
@@ -52,7 +53,9 @@ class RichProgressCallback:
 
 
 @contextmanager
-def progress_context(quiet_mode: bool = False) -> Generator[RichProgressCallback | None, None, None]:
+def progress_context(
+    quiet_mode: bool = False,
+) -> Generator[RichProgressCallback | None, None, None]:
     """Context manager for creating progress bars.
 
     Args:
@@ -129,9 +132,7 @@ def validate_result_index(index: int, results: list[dict[str, Any]]) -> dict[str
     """
     # Validate index (1-based)
     if index < 1 or index > len(results):
-        click.echo(
-            f"Error: Index {index} out of range (1-{len(results)})", err=True
-        )
+        click.echo(f"Error: Index {index} out of range (1-{len(results)})", err=True)
         sys.exit(1)
 
     # Get the result (convert to 0-based)
@@ -167,9 +168,7 @@ def highlight_symbol(text: str, symbol: str | None) -> str:
     return "".join(parts)
 
 
-def format_result_header(
-    result: dict[str, Any], index: int, show_symbol: bool = True
-) -> None:
+def format_result_header(result: dict[str, Any], index: int, show_symbol: bool = True) -> None:
     """Print result header in consistent ripgrep-style format.
 
     Args:
@@ -187,9 +186,7 @@ def format_result_header(
     # Symbol in red bold (inline)
     symbol_display = ""
     if show_symbol and result.get("symbol"):
-        symbol_display = " " + click.style(
-            f"({result['symbol']})", fg="red", bold=True
-        )
+        symbol_display = " " + click.style(f"({result['symbol']})", fg="red", bold=True)
 
     click.echo(f"{rank} {line_num}:{symbol_display}")
 
