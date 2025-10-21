@@ -115,18 +115,20 @@ class PerformanceTestFixture:
     def setup_repo(self) -> None:
         """Initialize the test repository."""
         self.repo_path.mkdir(parents=True)
-        subprocess.run(["git", "init"], cwd=self.repo_path, check=True, capture_output=True)
+        subprocess.run(["git", "init"], cwd=self.repo_path, check=True, capture_output=True, timeout=5)
         subprocess.run(
             ["git", "config", "user.email", "test@example.com"],
             cwd=self.repo_path,
             check=True,
             capture_output=True,
+            timeout=5,
         )
         subprocess.run(
             ["git", "config", "user.name", "Test User"],
             cwd=self.repo_path,
             check=True,
             capture_output=True,
+            timeout=5,
         )
 
         # Initialize ember
@@ -208,12 +210,13 @@ class PerformanceTestFixture:
             file_path.write_text("\n".join(lines))
 
         # Create initial commit
-        subprocess.run(["git", "add", "."], cwd=self.repo_path, check=True, capture_output=True)
+        subprocess.run(["git", "add", "."], cwd=self.repo_path, check=True, capture_output=True, timeout=5)
         subprocess.run(
             ["git", "commit", "-m", "Initial commit"],
             cwd=self.repo_path,
             check=True,
             capture_output=True,
+            timeout=5,
         )
 
     def modify_files(self, num_files: int) -> None:
@@ -235,12 +238,13 @@ def new_helper_function(x: int) -> int:
             file_path.write_text(content + new_function)
 
         # Commit changes
-        subprocess.run(["git", "add", "."], cwd=self.repo_path, check=True, capture_output=True)
+        subprocess.run(["git", "add", "."], cwd=self.repo_path, check=True, capture_output=True, timeout=5)
         subprocess.run(
             ["git", "commit", "-m", "Add helper functions"],
             cwd=self.repo_path,
             check=True,
             capture_output=True,
+            timeout=5,
         )
 
 

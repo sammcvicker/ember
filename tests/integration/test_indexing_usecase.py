@@ -31,18 +31,20 @@ def git_repo(tmp_path: Path) -> Path:
 
     # Initialize git repo
     import subprocess
-    subprocess.run(["git", "init"], cwd=repo_root, check=True, capture_output=True)
+    subprocess.run(["git", "init"], cwd=repo_root, check=True, capture_output=True, timeout=5)
     subprocess.run(
         ["git", "config", "user.email", "test@example.com"],
         cwd=repo_root,
         check=True,
         capture_output=True,
+        timeout=5,
     )
     subprocess.run(
         ["git", "config", "user.name", "Test User"],
         cwd=repo_root,
         check=True,
         capture_output=True,
+        timeout=5,
     )
 
     # Create test files
@@ -64,12 +66,13 @@ def multiply(a, b):
 """)
 
     # Commit files
-    subprocess.run(["git", "add", "."], cwd=repo_root, check=True, capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=repo_root, check=True, capture_output=True, timeout=5)
     subprocess.run(
         ["git", "commit", "-m", "Initial commit"],
         cwd=repo_root,
         check=True,
         capture_output=True,
+        timeout=5,
     )
 
     return repo_root
@@ -194,12 +197,13 @@ def test_incremental_sync_modified_file_no_duplicates(
 
     # Commit the change
     import subprocess
-    subprocess.run(["git", "add", "math.py"], cwd=git_repo, check=True, capture_output=True)
+    subprocess.run(["git", "add", "math.py"], cwd=git_repo, check=True, capture_output=True, timeout=5)
     subprocess.run(
         ["git", "commit", "-m", "Modify math.py"],
         cwd=git_repo,
         check=True,
         capture_output=True,
+        timeout=5,
     )
 
     # Second sync (incremental)
@@ -293,13 +297,15 @@ def test_incremental_sync_multiple_modifications_no_accumulation(
             ["git", "add", "math.py"],
             cwd=git_repo,
             check=True,
-            capture_output=True
+            capture_output=True,
+            timeout=5,
         )
         subprocess.run(
             ["git", "commit", "-m", f"Modification {i+1}"],
             cwd=git_repo,
             check=True,
             capture_output=True,
+            timeout=5,
         )
 
         # Sync
@@ -345,12 +351,13 @@ def test_incremental_sync_deleted_file(
 
     # Commit deletion
     import subprocess
-    subprocess.run(["git", "add", "-u"], cwd=git_repo, check=True, capture_output=True)
+    subprocess.run(["git", "add", "-u"], cwd=git_repo, check=True, capture_output=True, timeout=5)
     subprocess.run(
         ["git", "commit", "-m", "Delete utils.py"],
         cwd=git_repo,
         check=True,
         capture_output=True,
+        timeout=5,
     )
 
     # Incremental sync

@@ -48,6 +48,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Auto-sync now shows the same professional progress bars as regular sync
   - Extracted `_create_indexing_usecase()` helper function for consistency
   - Reduced ~50 lines of duplicated dependency initialization code
+
+### Fixed
+- **Test isolation and reliability improvements** (#38, Phase 1 Quick Wins)
+  - Fixed test isolation by replacing all `os.chdir()` calls with `pytest.monkeypatch.chdir()`
+  - Tests now properly restore working directory even on failures
+  - Added `timeout=5` to all 47 subprocess calls to prevent test suite hangs
+  - Tests can now run in parallel safely with `pytest -n auto`
+  - Verified all slow tests (downloading models) properly marked with `@pytest.mark.slow`
   - Better architecture: follows DRY principle while maintaining clean separation
 - **Batch embedding optimization**: Indexing is now ~27-38% faster due to batched embeddings (#14)
   - Refactored `_index_file()` to batch all chunks from a file in a single embedding call

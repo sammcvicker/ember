@@ -22,29 +22,32 @@ def git_repo(tmp_path: Path) -> Path:
     repo.mkdir()
 
     # Initialize git repo
-    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, timeout=5)
     subprocess.run(
         ["git", "config", "user.name", "Test User"],
         cwd=repo,
         check=True,
         capture_output=True,
+        timeout=5,
     )
     subprocess.run(
         ["git", "config", "user.email", "test@example.com"],
         cwd=repo,
         check=True,
         capture_output=True,
+        timeout=5,
     )
 
     # Create initial commit
     (repo / "file1.txt").write_text("Hello world\n")
     (repo / "file2.py").write_text("print('hello')\n")
-    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True, timeout=5)
     subprocess.run(
         ["git", "commit", "-m", "Initial commit"],
         cwd=repo,
         check=True,
         capture_output=True,
+        timeout=5,
     )
 
     return repo
@@ -126,12 +129,13 @@ def test_diff_files_between_commits(git_adapter: GitAdapter, git_repo: Path):
     # Create a new commit with changes
     (git_repo / "file3.txt").write_text("New file\n")
     (git_repo / "file1.txt").write_text("Modified\n")
-    subprocess.run(["git", "add", "."], cwd=git_repo, check=True, capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=git_repo, check=True, capture_output=True, timeout=5)
     subprocess.run(
         ["git", "commit", "-m", "Second commit"],
         cwd=git_repo,
         check=True,
         capture_output=True,
+        timeout=5,
     )
 
     new_tree = git_adapter.get_tree_sha("HEAD")
@@ -172,12 +176,13 @@ def test_diff_files_with_deletions(git_adapter: GitAdapter, git_repo: Path):
 
     # Delete a file
     (git_repo / "file1.txt").unlink()
-    subprocess.run(["git", "add", "."], cwd=git_repo, check=True, capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=git_repo, check=True, capture_output=True, timeout=5)
     subprocess.run(
         ["git", "commit", "-m", "Delete file"],
         cwd=git_repo,
         check=True,
         capture_output=True,
+        timeout=5,
     )
 
     new_tree = git_adapter.get_tree_sha("HEAD")
@@ -196,12 +201,13 @@ def test_diff_files_with_renames(git_adapter: GitAdapter, git_repo: Path):
 
     # Rename a file
     (git_repo / "file1.txt").rename(git_repo / "renamed.txt")
-    subprocess.run(["git", "add", "."], cwd=git_repo, check=True, capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=git_repo, check=True, capture_output=True, timeout=5)
     subprocess.run(
         ["git", "commit", "-m", "Rename file"],
         cwd=git_repo,
         check=True,
         capture_output=True,
+        timeout=5,
     )
 
     new_tree = git_adapter.get_tree_sha("HEAD")
@@ -246,18 +252,20 @@ def test_empty_repository_detection(tmp_path: Path):
     repo.mkdir()
 
     # Initialize git repo but don't make any commits
-    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, timeout=5)
     subprocess.run(
         ["git", "config", "user.name", "Test User"],
         cwd=repo,
         check=True,
         capture_output=True,
+        timeout=5,
     )
     subprocess.run(
         ["git", "config", "user.email", "test@example.com"],
         cwd=repo,
         check=True,
         capture_output=True,
+        timeout=5,
     )
 
     adapter = GitAdapter(repo)
@@ -271,7 +279,7 @@ def test_worktree_tree_sha_restores_index_on_error(git_adapter: GitAdapter, git_
     """Test that index is restored even if error occurs during worktree tree computation."""
     # Stage a file
     (git_repo / "staged.txt").write_text("Staged content\n")
-    subprocess.run(["git", "add", "staged.txt"], cwd=git_repo, check=True, capture_output=True)
+    subprocess.run(["git", "add", "staged.txt"], cwd=git_repo, check=True, capture_output=True, timeout=5)
 
     # Get current index state
     result = subprocess.run(
@@ -279,6 +287,7 @@ def test_worktree_tree_sha_restores_index_on_error(git_adapter: GitAdapter, git_
         cwd=git_repo,
         check=True,
         capture_output=True,
+        timeout=5,
     )
     staged_before = result.stdout.decode().strip()
     assert "staged.txt" in staged_before
@@ -292,6 +301,7 @@ def test_worktree_tree_sha_restores_index_on_error(git_adapter: GitAdapter, git_
         cwd=git_repo,
         check=True,
         capture_output=True,
+        timeout=5,
     )
     staged_after = result.stdout.decode().strip()
     assert staged_after == staged_before, "Index should be restored after get_worktree_tree_sha"
@@ -303,28 +313,31 @@ def test_error_messages_include_exit_code(tmp_path: Path):
     repo.mkdir()
 
     # Initialize git repo
-    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, timeout=5)
     subprocess.run(
         ["git", "config", "user.name", "Test User"],
         cwd=repo,
         check=True,
         capture_output=True,
+        timeout=5,
     )
     subprocess.run(
         ["git", "config", "user.email", "test@example.com"],
         cwd=repo,
         check=True,
         capture_output=True,
+        timeout=5,
     )
 
     # Create a commit
     (repo / "file.txt").write_text("test\n")
-    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True, timeout=5)
     subprocess.run(
         ["git", "commit", "-m", "Initial"],
         cwd=repo,
         check=True,
         capture_output=True,
+        timeout=5,
     )
 
     adapter = GitAdapter(repo)
@@ -354,24 +367,27 @@ def test_list_tracked_files_empty_repo_with_commit(tmp_path: Path):
     repo.mkdir()
 
     # Initialize and create empty commit
-    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, timeout=5)
     subprocess.run(
         ["git", "config", "user.name", "Test User"],
         cwd=repo,
         check=True,
         capture_output=True,
+        timeout=5,
     )
     subprocess.run(
         ["git", "config", "user.email", "test@example.com"],
         cwd=repo,
         check=True,
         capture_output=True,
+        timeout=5,
     )
     subprocess.run(
         ["git", "commit", "--allow-empty", "-m", "Empty commit"],
         cwd=repo,
         check=True,
         capture_output=True,
+        timeout=5,
     )
 
     adapter = GitAdapter(repo)
