@@ -25,6 +25,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     ```
   - Eliminates the 2+ second model initialization delay on every command
   - Makes ember feel instant and effortless ("be like water")
+- **Lazy daemon startup** - daemon only starts when embedding is needed
+  - `ember sync` with no changes: 0.173s (was 2+ seconds)
+  - `ember sync` with changes: 2.785s (daemon starts when needed)
+  - Quick SHA check before creating indexing pipeline
+  - Daemon auto-starts on first embedding request
+- **Progress feedback during daemon startup**
+  - Shows "Starting embedding daemon..." spinner during 3-5s startup
+  - Transient progress that disappears when complete
+  - Applied to `ember sync`, `ember find`, and `ember daemon start`
+  - Makes startup feel responsive instead of hung
 
 ## [0.2.0] - 2025-10-20
 
