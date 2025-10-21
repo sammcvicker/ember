@@ -58,11 +58,16 @@ class SearchUseCase:
 
         # 2. Get BM25 results from full-text search
         # Use a larger retrieval pool for fusion (e.g., 100)
+        # Pass path_filter to filter during SQL query (not after)
         retrieval_pool = max(query.topk * 5, 100)
-        fts_results = self.text_search.query(query.text, topk=retrieval_pool)
+        fts_results = self.text_search.query(
+            query.text, topk=retrieval_pool, path_filter=query.path_filter
+        )
 
         # 3. Get vector search results
-        vector_results = self.vector_search.query(query_embedding, topk=retrieval_pool)
+        vector_results = self.vector_search.query(
+            query_embedding, topk=retrieval_pool, path_filter=query.path_filter
+        )
 
         # 4. Fuse results using Reciprocal Rank Fusion
         fused_scores = self._reciprocal_rank_fusion(
@@ -157,22 +162,22 @@ class SearchUseCase:
         path_filter: str | None,
         lang_filter: str | None,
     ) -> list[Chunk]:
-        """Apply path and language filters to chunks.
+        """Apply language filter to chunks.
+
+        Note: Path filtering now happens during SQL queries in the search adapters,
+        not here. This method only handles lang_filter for backwards compatibility.
 
         Args:
             chunks: List of chunks to filter.
-            path_filter: Optional glob pattern for file paths.
+            path_filter: Unused (kept for backwards compatibility).
             lang_filter: Optional language code filter.
 
         Returns:
             Filtered list of chunks.
         """
-        import fnmatch
-
         filtered = chunks
 
-        if path_filter:
-            filtered = [c for c in filtered if fnmatch.fnmatch(str(c.path), path_filter)]
+        # Path filtering now happens during SQL query, not here
 
         if lang_filter:
             filtered = [c for c in filtered if c.lang == lang_filter]

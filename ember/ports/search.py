@@ -19,12 +19,15 @@ class TextSearch(Protocol):
         """
         ...
 
-    def query(self, q: str, topk: int = 100) -> list[tuple[str, float]]:
+    def query(
+        self, q: str, topk: int = 100, path_filter: str | None = None
+    ) -> list[tuple[str, float]]:
         """Query the text search index.
 
         Args:
             q: Query string (may use FTS query syntax).
             topk: Maximum number of results to return.
+            path_filter: Optional glob pattern to filter results by path.
 
         Returns:
             List of (chunk_id, score) tuples, sorted by relevance (descending).
@@ -48,12 +51,14 @@ class VectorSearch(Protocol):
         self,
         vector: list[float],
         topk: int = 100,
+        path_filter: str | None = None,
     ) -> list[tuple[str, float]]:
         """Query for nearest neighbors.
 
         Args:
             vector: Query embedding vector.
             topk: Maximum number of results to return.
+            path_filter: Optional glob pattern to filter results by path.
 
         Returns:
             List of (chunk_id, distance) tuples, sorted by distance (ascending).

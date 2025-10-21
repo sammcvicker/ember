@@ -190,6 +190,7 @@ class SqliteVecAdapter:
         self,
         vector: list[float],
         topk: int = 100,
+        path_filter: str | None = None,
     ) -> list[tuple[str, float]]:
         """Query for nearest neighbors using sqlite-vec.
 
@@ -198,6 +199,7 @@ class SqliteVecAdapter:
         Args:
             vector: Query embedding vector.
             topk: Maximum number of results to return.
+            path_filter: Optional glob pattern to filter results by path.
 
         Returns:
             List of (chunk_id, similarity) tuples, sorted by similarity (descending).
@@ -215,23 +217,44 @@ class SqliteVecAdapter:
 
             # Query vec0 table for nearest neighbors
             # sqlite-vec returns distance, we need to convert to similarity
-            cursor.execute(
-                """
-                SELECT
-                    m.project_id,
-                    m.path,
-                    m.start_line,
-                    m.end_line,
-                    v.distance
-                FROM vec_chunks v
-                JOIN vec_chunk_mapping m ON v.rowid = m.vec_rowid
-                WHERE v.embedding MATCH ?
-                  AND k = ?
-                ORDER BY v.distance
-                LIMIT ?
-                """,
-                (serialized_vector, topk, topk),
-            )
+            # Add path filtering if specified
+            if path_filter:
+                cursor.execute(
+                    """
+                    SELECT
+                        m.project_id,
+                        m.path,
+                        m.start_line,
+                        m.end_line,
+                        v.distance
+                    FROM vec_chunks v
+                    JOIN vec_chunk_mapping m ON v.rowid = m.vec_rowid
+                    WHERE v.embedding MATCH ?
+                      AND k = ?
+                      AND m.path GLOB ?
+                    ORDER BY v.distance
+                    LIMIT ?
+                    """,
+                    (serialized_vector, topk, path_filter, topk),
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT
+                        m.project_id,
+                        m.path,
+                        m.start_line,
+                        m.end_line,
+                        v.distance
+                    FROM vec_chunks v
+                    JOIN vec_chunk_mapping m ON v.rowid = m.vec_rowid
+                    WHERE v.embedding MATCH ?
+                      AND k = ?
+                    ORDER BY v.distance
+                    LIMIT ?
+                    """,
+                    (serialized_vector, topk, topk),
+                )
 
             rows = cursor.fetchall()
             results = []
