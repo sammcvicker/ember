@@ -245,18 +245,20 @@ def check_and_auto_sync(
             with progress_context(quiet_mode=quiet_mode) as progress:
                 if progress:
                     response = indexing_usecase.execute(request, progress=progress)
-                    # Show completion message
-                    if response.success:
-                        if response.files_indexed > 0:
-                            click.echo(
-                                f"✓ Synced {response.files_indexed} file(s)",
-                                err=True,
-                            )
-                        else:
-                            click.echo("✓ Index up to date", err=True)
                 else:
                     # Silent mode
-                    indexing_usecase.execute(request)
+                    response = indexing_usecase.execute(request)
+
+            # Show completion message AFTER progress context exits (ensures progress bar is cleared)
+            if not quiet_mode:
+                if response.success:
+                    if response.files_indexed > 0:
+                        click.echo(
+                            f"✓ Synced {response.files_indexed} file(s)",
+                            err=True,
+                        )
+                    else:
+                        click.echo("✓ Index up to date", err=True)
 
     except Exception as e:
         # If staleness check fails, continue with search anyway
