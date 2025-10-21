@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **CLI refactoring (Phase 1)**: Extracted shared utilities to reduce code duplication (#32)
+  - Created `ember/core/cli_utils.py` with reusable CLI utilities
+  - Extracted `RichProgressCallback` for progress bar management
+  - Added `progress_context()` context manager to eliminate duplicated progress bar setup
+  - Added `load_cached_results()` and `validate_result_index()` to eliminate 80% duplication between `cat` and `open` commands
+  - Added `highlight_symbol()` and `format_result_header()` for consistent output formatting
+  - Reduced duplication in `sync`, `find`, `cat`, and `open` commands
+  - All tests pass, no user-facing changes
+
 ### Added
 - **Model loading progress indicator**: Shows separate progress when loading embedding model during sync (#31)
   - Prevents first file from appearing abnormally slow (model loads in ~2-3s)
