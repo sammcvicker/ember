@@ -19,22 +19,31 @@ from ember.core.cli_utils import (
 from ember.core.presentation import ResultPresenter
 
 
-def _create_embedder(config):
+def _create_embedder(config, show_progress: bool = True):
     """Create embedder based on configuration.
 
     Args:
         config: EmberConfig with model settings
+        show_progress: Show progress bar during daemon startup
 
     Returns:
         Embedder instance (daemon client or direct)
     """
     if config.model.mode == "daemon":
         # Use daemon mode (default)
-        # Client will auto-start daemon on first use
         from ember.adapters.daemon.client import DaemonEmbedderClient
+        from ember.core.cli_utils import ensure_daemon_with_progress
+
+        # Pre-start daemon with progress feedback
+        if show_progress:
+            ensure_daemon_with_progress(
+                daemon_timeout=config.model.daemon_timeout, quiet=False
+            )
 
         return DaemonEmbedderClient(
-            fallback=True, auto_start=True, daemon_timeout=config.model.daemon_timeout
+            fallback=True,
+            auto_start=not show_progress,  # Only auto-start if we didn't pre-start
+            daemon_timeout=config.model.daemon_timeout,
         )
     else:
         # Use direct mode (fallback or explicit config)
@@ -678,24 +687,45 @@ def daemon() -> None:
 
 @daemon.command()
 @click.option("--foreground", "-f", is_flag=True, help="Run in foreground (blocks)")
-def start(foreground: bool) -> None:
+@click.pass_context
+def start(ctx: click.Context, foreground: bool) -> None:
     """Start the daemon server."""
-    from ember.adapters.daemon.lifecycle import DaemonLifecycle
+    from ember.adapters.config.toml_config_provider import TomlConfigProvider
+    from ember.core.cli_utils import ensure_daemon_with_progress
 
-    lifecycle = DaemonLifecycle()
+    # Load config for daemon timeout
+    ember_dir = Path.home() / ".ember"
+    ember_dir.mkdir(parents=True, exist_ok=True)
+    config_provider = TomlConfigProvider()
+    config = config_provider.load(ember_dir)
 
-    if lifecycle.is_running():
-        click.echo("✓ Daemon is already running")
-        return
+    if foreground:
+        # Foreground mode uses direct lifecycle management
+        from ember.adapters.daemon.lifecycle import DaemonLifecycle
 
-    click.echo("Starting daemon...")
-    try:
-        lifecycle.start(foreground=foreground)
-        if not foreground:
-            click.echo("✓ Daemon started successfully")
-    except RuntimeError as e:
-        click.echo(f"✗ Failed to start daemon: {e}", err=True)
-        sys.exit(1)
+        lifecycle = DaemonLifecycle(idle_timeout=config.model.daemon_timeout)
+
+        if lifecycle.is_running():
+            click.echo("✓ Daemon is already running")
+            return
+
+        click.echo("Starting daemon in foreground...")
+        try:
+            lifecycle.start(foreground=True)
+        except RuntimeError as e:
+            click.echo(f"✗ Failed to start daemon: {e}", err=True)
+            sys.exit(1)
+    else:
+        # Background mode with progress
+        quiet = ctx.obj.get("quiet", False)
+        if ensure_daemon_with_progress(
+            daemon_timeout=config.model.daemon_timeout, quiet=quiet
+        ):
+            if not quiet:
+                click.echo("✓ Daemon started successfully")
+        else:
+            click.echo("✗ Failed to start daemon", err=True)
+            sys.exit(1)
 
 
 @daemon.command()
