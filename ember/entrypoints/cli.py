@@ -82,7 +82,7 @@ def _create_indexing_usecase(repo_root: Path, db_path: Path, config):
 
 
 @click.group()
-@click.version_option(version="0.1.0", prog_name="ember")
+@click.version_option(version="0.2.0", prog_name="ember")
 @click.option(
     "--verbose",
     "-v",
@@ -125,7 +125,7 @@ def init(ctx: click.Context, force: bool) -> None:
     repo_root = Path.cwd().resolve()
 
     # Create use case and execute
-    use_case = InitUseCase(version="0.1.0")
+    use_case = InitUseCase(version="0.2.0")
     request = InitRequest(repo_root=repo_root, force=force)
 
     try:

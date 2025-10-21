@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2025-10-20
+
 ### Changed
 - **CLI refactoring (Phase 1)**: Extracted shared utilities to reduce code duplication (#32)
   - Created `ember/core/cli_utils.py` with reusable CLI utilities
