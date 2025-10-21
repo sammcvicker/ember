@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Subdirectory support** - Run ember from anywhere in your repository (#43)
+  - All commands now work from any subdirectory, like git
+  - `ember init` automatically finds git root and initializes there
+  - `ember sync`, `ember find`, `ember cat`, `ember open` all discover `.ember/` by walking up directories
+  - Clear error messages when not in an ember repository: "Not in an ember repository (or any parent directory)"
+  - Path-scoped search with positional path argument:
+    - `ember find "query"` - Search entire repo
+    - `ember find "query" .` - Search current directory subtree
+    - `ember find "query" src/` - Search specific path
+  - Paths are relative to current working directory for natural workflow
+  - Makes ember feel more natural and ergonomic for day-to-day use
 - **Daemon-based model server for instant searches** (#46)
   - Keeps embedding model loaded in memory for near-instant searches
   - **18.6x faster** than direct mode: 43ms average vs 806ms

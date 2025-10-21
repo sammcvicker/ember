@@ -70,13 +70,17 @@ Initialize Ember in the current directory. Creates `.ember/` folder with:
 - `index.db` - SQLite database (chunks, vectors, FTS5 index)
 - `state.json` - Last sync metadata
 
+**Automatically finds git root** - If you're in a git repository, `ember init` will initialize at the repository root, not your current directory.
+
 **Options:**
 - `--force` / `-f`: Reinitialize if `.ember/` already exists
 
 **Example:**
 ```bash
+# Run from anywhere in your repository
+cd src/nested/directory
 ember init
-# Initialized ember index at /path/to/project/.ember
+# Initialized ember index at /path/to/project/.ember (at git root)
 #    Created config.toml
 #    Created index.db
 #    Created state.json
@@ -116,11 +120,14 @@ ember sync --reindex
 
 ---
 
-### `ember find <query>`
+### `ember find <query> [path]`
 
 Search indexed code using hybrid search (BM25 + vector embeddings).
 
+**Works from any subdirectory** - Like git, you can run ember commands from anywhere within your repository.
+
 **Options:**
+- `[path]`: Optional path to search within (relative to current directory)
 - `-k, --topk <n>`: Number of results (default: 20)
 - `--in <glob>`: Filter by path pattern (e.g., `*.py`, `src/**/*.ts`)
 - `--lang <code>`: Filter by language (e.g., `python`, `typescript`)
@@ -128,14 +135,21 @@ Search indexed code using hybrid search (BM25 + vector embeddings).
 
 **Examples:**
 ```bash
-# Semantic search
+# Semantic search (entire repo)
 ember find "user authentication logic" -k 5
 
+# Search only in current directory subtree
+cd src/auth
+ember find "authentication" .
+
+# Search specific path (from anywhere)
+ember find "database connection" src/db/
+
 # Filter by file type
-ember find "database connection" --in "*.py"
+ember find "error handling" --in "*.py"
 
 # Filter by language
-ember find "error handling" --lang python
+ember find "async functions" --lang typescript
 
 # JSON output for scripting
 ember find "API endpoint" --json > results.json
