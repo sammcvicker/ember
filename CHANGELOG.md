@@ -26,6 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Now filters during SQL queries (both FTS5 and sqlite-vec), guaranteeing full topk results from filtered paths
   - Significantly improves performance by filtering earlier in the pipeline
   - Adds regression test to ensure path filtering returns full topk results
+- **Progress bar stays in fixed position during indexing** (#44)
+  - Progress bar no longer jumps horizontally as filenames change
+  - Filename now appears after the progress percentage in a separate column
+  - Makes progress display smooth and easier to read
+  - Format: `⠋ Indexing files ━━━━━━━━━━━━━━━━━━━━ 50% src/adapters/file.py`
 
 ### Added
 - **Subdirectory support** - Run ember from anywhere in your repository (#43)
