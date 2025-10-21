@@ -395,3 +395,88 @@ def test_list_tracked_files_empty_repo_with_commit(tmp_path: Path):
 
     # Should return empty list for repo with no files
     assert files == []
+
+
+def test_list_tracked_files_includes_untracked(git_adapter: GitAdapter, git_repo: Path):
+    """Test that list_tracked_files includes untracked files."""
+    # Create an untracked file
+    (git_repo / "untracked.py").write_text("print('untracked')\n")
+
+    files = git_adapter.list_tracked_files()
+    file_strs = [str(f) for f in files]
+
+    # Should include both tracked and untracked files
+    assert "file1.txt" in file_strs  # Tracked
+    assert "file2.py" in file_strs  # Tracked
+    assert "untracked.py" in file_strs  # Untracked
+
+
+def test_list_tracked_files_respects_gitignore(git_adapter: GitAdapter, git_repo: Path):
+    """Test that list_tracked_files respects .gitignore patterns."""
+    # Create .gitignore
+    (git_repo / ".gitignore").write_text("*.log\nnode_modules/\n")
+
+    # Create ignored files
+    (git_repo / "debug.log").write_text("log content\n")
+    (git_repo / "node_modules").mkdir()
+    (git_repo / "node_modules" / "package.js").write_text("package content\n")
+
+    # Create non-ignored file
+    (git_repo / "app.py").write_text("print('app')\n")
+
+    files = git_adapter.list_tracked_files()
+    file_strs = [str(f) for f in files]
+
+    # Should include non-ignored files
+    assert "app.py" in file_strs
+
+    # Should NOT include ignored files
+    assert "debug.log" not in file_strs
+    assert "node_modules/package.js" not in file_strs
+
+
+def test_get_worktree_tree_sha_changes_with_untracked_files(
+    git_adapter: GitAdapter, git_repo: Path
+):
+    """Test that worktree tree SHA changes when untracked files are added."""
+    # Get initial tree SHA (clean worktree)
+    initial_tree = git_adapter.get_worktree_tree_sha()
+
+    # Create an untracked file
+    (git_repo / "new_feature.py").write_text("def new_function():\n    pass\n")
+
+    # Worktree tree SHA should change because of the untracked file
+    modified_tree = git_adapter.get_worktree_tree_sha()
+    assert modified_tree != initial_tree
+
+    # Should also differ from HEAD since file is untracked
+    head_tree = git_adapter.get_tree_sha("HEAD")
+    assert modified_tree != head_tree
+
+
+def test_get_worktree_tree_sha_ignores_gitignored_files(
+    git_adapter: GitAdapter, git_repo: Path
+):
+    """Test that worktree tree SHA doesn't change for .gitignore'd files."""
+    # Create .gitignore
+    (git_repo / ".gitignore").write_text("*.tmp\n")
+    subprocess.run(
+        ["git", "add", ".gitignore"], cwd=git_repo, check=True, capture_output=True, timeout=5
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "Add gitignore"],
+        cwd=git_repo,
+        check=True,
+        capture_output=True,
+        timeout=5,
+    )
+
+    # Get tree SHA with clean worktree
+    clean_tree = git_adapter.get_worktree_tree_sha()
+
+    # Create a .gitignore'd file (should be ignored)
+    (git_repo / "debug.tmp").write_text("temporary debug file\n")
+
+    # Tree SHA should NOT change because file is ignored
+    tree_with_ignored = git_adapter.get_worktree_tree_sha()
+    assert tree_with_ignored == clean_tree

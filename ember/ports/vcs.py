@@ -29,11 +29,12 @@ class VCS(Protocol):
     def get_worktree_tree_sha(self) -> str:
         """Get tree SHA representing current worktree state.
 
-        This hashes the actual file contents (including unstaged changes),
-        not just what's in Git's index.
+        This hashes the actual file contents (including unstaged changes and
+        untracked files), not just what's in Git's index. Untracked files that
+        match .gitignore patterns are excluded.
 
         Returns:
-            Tree SHA representing current worktree.
+            Tree SHA representing current worktree (including untracked files).
 
         Raises:
             RuntimeError: If not a git repository.
@@ -74,7 +75,11 @@ class VCS(Protocol):
         ...
 
     def list_tracked_files(self) -> list[Path]:
-        """Get list of all tracked files in the repository.
+        """Get list of all files in the repository (including untracked).
+
+        This returns both tracked and untracked files, while respecting .gitignore
+        patterns. This allows ember to index files as soon as they're created,
+        without requiring them to be staged or committed.
 
         Returns:
             List of paths relative to repository root.

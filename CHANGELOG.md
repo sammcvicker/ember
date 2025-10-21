@@ -48,6 +48,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Auto-shuts down after 15 minutes of inactivity (configurable)
   - Manual daemon management: `ember daemon start|stop|status|restart`
   - Graceful fallback to direct mode if daemon fails
+- **Index all files in working directory including untracked files** (#47)
+  - Ember now indexes untracked and unstaged files, not just git-tracked files
+  - Search what you see in your editor, regardless of git status
+  - Creating a new file? It's immediately searchable after auto-sync
+  - Respects .gitignore patterns (won't index node_modules/, .venv/, etc.)
+  - Makes ember feel natural - no mental overhead about git staging
   - Configuration in `.ember/config.toml`:
     ```toml
     [model]

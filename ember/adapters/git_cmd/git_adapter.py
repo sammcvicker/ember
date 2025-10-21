@@ -131,14 +131,14 @@ class GitAdapter:
         """Get tree SHA representing current worktree state.
 
         This computes a virtual tree SHA that represents the actual file contents
-        in the worktree, including unstaged changes. We do this by:
+        in the worktree, including unstaged changes and untracked files. We do this by:
         1. Saving the current index state
-        2. Temporarily adding all tracked files to the index
+        2. Temporarily adding all files (tracked + untracked) to the index
         3. Using git write-tree to compute the tree SHA
         4. Restoring the index to its previous state (guaranteed via try/finally)
 
         Returns:
-            Tree SHA representing current worktree.
+            Tree SHA representing current worktree (including untracked files).
 
         Raises:
             RuntimeError: If not a git repository or git commands fail.
@@ -155,9 +155,10 @@ class GitAdapter:
                 # No index yet (initial commit scenario)
                 index_tree = None
 
-            # Add all tracked files to the index (update with worktree content)
+            # Add all files to the index (tracked + untracked, respecting .gitignore)
             # This temporarily stages everything but doesn't commit
-            self._run_git(["add", "-u"])  # Update tracked files only
+            # -A or --all: add all files including untracked
+            self._run_git(["add", "-A"])
 
             # Write the tree from the current index
             result = self._run_git(["write-tree"])
@@ -298,7 +299,11 @@ class GitAdapter:
             raise RuntimeError(error_msg) from e
 
     def list_tracked_files(self) -> list[Path]:
-        """Get list of all tracked files in the repository.
+        """Get list of all files in the repository (including untracked).
+
+        This returns both tracked and untracked files, while respecting .gitignore
+        patterns. This allows ember to index files as soon as they're created,
+        without requiring them to be staged or committed.
 
         Returns:
             List of paths relative to repository root.
@@ -307,16 +312,19 @@ class GitAdapter:
             RuntimeError: If not a git repository.
         """
         try:
-            result = self._run_git(["ls-files", "-z"])
+            # --cached: include tracked files
+            # --others: include untracked files
+            # --exclude-standard: respect .gitignore and other standard ignore patterns
+            result = self._run_git(["ls-files", "-z", "--cached", "--others", "--exclude-standard"])
             files_output = result.stdout.decode("utf-8", errors="replace")
 
             if not files_output:
                 return []
 
             # Split on null bytes and convert to Path objects
-            tracked_files = [Path(f) for f in files_output.split("\0") if f]
-            return tracked_files
+            all_files = [Path(f) for f in files_output.split("\0") if f]
+            return all_files
 
         except subprocess.CalledProcessError as e:
-            error_msg = self._format_git_error(e, "Failed to list tracked files")
+            error_msg = self._format_git_error(e, "Failed to list files")
             raise RuntimeError(error_msg) from e
