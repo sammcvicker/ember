@@ -32,34 +32,56 @@ logger = logging.getLogger(__name__)
 
 # Code file extensions to index (whitelist approach)
 # Only source code files are indexed - data, config, docs, and binary files are skipped
-CODE_FILE_EXTENSIONS = frozenset({
-    # Python
-    ".py", ".pyi",
-    # JavaScript/TypeScript
-    ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
-    # Go
-    ".go",
-    # Rust
-    ".rs",
-    # Java/JVM
-    ".java", ".kt", ".scala",
-    # C/C++
-    ".c", ".cpp", ".cc", ".cxx", ".h", ".hpp", ".hh", ".hxx",
-    # C#
-    ".cs",
-    # Ruby
-    ".rb",
-    # PHP
-    ".php",
-    # Swift
-    ".swift",
-    # Shell
-    ".sh", ".bash", ".zsh",
-    # Web frameworks
-    ".vue", ".svelte",
-    # Other
-    ".sql", ".proto", ".graphql",
-})
+CODE_FILE_EXTENSIONS = frozenset(
+    {
+        # Python
+        ".py",
+        ".pyi",
+        # JavaScript/TypeScript
+        ".js",
+        ".jsx",
+        ".ts",
+        ".tsx",
+        ".mjs",
+        ".cjs",
+        # Go
+        ".go",
+        # Rust
+        ".rs",
+        # Java/JVM
+        ".java",
+        ".kt",
+        ".scala",
+        # C/C++
+        ".c",
+        ".cpp",
+        ".cc",
+        ".cxx",
+        ".h",
+        ".hpp",
+        ".hh",
+        ".hxx",
+        # C#
+        ".cs",
+        # Ruby
+        ".rb",
+        # PHP
+        ".php",
+        # Swift
+        ".swift",
+        # Shell
+        ".sh",
+        ".bash",
+        ".zsh",
+        # Web frameworks
+        ".vue",
+        ".svelte",
+        # Other
+        ".sql",
+        ".proto",
+        ".graphql",
+    }
+)
 
 
 @dataclass
@@ -402,9 +424,7 @@ class IndexingUseCase:
 
             # Get added and modified files (deletions handled separately)
             relative_files = [
-                path
-                for status, path in changes
-                if status in ("added", "modified", "renamed")
+                path for status, path in changes if status in ("added", "modified", "renamed")
             ]
             files = [repo_root / f for f in relative_files]
             is_incremental = True
@@ -452,9 +472,7 @@ class IndexingUseCase:
         total_deleted = 0
         for file_path in deleted_files:
             # Delete all chunks for this file (using last_tree_sha since file no longer exists in new tree)
-            deleted_count = self.chunk_repo.delete_by_path(
-                path=file_path, tree_sha=last_tree_sha
-            )
+            deleted_count = self.chunk_repo.delete_by_path(path=file_path, tree_sha=last_tree_sha)
             total_deleted += deleted_count
 
         return total_deleted

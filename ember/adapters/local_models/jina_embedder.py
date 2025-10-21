@@ -91,9 +91,7 @@ class JinaCodeEmbedder:
 
                 self._model.max_seq_length = self._max_seq_length
             except Exception as e:
-                raise RuntimeError(
-                    f"Failed to load {self.MODEL_NAME}: {e}"
-                ) from e
+                raise RuntimeError(f"Failed to load {self.MODEL_NAME}: {e}") from e
         return self._model
 
     @property
@@ -170,6 +168,4 @@ class JinaCodeEmbedder:
             return [emb.tolist() for emb in embeddings]
 
         except Exception as e:
-            raise RuntimeError(
-                f"Failed to embed {len(texts)} texts: {e}"
-            ) from e
+            raise RuntimeError(f"Failed to embed {len(texts)} texts: {e}") from e

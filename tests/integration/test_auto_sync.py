@@ -82,9 +82,7 @@ def test_auto_sync_on_stale_index(auto_sync_repo: Path, monkeypatch: pytest.Monk
     # Run find - should auto-sync
     monkeypatch.chdir(auto_sync_repo)
     runner = CliRunner()
-    result = runner.invoke(
-        find, ["function"], obj={}, catch_exceptions=False
-    )
+    result = runner.invoke(find, ["function"], obj={}, catch_exceptions=False)
 
     assert result.exit_code == 0
     # Should see sync message in stderr
@@ -94,7 +92,9 @@ def test_auto_sync_on_stale_index(auto_sync_repo: Path, monkeypatch: pytest.Monk
 
 
 @pytest.mark.slow
-def test_auto_sync_skipped_with_no_sync_flag(auto_sync_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_auto_sync_skipped_with_no_sync_flag(
+    auto_sync_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Test that --no-sync flag skips auto-sync."""
     from click.testing import CliRunner
 
@@ -117,9 +117,7 @@ def test_auto_sync_skipped_with_no_sync_flag(auto_sync_repo: Path, monkeypatch: 
     # Run find with --no-sync - should NOT auto-sync
     monkeypatch.chdir(auto_sync_repo)
     runner = CliRunner()
-    result = runner.invoke(
-        find, ["function", "--no-sync"], obj={}, catch_exceptions=False
-    )
+    result = runner.invoke(find, ["function", "--no-sync"], obj={}, catch_exceptions=False)
 
     assert result.exit_code == 0
     # Should NOT see sync message
@@ -130,7 +128,9 @@ def test_auto_sync_skipped_with_no_sync_flag(auto_sync_repo: Path, monkeypatch: 
 
 
 @pytest.mark.slow
-def test_auto_sync_noop_when_up_to_date(auto_sync_repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_auto_sync_noop_when_up_to_date(
+    auto_sync_repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Test that auto-sync is a no-op when index is up to date."""
     from click.testing import CliRunner
 
@@ -141,15 +141,11 @@ def test_auto_sync_noop_when_up_to_date(auto_sync_repo: Path, monkeypatch: pytes
     runner = CliRunner()
 
     # First find
-    result1 = runner.invoke(
-        find, ["function"], obj={}, catch_exceptions=False
-    )
+    result1 = runner.invoke(find, ["function"], obj={}, catch_exceptions=False)
     assert result1.exit_code == 0
 
     # Second find - index is up to date, should not sync
-    result2 = runner.invoke(
-        find, ["function"], obj={}, catch_exceptions=False
-    )
+    result2 = runner.invoke(find, ["function"], obj={}, catch_exceptions=False)
     assert result2.exit_code == 0
     # Should not see sync messages when already up to date
     # (No "Synced X files" message, just search results)
@@ -180,9 +176,7 @@ def test_auto_sync_with_json_output(auto_sync_repo: Path, monkeypatch: pytest.Mo
     # Run find with --json
     monkeypatch.chdir(auto_sync_repo)
     runner = CliRunner()
-    result = runner.invoke(
-        find, ["function", "--json"], obj={}, catch_exceptions=False
-    )
+    result = runner.invoke(find, ["function", "--json"], obj={}, catch_exceptions=False)
 
     assert result.exit_code == 0
     # Sync messages should go to stderr, not stdout

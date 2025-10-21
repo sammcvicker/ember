@@ -1,6 +1,6 @@
 """Tests for tree-sitter language registry."""
 
-from ember.adapters.parsers.language_registry import LanguageConfig, LanguageRegistry
+from ember.adapters.parsers.language_registry import LanguageRegistry
 
 
 def test_language_registry_initialization():

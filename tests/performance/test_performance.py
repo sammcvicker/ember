@@ -81,12 +81,12 @@ class PerformanceTestFixture:
         self.tree_chunker = TreeSitterChunker()
         self.line_chunker = LineChunker(window_size=120, stride=100)
         self.chunk_usecase = ChunkFileUseCase(
-            tree_sitter_chunker=self.tree_chunker,
-            line_chunker=self.line_chunker
+            tree_sitter_chunker=self.tree_chunker, line_chunker=self.line_chunker
         )
 
         # Project ID (hash of repo path)
         import hashlib
+
         self.project_id = hashlib.sha256(str(self.repo_path).encode()).hexdigest()[:16]
 
         # Indexing
@@ -115,7 +115,9 @@ class PerformanceTestFixture:
     def setup_repo(self) -> None:
         """Initialize the test repository."""
         self.repo_path.mkdir(parents=True)
-        subprocess.run(["git", "init"], cwd=self.repo_path, check=True, capture_output=True, timeout=5)
+        subprocess.run(
+            ["git", "init"], cwd=self.repo_path, check=True, capture_output=True, timeout=5
+        )
         subprocess.run(
             ["git", "config", "user.email", "test@example.com"],
             cwd=self.repo_path,
@@ -168,49 +170,55 @@ class PerformanceTestFixture:
             num_classes = max(1, lines_per_file // 50)
             for j in range(num_classes):
                 class_name = f"Handler{j}"
-                lines.extend([
-                    f"class {class_name}:",
-                    f'    """Handles processing for {class_name}."""',
-                    "    ",
-                    "    def __init__(self, config: Dict):",
-                    "        self.config = config",
-                    f"        self.name = '{class_name}'",
-                    "        logger.info(f'Initialized {{self.name}}')",
-                    "    ",
-                    "    def process(self, data: List[str]) -> Dict:",
-                    '        """Process input data and return results."""',
-                    "        results = {}",
-                    "        for item in data:",
-                    "            key = item.strip()",
-                    "            value = self._transform(key)",
-                    "            results[key] = value",
-                    "        return results",
-                    "    ",
-                    "    def _transform(self, value: str) -> str:",
-                    '        """Internal transformation logic."""',
-                    "        return value.upper().replace(' ', '_')",
-                    "    ",
-                ])
+                lines.extend(
+                    [
+                        f"class {class_name}:",
+                        f'    """Handles processing for {class_name}."""',
+                        "    ",
+                        "    def __init__(self, config: Dict):",
+                        "        self.config = config",
+                        f"        self.name = '{class_name}'",
+                        "        logger.info(f'Initialized {{self.name}}')",
+                        "    ",
+                        "    def process(self, data: List[str]) -> Dict:",
+                        '        """Process input data and return results."""',
+                        "        results = {}",
+                        "        for item in data:",
+                        "            key = item.strip()",
+                        "            value = self._transform(key)",
+                        "            results[key] = value",
+                        "        return results",
+                        "    ",
+                        "    def _transform(self, value: str) -> str:",
+                        '        """Internal transformation logic."""',
+                        "        return value.upper().replace(' ', '_')",
+                        "    ",
+                    ]
+                )
 
             # Add module-level functions
-            lines.extend([
-                f"def main_{module_name}():",
-                '    """Entry point for this module."""',
-                "    config = {'debug': True, 'timeout': 30}",
-                "    handler = Handler0(config)",
-                "    data = ['test', 'sample', 'data']",
-                "    results = handler.process(data)",
-                "    logger.info(f'Processed {{len(results)}} items')",
-                "    return results",
-                "",
-                "if __name__ == '__main__':",
-                f"    main_{module_name}()",
-            ])
+            lines.extend(
+                [
+                    f"def main_{module_name}():",
+                    '    """Entry point for this module."""',
+                    "    config = {'debug': True, 'timeout': 30}",
+                    "    handler = Handler0(config)",
+                    "    data = ['test', 'sample', 'data']",
+                    "    results = handler.process(data)",
+                    "    logger.info(f'Processed {{len(results)}} items')",
+                    "    return results",
+                    "",
+                    "if __name__ == '__main__':",
+                    f"    main_{module_name}()",
+                ]
+            )
 
             file_path.write_text("\n".join(lines))
 
         # Create initial commit
-        subprocess.run(["git", "add", "."], cwd=self.repo_path, check=True, capture_output=True, timeout=5)
+        subprocess.run(
+            ["git", "add", "."], cwd=self.repo_path, check=True, capture_output=True, timeout=5
+        )
         subprocess.run(
             ["git", "commit", "-m", "Initial commit"],
             cwd=self.repo_path,
@@ -238,7 +246,9 @@ def new_helper_function(x: int) -> int:
             file_path.write_text(content + new_function)
 
         # Commit changes
-        subprocess.run(["git", "add", "."], cwd=self.repo_path, check=True, capture_output=True, timeout=5)
+        subprocess.run(
+            ["git", "add", "."], cwd=self.repo_path, check=True, capture_output=True, timeout=5
+        )
         subprocess.run(
             ["git", "commit", "-m", "Add helper functions"],
             cwd=self.repo_path,
@@ -278,15 +288,15 @@ def test_initial_indexing_small(perf_fixture: PerformanceTestFixture):
         chunk_count=stats.chunks_created,
     )
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("Small Codebase Initial Indexing")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"Files indexed: {metrics.file_count}")
     print(f"Chunks created: {metrics.chunk_count}")
     print(f"Duration: {metrics.duration_seconds:.2f}s")
     print(f"Files/sec: {metrics.file_count / metrics.duration_seconds:.2f}")
     print(f"Chunks/sec: {metrics.chunk_count / metrics.duration_seconds:.2f}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     # Sanity checks (allow some tolerance for git-created files)
     assert stats.files_indexed >= num_files
@@ -314,15 +324,15 @@ def test_initial_indexing_medium(perf_fixture: PerformanceTestFixture):
         chunk_count=stats.chunks_created,
     )
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("Medium Codebase Initial Indexing")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"Files indexed: {metrics.file_count}")
     print(f"Chunks created: {metrics.chunk_count}")
     print(f"Duration: {metrics.duration_seconds:.2f}s")
     print(f"Files/sec: {metrics.file_count / metrics.duration_seconds:.2f}")
     print(f"Chunks/sec: {metrics.chunk_count / metrics.duration_seconds:.2f}")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     assert stats.files_indexed >= num_files
     assert stats.files_indexed <= num_files + 5
@@ -358,16 +368,18 @@ def test_incremental_sync_performance(perf_fixture: PerformanceTestFixture):
         chunk_count=sync_stats.chunks_created,
     )
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("Incremental Sync Performance")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"Total files: {num_files}")
     print(f"Modified files: {num_modified}")
     print(f"Files reindexed: {metrics.file_count}")
     print(f"Chunks updated: {metrics.chunk_count}")
     print(f"Duration: {metrics.duration_seconds:.2f}s")
-    print(f"Speedup vs full reindex: {initial_stats.files_indexed / max(metrics.file_count, 1):.1f}x")
-    print(f"{'='*60}\n")
+    print(
+        f"Speedup vs full reindex: {initial_stats.files_indexed / max(metrics.file_count, 1):.1f}x"
+    )
+    print(f"{'=' * 60}\n")
 
     # Incremental should only process modified files (allow small tolerance)
     assert sync_stats.files_indexed <= num_modified + 2
@@ -400,17 +412,17 @@ def test_search_performance(perf_fixture: PerformanceTestFixture):
         duration = time.time() - start
         total_duration += duration
 
-        print(f"Query: '{query_text}' - {duration*1000:.1f}ms - {len(results)} results")
+        print(f"Query: '{query_text}' - {duration * 1000:.1f}ms - {len(results)} results")
 
     avg_duration = total_duration / len(queries)
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("Search Performance")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print(f"Queries tested: {len(queries)}")
-    print(f"Average query time: {avg_duration*1000:.1f}ms")
-    print(f"Total time: {total_duration*1000:.1f}ms")
-    print(f"{'='*60}\n")
+    print(f"Average query time: {avg_duration * 1000:.1f}ms")
+    print(f"Total time: {total_duration * 1000:.1f}ms")
+    print(f"{'=' * 60}\n")
 
     # Search should be fast
     assert avg_duration < 1.0  # Average query under 1 second
@@ -440,27 +452,31 @@ def test_database_size_scaling(perf_fixture: PerformanceTestFixture):
         # Measure database size
         db_size_mb = perf_fixture.db_path.stat().st_size / (1024 * 1024)
 
-        results.append({
-            'files': num_files,
-            'chunks': stats.chunks_created,
-            'db_size_mb': db_size_mb,
-            'mb_per_file': db_size_mb / num_files,
-        })
+        results.append(
+            {
+                "files": num_files,
+                "chunks": stats.chunks_created,
+                "db_size_mb": db_size_mb,
+                "mb_per_file": db_size_mb / num_files,
+            }
+        )
 
-        print(f"Files: {num_files:3d} | Chunks: {stats.chunks_created:4d} | "
-              f"DB Size: {db_size_mb:6.2f}MB | Per File: {db_size_mb/num_files:.3f}MB")
+        print(
+            f"Files: {num_files:3d} | Chunks: {stats.chunks_created:4d} | "
+            f"DB Size: {db_size_mb:6.2f}MB | Per File: {db_size_mb / num_files:.3f}MB"
+        )
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("Database Size Scaling")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     for r in results:
         print(f"{r['files']:3d} files -> {r['db_size_mb']:6.2f}MB ({r['mb_per_file']:.3f}MB/file)")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
 
     # Database size should scale roughly linearly
     if len(results) >= 2:
-        ratio = results[-1]['db_size_mb'] / results[0]['db_size_mb']
-        file_ratio = results[-1]['files'] / results[0]['files']
+        ratio = results[-1]["db_size_mb"] / results[0]["db_size_mb"]
+        file_ratio = results[-1]["files"] / results[0]["files"]
         # Allow some overhead but should be roughly proportional
         assert ratio < file_ratio * 1.5
 

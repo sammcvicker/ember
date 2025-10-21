@@ -142,17 +142,17 @@ class SqliteVecAdapter:
             for vector, project_id, path, start_line, end_line, chunk_db_id in vectors_to_add:
                 # Insert into vec_chunks (serialize to float32 for sqlite-vec)
                 serialized_vector = sqlite_vec.serialize_float32(vector)
-                cursor.execute(
-                    "INSERT INTO vec_chunks(embedding) VALUES (?)",
-                    (serialized_vector,)
-                )
+                cursor.execute("INSERT INTO vec_chunks(embedding) VALUES (?)", (serialized_vector,))
                 vec_rowid = cursor.lastrowid
 
                 # Insert mapping
-                cursor.execute("""
+                cursor.execute(
+                    """
                     INSERT INTO vec_chunk_mapping(vec_rowid, project_id, path, start_line, end_line, chunk_db_id)
                     VALUES (?, ?, ?, ?, ?, ?)
-                """, (vec_rowid, project_id, path, start_line, end_line, chunk_db_id))
+                """,
+                    (vec_rowid, project_id, path, start_line, end_line, chunk_db_id),
+                )
 
             if vectors_to_add:
                 conn.commit()
@@ -230,7 +230,7 @@ class SqliteVecAdapter:
                 ORDER BY v.distance
                 LIMIT ?
                 """,
-                (serialized_vector, topk, topk)
+                (serialized_vector, topk, topk),
             )
 
             rows = cursor.fetchall()

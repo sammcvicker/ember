@@ -102,9 +102,7 @@ def test_get_worktree_tree_sha(git_adapter: GitAdapter, git_repo: Path):
     assert tree_sha == head_tree
 
 
-def test_get_worktree_tree_sha_with_unstaged_changes(
-    git_adapter: GitAdapter, git_repo: Path
-):
+def test_get_worktree_tree_sha_with_unstaged_changes(git_adapter: GitAdapter, git_repo: Path):
     """Test worktree tree SHA changes with unstaged modifications."""
     # Get initial tree SHA
     initial_tree = git_adapter.get_worktree_tree_sha()
@@ -279,7 +277,9 @@ def test_worktree_tree_sha_restores_index_on_error(git_adapter: GitAdapter, git_
     """Test that index is restored even if error occurs during worktree tree computation."""
     # Stage a file
     (git_repo / "staged.txt").write_text("Staged content\n")
-    subprocess.run(["git", "add", "staged.txt"], cwd=git_repo, check=True, capture_output=True, timeout=5)
+    subprocess.run(
+        ["git", "add", "staged.txt"], cwd=git_repo, check=True, capture_output=True, timeout=5
+    )
 
     # Get current index state
     result = subprocess.run(

@@ -148,7 +148,9 @@ class GitAdapter:
             # Save current index state
             # First, get the index tree (what's currently staged)
             try:
-                index_tree = self._run_git(["write-tree"]).stdout.decode("utf-8", errors="replace").strip()
+                index_tree = (
+                    self._run_git(["write-tree"]).stdout.decode("utf-8", errors="replace").strip()
+                )
             except subprocess.CalledProcessError:
                 # No index yet (initial commit scenario)
                 index_tree = None
@@ -175,7 +177,9 @@ class GitAdapter:
                     self._run_git(["read-tree", index_tree])
                 except subprocess.CalledProcessError:
                     # Log but don't raise - original error is more important
-                    logger.warning("Failed to restore index state after computing worktree tree SHA")
+                    logger.warning(
+                        "Failed to restore index state after computing worktree tree SHA"
+                    )
             else:
                 # If there was no index, reset it
                 try:
@@ -287,10 +291,10 @@ class GitAdapter:
         except subprocess.CalledProcessError as e:
             stderr = e.stderr.decode("utf-8", errors="replace") if e.stderr else ""
             if "does not exist" in stderr or "exists on disk, but not in" in stderr:
-                raise FileNotFoundError(
-                    f"File '{path}' not found at ref '{ref}'"
-                ) from e
-            error_msg = self._format_git_error(e, f"Failed to get content for '{path}' at ref '{ref}'")
+                raise FileNotFoundError(f"File '{path}' not found at ref '{ref}'") from e
+            error_msg = self._format_git_error(
+                e, f"Failed to get content for '{path}' at ref '{ref}'"
+            )
             raise RuntimeError(error_msg) from e
 
     def list_tracked_files(self) -> list[Path]:
@@ -310,9 +314,7 @@ class GitAdapter:
                 return []
 
             # Split on null bytes and convert to Path objects
-            tracked_files = [
-                Path(f) for f in files_output.split("\0") if f
-            ]
+            tracked_files = [Path(f) for f in files_output.split("\0") if f]
             return tracked_files
 
         except subprocess.CalledProcessError as e:

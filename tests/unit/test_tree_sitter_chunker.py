@@ -126,7 +126,9 @@ class ScientificCalculator(Calculator):
     assert "class ScientificCalculator" in class_chunks[1].content
 
     # Verify methods were also extracted
-    method_symbols = {c.symbol for c in chunks if c.symbol not in ("Calculator", "ScientificCalculator")}
+    method_symbols = {
+        c.symbol for c in chunks if c.symbol not in ("Calculator", "ScientificCalculator")
+    }
     assert "__init__" in method_symbols
     assert "add" in method_symbols
     assert "power" in method_symbols

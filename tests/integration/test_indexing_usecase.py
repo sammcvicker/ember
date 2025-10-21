@@ -136,7 +136,10 @@ def test_incremental_sync_modified_file_no_duplicates(
 
     # Commit the change
     import subprocess
-    subprocess.run(["git", "add", "math.py"], cwd=git_repo, check=True, capture_output=True, timeout=5)
+
+    subprocess.run(
+        ["git", "add", "math.py"], cwd=git_repo, check=True, capture_output=True, timeout=5
+    )
     subprocess.run(
         ["git", "commit", "-m", "Modify math.py"],
         cwd=git_repo,
@@ -180,7 +183,9 @@ def test_incremental_sync_modified_file_no_duplicates(
         """
     )
     math_chunks_by_tree = cursor.fetchall()
-    assert len(math_chunks_by_tree) == 1, f"math.py has chunks from multiple tree SHAs: {math_chunks_by_tree}"
+    assert len(math_chunks_by_tree) == 1, (
+        f"math.py has chunks from multiple tree SHAs: {math_chunks_by_tree}"
+    )
 
     # The math.py tree SHA should be different from the initial tree SHA
     math_tree_sha = math_chunks_by_tree[0][0]
@@ -232,6 +237,7 @@ def test_incremental_sync_multiple_modifications_no_accumulation(
 
         # Commit
         import subprocess
+
         subprocess.run(
             ["git", "add", "math.py"],
             cwd=git_repo,
@@ -240,7 +246,7 @@ def test_incremental_sync_multiple_modifications_no_accumulation(
             timeout=5,
         )
         subprocess.run(
-            ["git", "commit", "-m", f"Modification {i+1}"],
+            ["git", "commit", "-m", f"Modification {i + 1}"],
             cwd=git_repo,
             check=True,
             capture_output=True,
@@ -258,13 +264,16 @@ def test_incremental_sync_multiple_modifications_no_accumulation(
             WHERE path = 'math.py'
         """)
         math_tree_sha_count = cursor.fetchone()[0]
-        assert math_tree_sha_count == 1, f"After modification {i+1}, math.py has {math_tree_sha_count} tree SHAs"
+        assert math_tree_sha_count == 1, (
+            f"After modification {i + 1}, math.py has {math_tree_sha_count} tree SHAs"
+        )
 
         # Verify math.py chunk count stays roughly the same (no accumulation)
         cursor.execute("SELECT COUNT(*) FROM chunks WHERE path = 'math.py'")
         current_math_chunks = cursor.fetchone()[0]
-        assert abs(current_math_chunks - initial_math_chunks) < 5, \
+        assert abs(current_math_chunks - initial_math_chunks) < 5, (
             f"math.py chunks grew from {initial_math_chunks} to {current_math_chunks}"
+        )
 
     # Final verification: total chunks should be roughly the same
     cursor.execute("SELECT COUNT(*) FROM chunks")
@@ -290,6 +299,7 @@ def test_incremental_sync_deleted_file(
 
     # Commit deletion
     import subprocess
+
     subprocess.run(["git", "add", "-u"], cwd=git_repo, check=True, capture_output=True, timeout=5)
     subprocess.run(
         ["git", "commit", "-m", "Delete utils.py"],
@@ -341,7 +351,6 @@ def test_chunking_failure_preserves_existing_chunks(
     initial_chunk_ids = [row[0] for row in cursor.fetchall()]
 
     # Mock the chunk_usecase to fail
-    from unittest.mock import Mock
     from ember.core.chunking.chunk_usecase import ChunkFileResponse
 
     original_execute = indexing_usecase.chunk_usecase.execute
@@ -349,7 +358,9 @@ def test_chunking_failure_preserves_existing_chunks(
     def mock_chunk_execute(request):
         # Fail only for math.py, succeed for others
         if "math.py" in str(request.path):
-            return ChunkFileResponse(chunks=[], strategy="tree-sitter", success=False, error="Simulated chunking failure")
+            return ChunkFileResponse(
+                chunks=[], strategy="tree-sitter", success=False, error="Simulated chunking failure"
+            )
         return original_execute(request)
 
     indexing_usecase.chunk_usecase.execute = mock_chunk_execute
@@ -364,8 +375,9 @@ def test_chunking_failure_preserves_existing_chunks(
     # CRITICAL: Verify math.py chunks are STILL THERE (not deleted)
     cursor.execute("SELECT COUNT(*) FROM chunks WHERE path = 'math.py'")
     final_math_chunks = cursor.fetchone()[0]
-    assert final_math_chunks == initial_math_chunks, \
+    assert final_math_chunks == initial_math_chunks, (
         f"Chunks should be preserved on failure, but went from {initial_math_chunks} to {final_math_chunks}"
+    )
 
     # Verify the chunk IDs are the same (i.e., chunks weren't deleted and recreated)
     cursor.execute("SELECT id FROM chunks WHERE path = 'math.py' ORDER BY id")
@@ -396,7 +408,9 @@ def test_index_file_with_unreadable_file(
     restricted_file.write_text("def secret(): pass\n")
 
     # Add to git and commit BEFORE removing permissions
-    subprocess.run(["git", "add", "restricted.py"], cwd=git_repo, check=True, capture_output=True, timeout=5)
+    subprocess.run(
+        ["git", "add", "restricted.py"], cwd=git_repo, check=True, capture_output=True, timeout=5
+    )
     subprocess.run(
         ["git", "commit", "-m", "Add restricted file"],
         cwd=git_repo,
@@ -444,7 +458,9 @@ def test_index_file_with_invalid_utf8(
     binary_file.write_bytes(b"def test():\n    x = \xff\xff\xff\n")
 
     # Add to git and commit
-    subprocess.run(["git", "add", "binary.py"], cwd=git_repo, check=True, capture_output=True, timeout=5)
+    subprocess.run(
+        ["git", "add", "binary.py"], cwd=git_repo, check=True, capture_output=True, timeout=5
+    )
     subprocess.run(
         ["git", "commit", "-m", "Add binary file"],
         cwd=git_repo,
@@ -473,9 +489,7 @@ def test_index_file_with_invalid_utf8(
 
 
 @pytest.mark.slow
-def test_index_file_with_embedder_failure(
-    git_repo: Path, db_path: Path
-) -> None:
+def test_index_file_with_embedder_failure(git_repo: Path, db_path: Path) -> None:
     """Test handling of embedder failures.
 
     Verifies that IndexingUseCase handles embedder failures (e.g., model errors,
@@ -574,7 +588,9 @@ def test_realistic_repo_indexing(realistic_repo: Path, tmp_path: Path) -> None:
     assert response.success, f"Indexing failed: {response.error}"
     # Note: 9 files indexed (README.md is not indexed as markdown is not a tracked language)
     assert response.files_indexed >= 8, f"Expected at least 8 files, got {response.files_indexed}"
-    assert response.chunks_created >= 50, f"Expected at least 50 chunks, got {response.chunks_created}"
+    assert response.chunks_created >= 50, (
+        f"Expected at least 50 chunks, got {response.chunks_created}"
+    )
     assert response.vectors_stored == response.chunks_created
 
     # Verify chunks are in database
@@ -593,12 +609,12 @@ def test_realistic_repo_indexing(realistic_repo: Path, tmp_path: Path) -> None:
 
     # Check for specific file types
     file_extensions = set(Path(f).suffix for f in indexed_files)
-    assert '.py' in file_extensions, "Should have indexed Python files"
+    assert ".py" in file_extensions, "Should have indexed Python files"
     # Note: .jsx and .ts may not be indexed if tree-sitter doesn't support them yet
     # or may be indexed with line chunker
 
     # Verify we have chunks from nested directories
-    src_files = [f for f in indexed_files if f.startswith('src/')]
+    src_files = [f for f in indexed_files if f.startswith("src/")]
     assert len(src_files) >= 8, f"Expected at least 8 files from src/, got {len(src_files)}"
 
     # Check that chunks have proper metadata

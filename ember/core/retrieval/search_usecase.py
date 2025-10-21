@@ -172,18 +172,14 @@ class SearchUseCase:
         filtered = chunks
 
         if path_filter:
-            filtered = [
-                c for c in filtered if fnmatch.fnmatch(str(c.path), path_filter)
-            ]
+            filtered = [c for c in filtered if fnmatch.fnmatch(str(c.path), path_filter)]
 
         if lang_filter:
             filtered = [c for c in filtered if c.lang == lang_filter]
 
         return filtered
 
-    def _get_score(
-        self, result_list: list[tuple[str, float]], chunk_id: str
-    ) -> float:
+    def _get_score(self, result_list: list[tuple[str, float]], chunk_id: str) -> float:
         """Get score for a chunk_id from a result list.
 
         Args:
