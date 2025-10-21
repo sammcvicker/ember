@@ -10,6 +10,7 @@ import blake3
 import click
 
 from ember.core.cli_utils import (
+    check_and_auto_sync,
     format_result_header,
     highlight_symbol,
     load_cached_results,
@@ -333,55 +334,13 @@ def find(
 
     # Auto-sync: Check if index is stale and sync if needed (unless --no-sync)
     if not no_sync:
-        from ember.adapters.git_cmd.git_adapter import GitAdapter
-        from ember.adapters.sqlite.meta_repository import SQLiteMetaRepository
-
-        try:
-            vcs = GitAdapter(repo_root)
-            meta_repo = SQLiteMetaRepository(db_path)
-
-            # Get current worktree tree SHA
-            current_tree_sha = vcs.get_worktree_tree_sha()
-
-            # Get last indexed tree SHA
-            last_tree_sha = meta_repo.get("last_tree_sha")
-
-            # If tree SHAs differ, index is stale - auto-sync
-            if last_tree_sha != current_tree_sha:
-                from ember.core.indexing.index_usecase import IndexRequest
-
-                # Create indexing use case with all dependencies
-                indexing_usecase = _create_indexing_usecase(repo_root, db_path, config)
-
-                # Execute incremental sync
-                request = IndexRequest(
-                    repo_root=repo_root,
-                    sync_mode="worktree",
-                    path_filters=[],
-                    force_reindex=False,
-                )
-
-                # Use progress bars (like regular sync) unless in JSON mode
-                with progress_context(quiet_mode=json_output) as progress:
-                    if progress:
-                        response = indexing_usecase.execute(request, progress=progress)
-                        # Show completion message
-                        if response.success:
-                            if response.files_indexed > 0:
-                                click.echo(
-                                    f"✓ Synced {response.files_indexed} file(s)",
-                                    err=True,
-                                )
-                            else:
-                                click.echo("✓ Index up to date", err=True)
-                    else:
-                        # Silent mode for JSON output
-                        response = indexing_usecase.execute(request)
-
-        except Exception as e:
-            # If staleness check fails, continue with search anyway
-            if ctx.obj.get("verbose", False):
-                click.echo(f"Warning: Could not check index staleness: {e}", err=True)
+        check_and_auto_sync(
+            repo_root=repo_root,
+            db_path=db_path,
+            config=config,
+            quiet_mode=json_output,
+            verbose=ctx.obj.get("verbose", False),
+        )
 
     try:
         # Lazy imports - only load heavy dependencies when find is actually called

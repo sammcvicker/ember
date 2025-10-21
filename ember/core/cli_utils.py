@@ -192,3 +192,76 @@ def format_result_header(
         )
 
     click.echo(f"{rank} {line_num}:{symbol_display}")
+
+
+def check_and_auto_sync(
+    repo_root: Path,
+    db_path: Path,
+    config,
+    quiet_mode: bool = False,
+    verbose: bool = False,
+) -> None:
+    """Check if index is stale and auto-sync if needed.
+
+    Args:
+        repo_root: Repository root path.
+        db_path: Path to SQLite database.
+        config: Configuration object.
+        quiet_mode: If True, suppress progress and messages.
+        verbose: If True, show warnings on errors.
+
+    Note:
+        If staleness check fails, continues silently to allow search to proceed.
+    """
+    try:
+        # Import dependencies lazily
+        from ember.adapters.git_cmd.git_adapter import GitAdapter
+        from ember.adapters.sqlite.meta_repository import SQLiteMetaRepository
+        from ember.core.indexing.index_usecase import IndexRequest
+
+        # Import the usecase creation helper (avoid circular import)
+        from ember.entrypoints.cli import _create_indexing_usecase
+
+        vcs = GitAdapter(repo_root)
+        meta_repo = SQLiteMetaRepository(db_path)
+
+        # Get current worktree tree SHA
+        current_tree_sha = vcs.get_worktree_tree_sha()
+
+        # Get last indexed tree SHA
+        last_tree_sha = meta_repo.get("last_tree_sha")
+
+        # If tree SHAs differ, index is stale - auto-sync
+        if last_tree_sha != current_tree_sha:
+            # Create indexing use case with all dependencies
+            indexing_usecase = _create_indexing_usecase(repo_root, db_path, config)
+
+            # Execute incremental sync
+            request = IndexRequest(
+                repo_root=repo_root,
+                sync_mode="worktree",
+                path_filters=[],
+                force_reindex=False,
+            )
+
+            # Use progress bars unless in quiet mode
+            with progress_context(quiet_mode=quiet_mode) as progress:
+                if progress:
+                    response = indexing_usecase.execute(request, progress=progress)
+                    # Show completion message
+                    if response.success:
+                        if response.files_indexed > 0:
+                            click.echo(
+                                f"✓ Synced {response.files_indexed} file(s)",
+                                err=True,
+                            )
+                        else:
+                            click.echo("✓ Index up to date", err=True)
+                else:
+                    # Silent mode
+                    indexing_usecase.execute(request)
+
+    except Exception as e:
+        # If staleness check fails, continue with search anyway
+        if verbose:
+            click.echo(f"Warning: Could not check index staleness: {e}", err=True)

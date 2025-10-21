@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added `format_human_output()` for reusable ripgrep-style formatting
   - Reduced `find` command from 257 lines to ~180 lines (30% reduction)
   - All tests pass, no user-facing changes
+- **CLI refactoring (Phase 3)**: Simplified commands to thin layer pattern (#32)
+  - Extracted `check_and_auto_sync()` helper to eliminate 50-line auto-sync block from `find` command
+  - Commands now follow pattern: parse → call use case → present output
+  - Reduced total CLI file from 899 lines to 639 lines (**29% reduction, 260 lines removed**)
+  - Improved maintainability and testability
+  - All tests pass, no user-facing changes
 
 ### Added
 - **Model loading progress indicator**: Shows separate progress when loading embedding model during sync (#31)
