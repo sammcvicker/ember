@@ -48,6 +48,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Auto-sync now shows the same professional progress bars as regular sync
   - Extracted `_create_indexing_usecase()` helper function for consistency
   - Reduced ~50 lines of duplicated dependency initialization code
+- **TreeSitterChunker refactoring**: Extracted LanguageRegistry to reduce complexity and duplication (#36, Phase 1)
+  - Created `LanguageRegistry` class for centralized language configuration management
+  - Eliminated 75% code duplication in language query patterns (163 lines → single source of truth)
+  - Reduced TreeSitterChunker from 293 lines to 130 lines (56% reduction)
+  - Implemented lazy parser initialization (load languages only when used)
+  - Reduced cyclomatic complexity and improved maintainability
+  - No behavioral changes, all 114 tests passing with 100% coverage on new code
 
 ### Fixed
 - **Test isolation and reliability improvements** (#38, Phase 1 Quick Wins)
