@@ -150,11 +150,13 @@ def init(ctx: click.Context, force: bool) -> None:
     """Initialize Ember in the current directory.
 
     Creates .ember/ directory with configuration and database.
+    If in a git repository, initializes at the git root.
     """
     # Lazy import - only load when init is actually called
     from ember.core.config.init_usecase import InitRequest, InitUseCase
+    from ember.core.repo_utils import find_repo_root_for_init
 
-    repo_root = Path.cwd().resolve()
+    repo_root = find_repo_root_for_init()
 
     # Create use case and execute
     use_case = InitUseCase(version="0.2.0")
@@ -216,16 +218,17 @@ def sync(
     """Sync (index) the codebase.
 
     By default, indexes the current worktree.
+    Can be run from any subdirectory within the repository.
     """
-    repo_root = Path.cwd().resolve()
-    ember_dir = repo_root / ".ember"
-    db_path = ember_dir / "index.db"
+    from ember.core.repo_utils import find_repo_root
 
-    # Check if ember is initialized
-    if not ember_dir.exists() or not db_path.exists():
-        click.echo("Error: Ember not initialized in this directory", err=True)
-        click.echo("Run 'ember init' first", err=True)
+    try:
+        repo_root, ember_dir = find_repo_root()
+    except RuntimeError as e:
+        click.echo(f"Error: {e}", err=True)
         sys.exit(1)
+
+    db_path = ember_dir / "index.db"
 
     # Determine sync mode
     if rev:
@@ -320,6 +323,7 @@ def sync(
 
 @cli.command()
 @click.argument("query", type=str)
+@click.argument("path", type=str, required=False, default=None)
 @click.option(
     "--topk",
     "-k",
@@ -355,6 +359,7 @@ def sync(
 def find(
     ctx: click.Context,
     query: str,
+    path: str | None,
     topk: int | None,
     json_output: bool,
     path_filter: str | None,
@@ -364,16 +369,49 @@ def find(
     """Search for code matching the query.
 
     Performs hybrid search (BM25 + semantic embeddings).
+    Can be run from any subdirectory within the repository.
+
+    If PATH is provided, searches only within that path (relative to current directory).
+    Examples:
+        ember find "query"           # Search entire repo
+        ember find "query" .          # Search current directory subtree
+        ember find "query" src/       # Search src/ subtree
     """
-    repo_root = Path.cwd().resolve()
-    ember_dir = repo_root / ".ember"
+    from ember.core.repo_utils import find_repo_root
+
+    try:
+        repo_root, ember_dir = find_repo_root()
+    except RuntimeError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
     db_path = ember_dir / "index.db"
 
-    # Check if ember is initialized
-    if not ember_dir.exists() or not db_path.exists():
-        click.echo("Error: Ember not initialized in this directory", err=True)
-        click.echo("Run 'ember init' first", err=True)
-        sys.exit(1)
+    # Handle path argument: convert from CWD-relative to repo-relative glob
+    if path is not None:
+        # Convert path argument to absolute, then to relative from repo root
+        cwd = Path.cwd().resolve()
+        path_abs = (cwd / path).resolve()
+
+        # Check if path is within repo
+        try:
+            path_rel_to_repo = path_abs.relative_to(repo_root)
+        except ValueError:
+            click.echo(f"Error: Path '{path}' is not within repository", err=True)
+            sys.exit(1)
+
+        # Create glob pattern for this path subtree
+        path_scope_filter = f"{path_rel_to_repo}/**" if path_rel_to_repo != Path(".") else "*/**"
+
+        # Merge with existing path_filter if present
+        if path_filter:
+            # Both filters specified - this is a conflict, prefer path argument
+            click.echo(
+                f"Warning: Both path argument '{path}' and --in filter '{path_filter}' specified. "
+                f"Using path argument only.",
+                err=True,
+            )
+        path_filter = path_scope_filter
 
     # Load config
     from ember.adapters.config.toml_config_provider import TomlConfigProvider
@@ -473,9 +511,16 @@ def cat(ctx: click.Context, index: int, context: int) -> None:
     """Display content of a search result by index.
 
     Use after 'find' to view full chunk content.
+    Can be run from any subdirectory within the repository.
     """
-    repo_root = Path.cwd().resolve()
-    ember_dir = repo_root / ".ember"
+    from ember.core.repo_utils import find_repo_root
+
+    try:
+        repo_root, ember_dir = find_repo_root()
+    except RuntimeError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
     cache_path = ember_dir / ".last_search.json"
 
     try:
@@ -553,12 +598,19 @@ def open_result(ctx: click.Context, index: int) -> None:
     """Open search result in editor.
 
     Opens file at the correct line in $EDITOR.
+    Can be run from any subdirectory within the repository.
     """
     import os
     import subprocess
 
-    repo_root = Path.cwd().resolve()
-    ember_dir = repo_root / ".ember"
+    from ember.core.repo_utils import find_repo_root
+
+    try:
+        repo_root, ember_dir = find_repo_root()
+    except RuntimeError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
     cache_path = ember_dir / ".last_search.json"
 
     try:
