@@ -6,31 +6,38 @@
 
 ## 📍 CURRENT STATE
 
-**Status:** Post-v0.1.0 release, working towards v0.2.0
+**Status:** Post-v0.2.0 release, working towards v0.3.0
 **Branch:** `develop` (for ongoing work)
-**Last Release:** v0.1.0 (2025-10-15)
-**Active Milestone:** 0.2.0
+**Last Release:** v0.2.0 (2025-10-20)
+**Active Milestone:** 0.3.0
 
 **What's Working:**
 - Core indexing and search functionality ✅
-- 103 automated tests passing ✅
+- Auto-sync on search (zero-friction workflow) ✅
+- Functional config system (.ember/config.toml) ✅
+- sqlite-vec for fast vector search (100x speedup) ✅
+- Batch embedding optimization (2-6x faster indexing) ✅
+- Fast test suite (<10s) ✅
+- Clean, refactored CLI (29% complexity reduction) ✅
+- 125 automated tests passing ✅
 - Clean architecture with ports/adapters ✅
 
-**Current Focus:** Implementing v0.2.0 features (see `docs/SCOPE_v0.2.0.md`)
+**Current Focus:** Planning v0.3.0 features and identifying new issues
 
 ---
 
-## 🎯 NEXT MILESTONE: v0.2.0
+## 🎯 NEXT MILESTONE: v0.3.0
 
-See [GitHub milestone](https://github.com/sammcvicker/ember/milestone/1) for all issues.
-
-**Scope:** See `docs/SCOPE_v0.2.0.md` for full roadmap
+See [GitHub milestone](https://github.com/sammcvicker/ember/milestone/3) for all issues.
 
 **Priority Issues:**
-1. **#25** - Implement functional config system (enhancement)
-2. **#26** - Auto-sync on search for zero-friction workflow (enhancement)
-3. **#14** - Batch embedding optimization (2-6x speedup)
-4. **#20** - Fast test suite (<10s target)
+1. **#43** - Support running ember from subdirectories and path-scoped search (enhancement)
+2. *Open for new issues* - Review codebase for improvements, optimizations, or bugs
+
+**Completed in v0.2.0:**
+- All 11 milestone issues closed ✅
+- All 7 tech debt issues from audit closed ✅
+- Zero open issues (clean slate!) ✅
 
 ---
 
@@ -45,7 +52,7 @@ See [GitHub milestone](https://github.com/sammcvicker/ember/milestone/1) for all
 cat CLAUDE.md | head -30
 
 # 2. See what needs doing
-gh issue list --state open --milestone "0.2.0"
+gh issue list --state open --milestone "0.3.0"
 
 # 3. Check branch status
 git status
@@ -173,5 +180,5 @@ See `docs/decisions/` for full ADRs:
 
 ---
 
-**Last Updated:** 2025-10-19 (v0.2.0 scope finalized, ready for implementation)
+**Last Updated:** 2025-10-20 (v0.2.0 released, ready for v0.3.0 planning)
 **Format Version:** 2.0 (Simplified)
