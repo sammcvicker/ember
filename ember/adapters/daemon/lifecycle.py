@@ -153,14 +153,28 @@ class DaemonLifecycle:
                 self.pid_file.write_text(str(process.pid))
                 logger.info(f"Daemon started with PID {process.pid}")
 
-                # Wait for daemon to be ready (up to 10 seconds)
-                for _ in range(20):
+                # Wait for daemon to be ready (up to 20 seconds to allow model loading)
+                # Model loading typically takes 3-5 seconds, but can be longer on first download
+                for i in range(40):  # 40 * 0.5s = 20s
                     time.sleep(0.5)
                     if self.is_running():
-                        logger.info("Daemon is ready")
+                        elapsed = (i + 1) * 0.5
+                        logger.info(f"Daemon is ready (took {elapsed:.1f}s)")
                         return True
 
-                raise RuntimeError("Daemon started but not responding")
+                # Daemon started but health check timed out
+                # Check if process is still alive
+                if self.is_process_alive(process.pid):
+                    raise RuntimeError(
+                        "Daemon process started but not responding to health checks after 20s. "
+                        "This may indicate model loading issues. Check daemon logs at: "
+                        f"{self.log_file}"
+                    )
+                else:
+                    raise RuntimeError(
+                        f"Daemon process {process.pid} exited unexpectedly during startup. "
+                        f"Check daemon logs at: {self.log_file}"
+                    )
 
         except Exception as e:
             raise RuntimeError(f"Failed to start daemon: {e}") from e

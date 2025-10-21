@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Daemon startup timeout increased and error reporting improved** (#50)
+  - Increased daemon startup timeout from 10s to 20s to handle model loading
+  - Model loading typically takes 3-5 seconds, but can be longer on first download
+  - Now distinguishes between different failure modes with actionable error messages:
+    - Process not responding after timeout (suggests checking logs)
+    - Process crashed during startup (suggests checking logs)
+  - Logs actual startup time when daemon becomes ready
+  - Eliminates false "failed to start" warnings when daemon is successfully loading
+- **Progress bars now clear properly during auto-sync** (#48)
+  - Fixed progress bars not disappearing when `ember find` triggers auto-sync
+  - Progress bars now fully clear before showing completion messages
+  - Ensures clean, professional output without leftover progress bar artifacts
 - **Path-scoped search now filters during SQL query instead of after retrieval** (#52)
   - Previously, path filtering happened after retrieving results, which could return fewer results than requested
   - Example: `ember find "query" tests/ -k 5` might only return 2 results if only 2 of the top-5 global results were in `tests/`
