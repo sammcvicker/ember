@@ -30,14 +30,12 @@ def _create_embedder(config):
     """
     if config.model.mode == "daemon":
         # Use daemon mode (default)
+        # Client will auto-start daemon on first use
         from ember.adapters.daemon.client import DaemonEmbedderClient
-        from ember.adapters.daemon.lifecycle import DaemonLifecycle
 
-        # Ensure daemon is running
-        lifecycle = DaemonLifecycle(idle_timeout=config.model.daemon_timeout)
-        lifecycle.ensure_running()
-
-        return DaemonEmbedderClient(fallback=True)
+        return DaemonEmbedderClient(
+            fallback=True, auto_start=True, daemon_timeout=config.model.daemon_timeout
+        )
     else:
         # Use direct mode (fallback or explicit config)
         from ember.adapters.local_models.jina_embedder import JinaCodeEmbedder
@@ -236,9 +234,29 @@ def sync(
 
     try:
         # Import only what's needed for this command
+        from ember.adapters.git_cmd.git_adapter import GitAdapter
+        from ember.adapters.sqlite.meta_repository import SQLiteMetaRepository
         from ember.core.indexing.index_usecase import IndexRequest
 
-        # Create indexing use case with all dependencies
+        # Quick check: if not force reindex and tree SHA unchanged, skip expensive setup
+        if not reindex and sync_mode == "worktree":
+            vcs = GitAdapter(repo_root)
+            meta_repo = SQLiteMetaRepository(db_path)
+            try:
+                current_tree_sha = vcs.get_worktree_tree_sha()
+                last_indexed_sha = meta_repo.get_last_indexed_tree_sha()
+                if current_tree_sha == last_indexed_sha:
+                    if ctx.obj.get("verbose", False):
+                        click.echo("DEBUG: Tree SHAs match, returning early", err=True)
+                    click.echo("✓ No changes detected (index up to date)")
+                    return
+            except Exception as e:
+                # If quick check fails, fall through to full sync
+                if ctx.obj.get("verbose", False):
+                    click.echo(f"Quick check failed: {e}", err=True)
+                pass
+
+        # Create indexing use case with all dependencies (starts daemon if needed)
         indexing_usecase = _create_indexing_usecase(repo_root, db_path, config)
 
         # Execute indexing with progress reporting (unless quiet mode)

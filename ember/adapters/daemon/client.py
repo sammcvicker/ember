@@ -33,32 +33,40 @@ class DaemonEmbedderClient:
     """Embedder client that communicates with daemon server.
 
     Implements the Embedder protocol. Connects to daemon via Unix socket
-    and sends embed_texts requests. Falls back to direct mode on errors.
+    and sends embed_texts requests. Auto-starts daemon if needed. Falls
+    back to direct mode on errors.
     """
 
     def __init__(
         self,
         socket_path: Path | None = None,
         fallback: bool = True,
+        auto_start: bool = True,
         max_seq_length: int = 512,
         batch_size: int = 32,
+        daemon_timeout: int = 900,
     ):
         """Initialize daemon client.
 
         Args:
             socket_path: Path to daemon socket (default: ~/.ember/daemon.sock)
             fallback: Enable fallback to direct mode on errors
+            auto_start: Auto-start daemon if not running
             max_seq_length: Max sequence length for fallback embedder
             batch_size: Batch size for fallback embedder
+            daemon_timeout: Daemon idle timeout in seconds
         """
         self.socket_path = socket_path or (Path.home() / ".ember" / "daemon.sock")
         self.fallback_enabled = fallback
+        self.auto_start = auto_start
         self.max_seq_length = max_seq_length
         self.batch_size = batch_size
+        self.daemon_timeout = daemon_timeout
 
         # Lazy-loaded fallback embedder
         self._fallback_embedder: JinaCodeEmbedder | None = None
         self._using_fallback = False
+        self._daemon_start_attempted = False
 
     @property
     def name(self) -> str:
@@ -109,6 +117,35 @@ class DaemonEmbedderClient:
             )
         return self._fallback_embedder
 
+    def _ensure_daemon_running(self) -> bool:
+        """Ensure daemon is running, start if needed.
+
+        Returns:
+            True if daemon is running, False otherwise
+        """
+        if not self.auto_start:
+            return is_daemon_running(self.socket_path)
+
+        if is_daemon_running(self.socket_path):
+            return True
+
+        if self._daemon_start_attempted:
+            return False  # Already tried, don't retry
+
+        # Try to start daemon
+        try:
+            from ember.adapters.daemon.lifecycle import DaemonLifecycle
+
+            logger.info("Daemon not running, starting...")
+            lifecycle = DaemonLifecycle(
+                socket_path=self.socket_path, idle_timeout=self.daemon_timeout
+            )
+            self._daemon_start_attempted = True
+            return lifecycle.ensure_running()
+        except Exception as e:
+            logger.error(f"Failed to start daemon: {e}")
+            return False
+
     def _connect(self) -> socket.socket:
         """Connect to daemon socket.
 
@@ -141,6 +178,10 @@ class DaemonEmbedderClient:
         Raises:
             DaemonError: If daemon request fails
         """
+        # Ensure daemon is running (auto-start if needed)
+        if not self._ensure_daemon_running():
+            raise DaemonError("Daemon is not running and failed to start")
+
         sock = None
         try:
             # Connect to daemon
