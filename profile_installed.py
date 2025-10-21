@@ -4,8 +4,8 @@
 This mimics what happens when you run 'ember --version' after pipx install.
 """
 
-import sys
 import time
+
 
 def profile_imports():
     """Profile imports as they happen."""
@@ -32,7 +32,6 @@ def profile_imports():
     total_start = time.perf_counter()
 
     # This is what happens when you run the installed 'ember' command
-    from ember.entrypoints.cli import main
 
     # Restore original import
     __builtins__.__import__ = original_import
@@ -45,12 +44,13 @@ def profile_imports():
     print("\nTop imports by time:")
     print("-" * 60)
     for module, duration in sorted_imports[:20]:
-        print(f"{module:50} {duration*1000:>8.1f} ms")
+        print(f"{module:50} {duration * 1000:>8.1f} ms")
 
     print("=" * 60)
-    print(f"{'Total import time':50} {total_duration*1000:>8.1f} ms")
+    print(f"{'Total import time':50} {total_duration * 1000:>8.1f} ms")
 
     return import_times, total_duration
+
 
 if __name__ == "__main__":
     import_times, total = profile_imports()

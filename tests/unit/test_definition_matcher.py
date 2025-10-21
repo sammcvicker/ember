@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from ember.adapters.parsers.definition_matcher import Definition, DefinitionMatcher
+from ember.adapters.parsers.definition_matcher import DefinitionMatcher
 
 
 # Mock tree-sitter Node for testing
@@ -93,7 +93,14 @@ def test_definition_matcher_multiple_definitions():
         end_point=(2, 0),
         text=b"def add():\n    pass",
     )
-    name_node1 = MockNode(start_byte=4, end_byte=7, start_point=(0, 4), end_point=(0, 7), text=b"add", parent=def_node1)
+    name_node1 = MockNode(
+        start_byte=4,
+        end_byte=7,
+        start_point=(0, 4),
+        end_point=(0, 7),
+        text=b"add",
+        parent=def_node1,
+    )
 
     # Second function
     def_node2 = MockNode(
@@ -104,7 +111,12 @@ def test_definition_matcher_multiple_definitions():
         text=b"def multiply():\n    pass",
     )
     name_node2 = MockNode(
-        start_byte=44, end_byte=52, start_point=(4, 4), end_point=(4, 12), text=b"multiply", parent=def_node2
+        start_byte=44,
+        end_byte=52,
+        start_point=(4, 4),
+        end_point=(4, 12),
+        text=b"multiply",
+        parent=def_node2,
     )
 
     captures = {"func.def": [def_node1, def_node2], "func.name": [name_node1, name_node2]}
@@ -130,7 +142,12 @@ def test_definition_matcher_nested_definitions():
         text=b"class Calculator:\n    def add(): pass",
     )
     class_name = MockNode(
-        start_byte=6, end_byte=16, start_point=(0, 6), end_point=(0, 16), text=b"Calculator", parent=class_node
+        start_byte=6,
+        end_byte=16,
+        start_point=(0, 6),
+        end_point=(0, 16),
+        text=b"Calculator",
+        parent=class_node,
     )
 
     # Method definition (nested inside class)
@@ -143,7 +160,12 @@ def test_definition_matcher_nested_definitions():
         parent=class_node,
     )
     method_name = MockNode(
-        start_byte=24, end_byte=27, start_point=(1, 8), end_point=(1, 11), text=b"add", parent=method_node
+        start_byte=24,
+        end_byte=27,
+        start_point=(1, 8),
+        end_point=(1, 11),
+        text=b"add",
+        parent=method_node,
     )
 
     captures = {
@@ -174,13 +196,27 @@ def test_definition_matcher_text_decoding():
     def_node1 = MockNode(
         start_byte=0, end_byte=20, start_point=(0, 0), end_point=(1, 0), text=b"def foo(): pass"
     )
-    name_node1 = MockNode(start_byte=4, end_byte=7, start_point=(0, 4), end_point=(0, 7), text=b"foo", parent=def_node1)
+    name_node1 = MockNode(
+        start_byte=4,
+        end_byte=7,
+        start_point=(0, 4),
+        end_point=(0, 7),
+        text=b"foo",
+        parent=def_node1,
+    )
 
     # Node with string text (some tree-sitter bindings return strings)
     def_node2 = MockNode(
         start_byte=30, end_byte=50, start_point=(3, 0), end_point=(4, 0), text="def bar(): pass"
     )
-    name_node2 = MockNode(start_byte=34, end_byte=37, start_point=(3, 4), end_point=(3, 7), text="bar", parent=def_node2)
+    name_node2 = MockNode(
+        start_byte=34,
+        end_byte=37,
+        start_point=(3, 4),
+        end_point=(3, 7),
+        text="bar",
+        parent=def_node2,
+    )
 
     captures = {"func.def": [def_node1, def_node2], "func.name": [name_node1, name_node2]}
 
@@ -208,7 +244,12 @@ def test_definition_matcher_multiple_names_single_definition():
         start_byte=6, end_byte=9, start_point=(0, 6), end_point=(0, 9), text=b"Foo", parent=def_node
     )
     name_node2 = MockNode(
-        start_byte=20, end_byte=28, start_point=(1, 8), end_point=(1, 16), text=b"__init__", parent=def_node
+        start_byte=20,
+        end_byte=28,
+        start_point=(1, 8),
+        end_point=(1, 16),
+        text=b"__init__",
+        parent=def_node,
     )
 
     captures = {"class.def": [def_node], "class.name": [name_node1, name_node2]}
@@ -224,13 +265,36 @@ def test_definition_matcher_multiple_names_single_definition():
 def test_definition_matcher_deep_nesting():
     """Test DefinitionMatcher handles deeply nested parent relationships."""
     # Deeply nested structure: outer -> middle -> inner -> name
-    outer = MockNode(start_byte=0, end_byte=100, start_point=(0, 0), end_point=(10, 0), text=b"outer")
-    middle = MockNode(start_byte=10, end_byte=80, start_point=(1, 0), end_point=(8, 0), text=b"middle", parent=outer)
-    inner = MockNode(start_byte=20, end_byte=60, start_point=(2, 0), end_point=(6, 0), text=b"inner", parent=middle)
+    outer = MockNode(
+        start_byte=0, end_byte=100, start_point=(0, 0), end_point=(10, 0), text=b"outer"
+    )
+    middle = MockNode(
+        start_byte=10,
+        end_byte=80,
+        start_point=(1, 0),
+        end_point=(8, 0),
+        text=b"middle",
+        parent=outer,
+    )
+    inner = MockNode(
+        start_byte=20,
+        end_byte=60,
+        start_point=(2, 0),
+        end_point=(6, 0),
+        text=b"inner",
+        parent=middle,
+    )
 
     # Definition is the outer node
     # Name is deeply nested inside
-    name_node = MockNode(start_byte=30, end_byte=40, start_point=(3, 0), end_point=(3, 10), text=b"test", parent=inner)
+    name_node = MockNode(
+        start_byte=30,
+        end_byte=40,
+        start_point=(3, 0),
+        end_point=(3, 10),
+        text=b"test",
+        parent=inner,
+    )
 
     captures = {"func.def": [outer], "func.name": [name_node]}
 
@@ -243,11 +307,18 @@ def test_definition_matcher_deep_nesting():
 def test_definition_matcher_no_parent_match():
     """Test DefinitionMatcher handles orphaned name nodes gracefully."""
     # Definition node
-    def_node = MockNode(start_byte=0, end_byte=50, start_point=(0, 0), end_point=(2, 0), text=b"def foo(): pass")
+    def_node = MockNode(
+        start_byte=0, end_byte=50, start_point=(0, 0), end_point=(2, 0), text=b"def foo(): pass"
+    )
 
     # Name node with no parent chain leading to def_node
     orphan_name = MockNode(
-        start_byte=100, end_byte=110, start_point=(10, 0), end_point=(10, 10), text=b"orphan", parent=None
+        start_byte=100,
+        end_byte=110,
+        start_point=(10, 0),
+        end_point=(10, 10),
+        text=b"orphan",
+        parent=None,
     )
 
     captures = {"func.def": [def_node], "func.name": [orphan_name]}
@@ -262,12 +333,25 @@ def test_definition_matcher_no_parent_match():
 def test_definition_matcher_mixed_named_unnamed():
     """Test DefinitionMatcher handles mix of named and unnamed definitions."""
     # Named function
-    named_def = MockNode(start_byte=0, end_byte=30, start_point=(0, 0), end_point=(2, 0), text=b"def foo(): pass")
-    name_node = MockNode(start_byte=4, end_byte=7, start_point=(0, 4), end_point=(0, 7), text=b"foo", parent=named_def)
+    named_def = MockNode(
+        start_byte=0, end_byte=30, start_point=(0, 0), end_point=(2, 0), text=b"def foo(): pass"
+    )
+    name_node = MockNode(
+        start_byte=4,
+        end_byte=7,
+        start_point=(0, 4),
+        end_point=(0, 7),
+        text=b"foo",
+        parent=named_def,
+    )
 
     # Unnamed arrow function
     unnamed_def = MockNode(
-        start_byte=40, end_byte=60, start_point=(4, 0), end_point=(4, 20), text=b"() => { return 42; }"
+        start_byte=40,
+        end_byte=60,
+        start_point=(4, 0),
+        end_point=(4, 20),
+        text=b"() => { return 42; }",
     )
 
     captures = {"func.def": [named_def], "arrow.def": [unnamed_def], "func.name": [name_node]}

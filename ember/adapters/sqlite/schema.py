@@ -198,12 +198,15 @@ def _insert_default_meta(conn: sqlite3.Connection) -> None:
     """
     cursor = conn.cursor()
 
-    cursor.execute("""
+    cursor.execute(
+        """
         INSERT OR IGNORE INTO meta (key, value) VALUES
         ('schema_version', ?),
         ('created_at', datetime('now')),
         ('index_version', '0.1.0')
-    """, (str(SCHEMA_VERSION),))
+    """,
+        (str(SCHEMA_VERSION),),
+    )
 
 
 def check_schema_version(db_path: Path) -> int:

@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **CLI refactoring (Phase 1)**: Extracted shared utilities to reduce code duplication (#32)
+  - Created `ember/core/cli_utils.py` with reusable CLI utilities
+  - Extracted `RichProgressCallback` for progress bar management
+  - Added `progress_context()` context manager to eliminate duplicated progress bar setup
+  - Added `load_cached_results()` and `validate_result_index()` to eliminate 80% duplication between `cat` and `open` commands
+  - Added `highlight_symbol()` and `format_result_header()` for consistent output formatting
+  - Reduced duplication in `sync`, `find`, `cat`, and `open` commands
+  - All tests pass, no user-facing changes
+- **CLI refactoring (Phase 2)**: Extracted presentation logic to separate layer (#32)
+  - Created `ember/core/presentation/` module with `ResultPresenter` class
+  - Extracted 87-line human output formatter from `find` command
+  - Added `serialize_for_cache()` to eliminate duplicate serialization logic
+  - Added `format_json_output()` to eliminate duplicate JSON formatting
+  - Added `format_human_output()` for reusable ripgrep-style formatting
+  - Reduced `find` command from 257 lines to ~180 lines (30% reduction)
+  - All tests pass, no user-facing changes
+- **CLI refactoring (Phase 3)**: Simplified commands to thin layer pattern (#32)
+  - Extracted `check_and_auto_sync()` helper to eliminate 50-line auto-sync block from `find` command
+  - Commands now follow pattern: parse → call use case → present output
+  - Reduced total CLI file from 899 lines to 639 lines (**29% reduction, 260 lines removed**)
+  - Improved maintainability and testability
+  - All tests pass, no user-facing changes
+
 ### Added
 - **Model loading progress indicator**: Shows separate progress when loading embedding model during sync (#31)
   - Prevents first file from appearing abnormally slow (model loads in ~2-3s)

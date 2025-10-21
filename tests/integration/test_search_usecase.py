@@ -342,7 +342,7 @@ def test_search_with_combined_filters(search_usecase: SearchUseCase) -> None:
         text="function",
         topk=10,
         path_filter="math.py",
-        lang_filter="python"  # Correct parameter name
+        lang_filter="python",  # Correct parameter name
     )
     results = search_usecase.search(query)
 
@@ -365,7 +365,7 @@ def test_search_with_different_path_and_language(search_usecase: SearchUseCase) 
         text="greet",
         topk=10,
         path_filter="utils.ts",
-        lang_filter="python"  # Conflicting: utils.ts is TypeScript
+        lang_filter="python",  # Conflicting: utils.ts is TypeScript
     )
     results = search_usecase.search(query)
 
@@ -382,11 +382,11 @@ def test_search_with_special_characters_in_query(search_usecase: SearchUseCase) 
     """
     # Test characters that should work in FTS5
     safe_queries = [
-        "function test",              # Space
-        "function-test",              # Hyphen
-        "function_test",              # Underscore
-        "(function)",                 # Parentheses
-        "[function]",                 # Brackets
+        "function test",  # Space
+        "function-test",  # Hyphen
+        "function_test",  # Underscore
+        "(function)",  # Parentheses
+        "[function]",  # Brackets
     ]
 
     for safe_query in safe_queries:
@@ -395,7 +395,7 @@ def test_search_with_special_characters_in_query(search_usecase: SearchUseCase) 
         try:
             results = search_usecase.search(query)
             assert isinstance(results, list)  # Should return a list
-        except Exception as e:
+        except Exception:
             # Document if certain queries fail
             # This helps identify FTS5 limitations to fix later
             pass

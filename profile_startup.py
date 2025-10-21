@@ -2,7 +2,7 @@
 """Profile CLI startup time to identify bottlenecks."""
 
 import time
-import sys
+
 
 def time_import(module_name: str) -> float:
     """Time how long it takes to import a module."""
@@ -10,6 +10,7 @@ def time_import(module_name: str) -> float:
     __import__(module_name)
     duration = time.perf_counter() - start
     return duration
+
 
 print("Profiling ember CLI startup...")
 print("=" * 60)
@@ -30,16 +31,15 @@ for module in modules_to_test:
     try:
         duration = time_import(module)
         results.append((module, duration))
-        print(f"{module:50} {duration*1000:>8.1f} ms")
+        print(f"{module:50} {duration * 1000:>8.1f} ms")
     except ImportError as e:
         print(f"{module:50} FAILED: {e}")
 
 print("=" * 60)
-print(f"{'TOTAL':50} {sum(d for _, d in results)*1000:>8.1f} ms")
+print(f"{'TOTAL':50} {sum(d for _, d in results) * 1000:>8.1f} ms")
 
 # Now time the full CLI import
 print("\nFull CLI module import:")
 start = time.perf_counter()
-from ember.entrypoints import cli
 duration = time.perf_counter() - start
-print(f"{'ember.entrypoints.cli':50} {duration*1000:>8.1f} ms")
+print(f"{'ember.entrypoints.cli':50} {duration * 1000:>8.1f} ms")

@@ -8,45 +8,15 @@ from pathlib import Path
 
 import blake3
 import click
-from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 
-
-class RichProgressCallback:
-    """Rich-based progress callback for visual progress reporting.
-
-    Uses Rich library to display a progress bar that updates as indexing progresses.
-    """
-
-    def __init__(self, progress: Progress) -> None:
-        """Initialize with a Rich Progress instance.
-
-        Args:
-            progress: Rich Progress instance to use for display.
-        """
-        self.progress = progress
-        self.task_id: int | None = None
-
-    def on_start(self, total: int, description: str) -> None:
-        """Create progress bar when operation starts."""
-        # Use transient=True to auto-hide when complete
-        self.task_id = self.progress.add_task(description, total=total)
-
-    def on_progress(self, current: int, item_description: str | None = None) -> None:
-        """Update progress bar with current item."""
-        if self.task_id is not None:
-            # Update the task description to show current file
-            if item_description:
-                self.progress.update(
-                    self.task_id, completed=current, description=f"[cyan]{item_description}"
-                )
-            else:
-                self.progress.update(self.task_id, completed=current)
-
-    def on_complete(self) -> None:
-        """Mark progress as complete and hide it."""
-        if self.task_id is not None:
-            # Remove the task to hide the progress bar
-            self.progress.remove_task(self.task_id)
+from ember.core.cli_utils import (
+    check_and_auto_sync,
+    format_result_header,
+    load_cached_results,
+    progress_context,
+    validate_result_index,
+)
+from ember.core.presentation import ResultPresenter
 
 
 def _create_indexing_usecase(repo_root: Path, db_path: Path, config):
@@ -235,6 +205,7 @@ def sync(
 
     # Load config
     from ember.adapters.config.toml_config_provider import TomlConfigProvider
+
     config_provider = TomlConfigProvider()
     config = config_provider.load(ember_dir)
 
@@ -254,20 +225,11 @@ def sync(
         )
 
         # Use progress bar unless in quiet mode
-        if ctx.obj.get("quiet", False):
-            # No progress reporting in quiet mode
-            response = indexing_usecase.execute(request)
-        else:
-            # Create Rich progress bar (transient=True makes it disappear when done)
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                BarColumn(),
-                TaskProgressColumn(),
-                transient=True,
-            ) as progress:
-                callback = RichProgressCallback(progress)
-                response = indexing_usecase.execute(request, progress=callback)
+        with progress_context(quiet_mode=ctx.obj.get("quiet", False)) as progress:
+            if progress:
+                response = indexing_usecase.execute(request, progress=progress)
+            else:
+                response = indexing_usecase.execute(request)
 
         if not response.success:
             click.echo(f"Error during indexing: {response.error}", err=True)
@@ -363,6 +325,7 @@ def find(
 
     # Load config
     from ember.adapters.config.toml_config_provider import TomlConfigProvider
+
     config_provider = TomlConfigProvider()
     config = config_provider.load(ember_dir)
 
@@ -372,64 +335,13 @@ def find(
 
     # Auto-sync: Check if index is stale and sync if needed (unless --no-sync)
     if not no_sync:
-        from ember.adapters.git_cmd.git_adapter import GitAdapter
-        from ember.adapters.sqlite.meta_repository import SQLiteMetaRepository
-
-        try:
-            vcs = GitAdapter(repo_root)
-            meta_repo = SQLiteMetaRepository(db_path)
-
-            # Get current worktree tree SHA
-            current_tree_sha = vcs.get_worktree_tree_sha()
-
-            # Get last indexed tree SHA
-            last_tree_sha = meta_repo.get("last_tree_sha")
-
-            # If tree SHAs differ, index is stale - auto-sync
-            if last_tree_sha != current_tree_sha:
-                from ember.core.indexing.index_usecase import IndexRequest
-
-                # Create indexing use case with all dependencies
-                indexing_usecase = _create_indexing_usecase(repo_root, db_path, config)
-
-                # Execute incremental sync
-                request = IndexRequest(
-                    repo_root=repo_root,
-                    sync_mode="worktree",
-                    path_filters=[],
-                    force_reindex=False,
-                )
-
-                # Use progress bars (like regular sync) unless in JSON mode
-                if json_output:
-                    # Silent mode for JSON output
-                    response = indexing_usecase.execute(request)
-                else:
-                    # Show progress bars (outputs to stderr by default)
-                    with Progress(
-                        SpinnerColumn(),
-                        TextColumn("[progress.description]{task.description}"),
-                        BarColumn(),
-                        TaskProgressColumn(),
-                        transient=True,
-                    ) as progress:
-                        callback = RichProgressCallback(progress)
-                        response = indexing_usecase.execute(request, progress=callback)
-
-                    # Show completion message
-                    if response.success:
-                        if response.files_indexed > 0:
-                            click.echo(
-                                f"✓ Synced {response.files_indexed} file(s)",
-                                err=True,
-                            )
-                        else:
-                            click.echo("✓ Index up to date", err=True)
-
-        except Exception as e:
-            # If staleness check fails, continue with search anyway
-            if ctx.obj.get("verbose", False):
-                click.echo(f"Warning: Could not check index staleness: {e}", err=True)
+        check_and_auto_sync(
+            repo_root=repo_root,
+            db_path=db_path,
+            config=config,
+            quiet_mode=json_output,
+            verbose=ctx.obj.get("verbose", False),
+        )
 
     try:
         # Lazy imports - only load heavy dependencies when find is actually called
@@ -471,25 +383,7 @@ def find(
         try:
             import json
 
-            cache_data = {
-                "query": query,
-                "results": [
-                    {
-                        "rank": result.rank,
-                        "score": result.score,
-                        "path": str(result.chunk.path),
-                        "lang": result.chunk.lang,
-                        "symbol": result.chunk.symbol,
-                        "start_line": result.chunk.start_line,
-                        "end_line": result.chunk.end_line,
-                        "content": result.chunk.content,
-                        "chunk_id": result.chunk.id,
-                        "tree_sha": result.chunk.tree_sha,
-                        "explanation": result.explanation,
-                    }
-                    for result in results
-                ],
-            }
+            cache_data = ResultPresenter.serialize_for_cache(query, results)
             cache_path.write_text(json.dumps(cache_data, indent=2))
         except Exception as e:
             # Log cache errors but don't fail the command
@@ -498,92 +392,9 @@ def find(
 
         # Display results
         if json_output:
-            import json
-
-            output = []
-            for result in results:
-                output.append(
-                    {
-                        "rank": result.rank,
-                        "score": result.score,
-                        "path": str(result.chunk.path),
-                        "lang": result.chunk.lang,
-                        "symbol": result.chunk.symbol,
-                        "start_line": result.chunk.start_line,
-                        "end_line": result.chunk.end_line,
-                        "content": result.chunk.content,
-                        "explanation": result.explanation,
-                    }
-                )
-            click.echo(json.dumps(output, indent=2))
+            click.echo(ResultPresenter.format_json_output(results))
         else:
-            # Human-readable output (ripgrep-style)
-            if not results:
-                click.echo("No results found.")
-                return
-
-            # Group results by file path for cleaner output
-            from collections import defaultdict
-
-            results_by_file = defaultdict(list)
-            for result in results:
-                results_by_file[result.chunk.path].append(result)
-
-            # Display grouped results
-            for file_path, file_results in results_by_file.items():
-                # Print filename in magenta
-                click.echo(click.style(str(file_path), fg="magenta", bold=True))
-
-                for result in file_results:
-                    # Format: [rank] line_number: content
-                    # Rank in green (what users reference for cat/open)
-                    rank = click.style(f"[{result.rank}]", fg="green", bold=True)
-                    # Line number in dim gray (informational)
-                    line_num = click.style(
-                        f"{result.chunk.start_line}", dim=True
-                    )
-
-                    # Get preview content (first line only for compact display)
-                    preview = result.preview or result.format_preview(max_lines=1)
-                    content_lines = preview.split("\n")
-
-                    # Helper function to highlight symbol in text
-                    def highlight_symbol(text: str, symbol: str | None) -> str:
-                        if not symbol or symbol not in text:
-                            return text
-
-                        # Find and highlight all occurrences of the symbol
-                        parts = []
-                        remaining = text
-                        while symbol in remaining:
-                            idx = remaining.index(symbol)
-                            # Add text before symbol
-                            parts.append(remaining[:idx])
-                            # Add highlighted symbol
-                            parts.append(click.style(symbol, fg="red", bold=True))
-                            # Continue with text after symbol
-                            remaining = remaining[idx + len(symbol):]
-                        # Add any remaining text
-                        parts.append(remaining)
-                        return "".join(parts)
-
-                    # First line with rank and line number
-                    if content_lines:
-                        first_line = highlight_symbol(
-                            content_lines[0], result.chunk.symbol
-                        )
-                        click.echo(f"{rank} {line_num}:{first_line}")
-
-                        # Additional preview lines (indented, no line number)
-                        for line in content_lines[1:]:
-                            if line.strip():  # Skip empty lines
-                                highlighted_line = highlight_symbol(
-                                    line, result.chunk.symbol
-                                )
-                                click.echo(f"    {highlighted_line}")
-
-                # Blank line between files
-                click.echo()
+            ResultPresenter.format_human_output(results)
 
     except RuntimeError as e:
         click.echo(f"Error: {e}", err=True)
@@ -612,60 +423,24 @@ def cat(ctx: click.Context, index: int, context: int) -> None:
 
     Use after 'find' to view full chunk content.
     """
-    import json
-
     repo_root = Path.cwd().resolve()
     ember_dir = repo_root / ".ember"
     cache_path = ember_dir / ".last_search.json"
 
-    # Check if cache exists
-    if not cache_path.exists():
-        click.echo("Error: No recent search results found", err=True)
-        click.echo("Run 'ember find <query>' first", err=True)
-        sys.exit(1)
-
     try:
         # Load cached results
-        cache_data = json.loads(cache_path.read_text())
+        cache_data = load_cached_results(cache_path)
         results = cache_data.get("results", [])
 
-        if not results:
-            click.echo("Error: No results in cache", err=True)
-            sys.exit(1)
+        # Validate and get the result
+        result = validate_result_index(index, results)
 
-        # Validate index (1-based)
-        if index < 1 or index > len(results):
-            click.echo(
-                f"Error: Index {index} out of range (1-{len(results)})", err=True
-            )
-            sys.exit(1)
-
-        # Get the result (convert to 0-based)
-        result = results[index - 1]
-
-        # Display header in ripgrep-style
-        path = result["path"]
-
-        # Filename in magenta bold
-        click.echo(click.style(str(path), fg="magenta", bold=True))
-
-        # Rank in green bold, line number dimmed
-        rank = click.style(f"[{index}]", fg="green", bold=True)
-        line_num = click.style(f"{result['start_line']}", dim=True)
-
-        # Symbol in red bold (inline)
-        symbol_display = ""
-        if result.get("symbol"):
-            symbol_display = " " + click.style(
-                f"({result['symbol']})", fg="red", bold=True
-            )
-
-        click.echo(f"{rank} {line_num}:{symbol_display}")
+        # Display header
+        format_result_header(result, index, show_symbol=True)
         click.echo(
             click.style(
-                f"Lines {result['start_line']}-{result['end_line']} "
-                f"({result['lang'] or 'text'})",
-                dim=True
+                f"Lines {result['start_line']}-{result['end_line']} ({result['lang'] or 'text'})",
+                dim=True,
             )
         )
         click.echo()
@@ -675,7 +450,7 @@ def cat(ctx: click.Context, index: int, context: int) -> None:
 
         # If context requested, read file and show surrounding lines
         if context > 0:
-            file_path = repo_root / path
+            file_path = repo_root / result["path"]
             if file_path.exists():
                 try:
                     file_lines = file_path.read_text(errors="replace").splitlines()
@@ -693,18 +468,16 @@ def cat(ctx: click.Context, index: int, context: int) -> None:
                         if start_line <= line_num <= end_line:
                             click.echo(f"{line_num:5} | {line_content}")
                         else:
-                            click.echo(
-                                click.style(f"{line_num:5} | {line_content}", dim=True)
-                            )
+                            click.echo(click.style(f"{line_num:5} | {line_content}", dim=True))
                 except Exception as e:
                     # Fall back to just chunk content if file read fails
                     click.echo(
-                        f"Warning: Could not read context from {path}: {e}", err=True
+                        f"Warning: Could not read context from {result['path']}: {e}", err=True
                     )
                     click.echo(content)
             else:
                 click.echo(
-                    f"Warning: File {path} not found, showing chunk only", err=True
+                    f"Warning: File {result['path']} not found, showing chunk only", err=True
                 )
                 click.echo(content)
         else:
@@ -713,9 +486,6 @@ def cat(ctx: click.Context, index: int, context: int) -> None:
 
         click.echo()
 
-    except json.JSONDecodeError:
-        click.echo("Error: Corrupted search cache", err=True)
-        sys.exit(1)
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
         if ctx.obj.get("verbose", False):
@@ -733,7 +503,6 @@ def open_result(ctx: click.Context, index: int) -> None:
 
     Opens file at the correct line in $EDITOR.
     """
-    import json
     import os
     import subprocess
 
@@ -741,30 +510,13 @@ def open_result(ctx: click.Context, index: int) -> None:
     ember_dir = repo_root / ".ember"
     cache_path = ember_dir / ".last_search.json"
 
-    # Check if cache exists
-    if not cache_path.exists():
-        click.echo("Error: No recent search results found", err=True)
-        click.echo("Run 'ember find <query>' first", err=True)
-        sys.exit(1)
-
     try:
         # Load cached results
-        cache_data = json.loads(cache_path.read_text())
+        cache_data = load_cached_results(cache_path)
         results = cache_data.get("results", [])
 
-        if not results:
-            click.echo("Error: No results in cache", err=True)
-            sys.exit(1)
-
-        # Validate index (1-based)
-        if index < 1 or index > len(results):
-            click.echo(
-                f"Error: Index {index} out of range (1-{len(results)})", err=True
-            )
-            sys.exit(1)
-
-        # Get the result (convert to 0-based)
-        result = results[index - 1]
+        # Validate and get the result
+        result = validate_result_index(index, results)
 
         # Build absolute file path
         file_path = repo_root / result["path"]
@@ -804,25 +556,12 @@ def open_result(ctx: click.Context, index: int) -> None:
 
         # Show what we're doing (if not quiet)
         if not ctx.obj.get("quiet", False):
-            # Use consistent ripgrep-style formatting
-            path_display = click.style(str(result['path']), fg="magenta", bold=True)
-            rank_display = click.style(f"[{index}]", fg="green", bold=True)
-            line_display = click.style(f"{line_num}", dim=True)
-
-            symbol_display = ""
-            if result.get("symbol"):
-                symbol_display = " " + click.style(
-                    f"({result['symbol']})", fg="red", bold=True
-                )
-
-            click.echo(f"Opening {path_display} {rank_display} {line_display}:{symbol_display} in {editor}")
+            click.echo(f"Opening in {editor}:")
+            format_result_header(result, index, show_symbol=True)
 
         # Execute editor command
         subprocess.run(cmd, check=True)
 
-    except json.JSONDecodeError:
-        click.echo("Error: Corrupted search cache", err=True)
-        sys.exit(1)
     except subprocess.CalledProcessError as e:
         click.echo(f"Error: Failed to open editor: {e}", err=True)
         sys.exit(1)

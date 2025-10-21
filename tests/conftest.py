@@ -507,7 +507,7 @@ class User:
 
     # File 4: JavaScript React component
     (repo_path / "src" / "components.jsx").write_text(
-        '''/**
+        """/**
  * React components for the user interface.
  *
  * This module provides reusable UI components for the application.
@@ -637,12 +637,12 @@ export function DataTable({ data, columns }) {
     </table>
   );
 }
-'''
+"""
     )
 
     # File 5: TypeScript API client
     (repo_path / "src" / "api-client.ts").write_text(
-        '''/**
+        """/**
  * API client for backend communication.
  *
  * Provides type-safe methods for making API requests.
@@ -806,7 +806,7 @@ export class ApiClient {
     await this.delete(`/users/${id}`);
   }
 }
-'''
+"""
     )
 
     # File 6: Test file
@@ -936,7 +936,7 @@ class TestListChunking:
 
     # File 7: README documentation
     (repo_path / "README.md").write_text(
-        '''# Application Documentation
+        """# Application Documentation
 
 ## Overview
 
@@ -1019,7 +1019,7 @@ The application follows a layered architecture:
 ## License
 
 MIT License - see LICENSE file for details
-'''
+"""
     )
 
     # File 8: Configuration file

@@ -75,7 +75,11 @@ class DefinitionMatcher:
         # Second pass: match names to their parent definitions
         for name_node in name_nodes:
             # Decode name text
-            symbol_name = name_node.text.decode("utf-8") if isinstance(name_node.text, bytes) else name_node.text
+            symbol_name = (
+                name_node.text.decode("utf-8")
+                if isinstance(name_node.text, bytes)
+                else name_node.text
+            )
 
             # Walk up AST to find parent definition node
             parent = name_node.parent
@@ -89,4 +93,7 @@ class DefinitionMatcher:
                 parent = parent.parent
 
         # Convert to Definition objects
-        return [Definition(symbol=symbol, start_line=start, end_line=end) for symbol, start, end in definitions.values()]
+        return [
+            Definition(symbol=symbol, start_line=start, end_line=end)
+            for symbol, start, end in definitions.values()
+        ]
