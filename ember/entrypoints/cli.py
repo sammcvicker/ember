@@ -16,6 +16,7 @@ from ember.core.cli_utils import (
     progress_context,
     validate_result_index,
 )
+from ember.core.presentation import ResultPresenter
 
 
 def _create_indexing_usecase(repo_root: Path, db_path: Path, config):
@@ -422,25 +423,7 @@ def find(
         try:
             import json
 
-            cache_data = {
-                "query": query,
-                "results": [
-                    {
-                        "rank": result.rank,
-                        "score": result.score,
-                        "path": str(result.chunk.path),
-                        "lang": result.chunk.lang,
-                        "symbol": result.chunk.symbol,
-                        "start_line": result.chunk.start_line,
-                        "end_line": result.chunk.end_line,
-                        "content": result.chunk.content,
-                        "chunk_id": result.chunk.id,
-                        "tree_sha": result.chunk.tree_sha,
-                        "explanation": result.explanation,
-                    }
-                    for result in results
-                ],
-            }
+            cache_data = ResultPresenter.serialize_for_cache(query, results)
             cache_path.write_text(json.dumps(cache_data, indent=2))
         except Exception as e:
             # Log cache errors but don't fail the command
@@ -449,72 +432,9 @@ def find(
 
         # Display results
         if json_output:
-            import json
-
-            output = []
-            for result in results:
-                output.append(
-                    {
-                        "rank": result.rank,
-                        "score": result.score,
-                        "path": str(result.chunk.path),
-                        "lang": result.chunk.lang,
-                        "symbol": result.chunk.symbol,
-                        "start_line": result.chunk.start_line,
-                        "end_line": result.chunk.end_line,
-                        "content": result.chunk.content,
-                        "explanation": result.explanation,
-                    }
-                )
-            click.echo(json.dumps(output, indent=2))
+            click.echo(ResultPresenter.format_json_output(results))
         else:
-            # Human-readable output (ripgrep-style)
-            if not results:
-                click.echo("No results found.")
-                return
-
-            # Group results by file path for cleaner output
-            from collections import defaultdict
-
-            results_by_file = defaultdict(list)
-            for result in results:
-                results_by_file[result.chunk.path].append(result)
-
-            # Display grouped results
-            for file_path, file_results in results_by_file.items():
-                # Print filename in magenta
-                click.echo(click.style(str(file_path), fg="magenta", bold=True))
-
-                for result in file_results:
-                    # Format: [rank] line_number: content
-                    # Rank in green (what users reference for cat/open)
-                    rank = click.style(f"[{result.rank}]", fg="green", bold=True)
-                    # Line number in dim gray (informational)
-                    line_num = click.style(
-                        f"{result.chunk.start_line}", dim=True
-                    )
-
-                    # Get preview content (first line only for compact display)
-                    preview = result.preview or result.format_preview(max_lines=1)
-                    content_lines = preview.split("\n")
-
-                    # First line with rank and line number
-                    if content_lines:
-                        first_line = highlight_symbol(
-                            content_lines[0], result.chunk.symbol
-                        )
-                        click.echo(f"{rank} {line_num}:{first_line}")
-
-                        # Additional preview lines (indented, no line number)
-                        for line in content_lines[1:]:
-                            if line.strip():  # Skip empty lines
-                                highlighted_line = highlight_symbol(
-                                    line, result.chunk.symbol
-                                )
-                                click.echo(f"    {highlighted_line}")
-
-                # Blank line between files
-                click.echo()
+            ResultPresenter.format_human_output(results)
 
     except RuntimeError as e:
         click.echo(f"Error: {e}", err=True)

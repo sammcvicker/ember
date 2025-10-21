@@ -16,6 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added `highlight_symbol()` and `format_result_header()` for consistent output formatting
   - Reduced duplication in `sync`, `find`, `cat`, and `open` commands
   - All tests pass, no user-facing changes
+- **CLI refactoring (Phase 2)**: Extracted presentation logic to separate layer (#32)
+  - Created `ember/core/presentation/` module with `ResultPresenter` class
+  - Extracted 87-line human output formatter from `find` command
+  - Added `serialize_for_cache()` to eliminate duplicate serialization logic
+  - Added `format_json_output()` to eliminate duplicate JSON formatting
+  - Added `format_human_output()` for reusable ripgrep-style formatting
+  - Reduced `find` command from 257 lines to ~180 lines (30% reduction)
+  - All tests pass, no user-facing changes
 
 ### Added
 - **Model loading progress indicator**: Shows separate progress when loading embedding model during sync (#31)
