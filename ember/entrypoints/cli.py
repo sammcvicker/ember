@@ -19,6 +19,39 @@ from ember.core.cli_utils import (
 from ember.core.presentation import ResultPresenter
 
 
+def _create_embedder(config, show_progress: bool = True):
+    """Create embedder based on configuration.
+
+    Args:
+        config: EmberConfig with model settings
+        show_progress: Show progress bar during daemon startup
+
+    Returns:
+        Embedder instance (daemon client or direct)
+    """
+    if config.model.mode == "daemon":
+        # Use daemon mode (default)
+        from ember.adapters.daemon.client import DaemonEmbedderClient
+        from ember.core.cli_utils import ensure_daemon_with_progress
+
+        # Pre-start daemon with progress feedback
+        if show_progress:
+            ensure_daemon_with_progress(
+                daemon_timeout=config.model.daemon_timeout, quiet=False
+            )
+
+        return DaemonEmbedderClient(
+            fallback=True,
+            auto_start=not show_progress,  # Only auto-start if we didn't pre-start
+            daemon_timeout=config.model.daemon_timeout,
+        )
+    else:
+        # Use direct mode (fallback or explicit config)
+        from ember.adapters.local_models.jina_embedder import JinaCodeEmbedder
+
+        return JinaCodeEmbedder()
+
+
 def _create_indexing_usecase(repo_root: Path, db_path: Path, config):
     """Create IndexingUseCase with all dependencies.
 
@@ -35,7 +68,6 @@ def _create_indexing_usecase(repo_root: Path, db_path: Path, config):
     # Lazy imports - only load heavy dependencies when needed
     from ember.adapters.fs.local import LocalFileSystem
     from ember.adapters.git_cmd.git_adapter import GitAdapter
-    from ember.adapters.local_models.jina_embedder import JinaCodeEmbedder
     from ember.adapters.parsers.line_chunker import LineChunker
     from ember.adapters.parsers.tree_sitter_chunker import TreeSitterChunker
     from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
@@ -48,7 +80,7 @@ def _create_indexing_usecase(repo_root: Path, db_path: Path, config):
     # Initialize dependencies
     vcs = GitAdapter(repo_root)
     fs = LocalFileSystem()
-    embedder = JinaCodeEmbedder()
+    embedder = _create_embedder(config)
 
     # Initialize repositories
     chunk_repo = SQLiteChunkRepository(db_path)
@@ -211,9 +243,29 @@ def sync(
 
     try:
         # Import only what's needed for this command
+        from ember.adapters.git_cmd.git_adapter import GitAdapter
+        from ember.adapters.sqlite.meta_repository import SQLiteMetaRepository
         from ember.core.indexing.index_usecase import IndexRequest
 
-        # Create indexing use case with all dependencies
+        # Quick check: if not force reindex and tree SHA unchanged, skip expensive setup
+        if not reindex and sync_mode == "worktree":
+            vcs = GitAdapter(repo_root)
+            meta_repo = SQLiteMetaRepository(db_path)
+            try:
+                current_tree_sha = vcs.get_worktree_tree_sha()
+                last_indexed_sha = meta_repo.get_last_indexed_tree_sha()
+                if current_tree_sha == last_indexed_sha:
+                    if ctx.obj.get("verbose", False):
+                        click.echo("DEBUG: Tree SHAs match, returning early", err=True)
+                    click.echo("✓ No changes detected (index up to date)")
+                    return
+            except Exception as e:
+                # If quick check fails, fall through to full sync
+                if ctx.obj.get("verbose", False):
+                    click.echo(f"Quick check failed: {e}", err=True)
+                pass
+
+        # Create indexing use case with all dependencies (starts daemon if needed)
         indexing_usecase = _create_indexing_usecase(repo_root, db_path, config)
 
         # Execute indexing with progress reporting (unless quiet mode)
@@ -346,7 +398,6 @@ def find(
     try:
         # Lazy imports - only load heavy dependencies when find is actually called
         from ember.adapters.fts.sqlite_fts import SQLiteFTS
-        from ember.adapters.local_models.jina_embedder import JinaCodeEmbedder
         from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
         from ember.adapters.vss.sqlite_vec_adapter import SqliteVecAdapter
         from ember.core.retrieval.search_usecase import SearchUseCase
@@ -356,7 +407,7 @@ def find(
         text_search = SQLiteFTS(db_path)
         vector_search = SqliteVecAdapter(db_path)
         chunk_repo = SQLiteChunkRepository(db_path)
-        embedder = JinaCodeEmbedder()
+        embedder = _create_embedder(config)
 
         # Create search use case
         search_usecase = SearchUseCase(
@@ -621,6 +672,119 @@ def audit(ctx: click.Context) -> None:
 # Register import and open commands with proper names
 cli.add_command(import_bundle, name="import")
 cli.add_command(open_result, name="open")
+
+
+# Daemon management commands
+@cli.group()
+def daemon() -> None:
+    """Manage the embedding daemon server.
+
+    The daemon keeps the embedding model loaded in memory for instant searches.
+    It starts automatically when needed and shuts down after idle timeout.
+    """
+    pass
+
+
+@daemon.command()
+@click.option("--foreground", "-f", is_flag=True, help="Run in foreground (blocks)")
+@click.pass_context
+def start(ctx: click.Context, foreground: bool) -> None:
+    """Start the daemon server."""
+    from ember.adapters.config.toml_config_provider import TomlConfigProvider
+    from ember.core.cli_utils import ensure_daemon_with_progress
+
+    # Load config for daemon timeout
+    ember_dir = Path.home() / ".ember"
+    ember_dir.mkdir(parents=True, exist_ok=True)
+    config_provider = TomlConfigProvider()
+    config = config_provider.load(ember_dir)
+
+    if foreground:
+        # Foreground mode uses direct lifecycle management
+        from ember.adapters.daemon.lifecycle import DaemonLifecycle
+
+        lifecycle = DaemonLifecycle(idle_timeout=config.model.daemon_timeout)
+
+        if lifecycle.is_running():
+            click.echo("✓ Daemon is already running")
+            return
+
+        click.echo("Starting daemon in foreground...")
+        try:
+            lifecycle.start(foreground=True)
+        except RuntimeError as e:
+            click.echo(f"✗ Failed to start daemon: {e}", err=True)
+            sys.exit(1)
+    else:
+        # Background mode with progress
+        quiet = ctx.obj.get("quiet", False)
+        if ensure_daemon_with_progress(
+            daemon_timeout=config.model.daemon_timeout, quiet=quiet
+        ):
+            if not quiet:
+                click.echo("✓ Daemon started successfully")
+        else:
+            click.echo("✗ Failed to start daemon", err=True)
+            sys.exit(1)
+
+
+@daemon.command()
+def stop() -> None:
+    """Stop the daemon server."""
+    from ember.adapters.daemon.lifecycle import DaemonLifecycle
+
+    lifecycle = DaemonLifecycle()
+
+    if not lifecycle.is_running():
+        click.echo("Daemon is not running")
+        return
+
+    click.echo("Stopping daemon...")
+    if lifecycle.stop():
+        click.echo("✓ Daemon stopped successfully")
+    else:
+        click.echo("✗ Failed to stop daemon", err=True)
+        sys.exit(1)
+
+
+@daemon.command()
+def restart() -> None:
+    """Restart the daemon server."""
+    from ember.adapters.daemon.lifecycle import DaemonLifecycle
+
+    lifecycle = DaemonLifecycle()
+    click.echo("Restarting daemon...")
+
+    if lifecycle.restart():
+        click.echo("✓ Daemon restarted successfully")
+    else:
+        click.echo("✗ Failed to restart daemon", err=True)
+        sys.exit(1)
+
+
+@daemon.command()
+def status() -> None:
+    """Show daemon status."""
+    from ember.adapters.daemon.lifecycle import DaemonLifecycle
+
+    lifecycle = DaemonLifecycle()
+    status = lifecycle.status()
+
+    # Display status
+    if status["running"]:
+        click.echo(f"✓ Daemon is running (PID {status['pid']})")
+    else:
+        click.echo("✗ Daemon is not running")
+
+    # Show details
+    click.echo("\nDetails:")
+    click.echo(f"  Status: {status['status']}")
+    click.echo(f"  Socket: {status['socket']}")
+    click.echo(f"  PID file: {status['pid_file']}")
+    click.echo(f"  Log file: {status['log_file']}")
+
+    if status.get("message"):
+        click.echo(f"\n{status['message']}")
 
 
 def main() -> int:

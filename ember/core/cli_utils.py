@@ -262,3 +262,57 @@ def check_and_auto_sync(
         # If staleness check fails, continue with search anyway
         if verbose:
             click.echo(f"Warning: Could not check index staleness: {e}", err=True)
+
+
+def ensure_daemon_with_progress(
+    daemon_timeout: int = 900, quiet: bool = False, startup_timeout: int = 10
+) -> bool:
+    """Ensure daemon is running, showing progress during startup.
+
+    Args:
+        daemon_timeout: Daemon idle timeout in seconds
+        quiet: Suppress progress output
+        startup_timeout: Seconds to wait for daemon to start
+
+    Returns:
+        True if daemon is running, False if failed to start
+    """
+    from ember.adapters.daemon.client import is_daemon_running
+    from ember.adapters.daemon.lifecycle import DaemonLifecycle
+
+    socket_path = Path.home() / ".ember" / "daemon.sock"
+
+    # If already running, nothing to do
+    if is_daemon_running(socket_path):
+        return True
+
+    # Start daemon with progress feedback
+    lifecycle = DaemonLifecycle(
+        socket_path=socket_path, idle_timeout=daemon_timeout
+    )
+
+    if quiet:
+        # No progress, just start
+        try:
+            return lifecycle.ensure_running()
+        except Exception:
+            return False
+
+    # Show progress during startup
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        transient=True,
+    ) as progress:
+        task = progress.add_task("Starting embedding daemon...", total=None)
+
+        try:
+            # Start daemon
+            result = lifecycle.start(foreground=False)
+
+            if result:
+                progress.update(task, description="✓ Daemon started")
+            return result
+        except Exception as e:
+            progress.update(task, description=f"✗ Failed to start daemon: {e}")
+            return False
