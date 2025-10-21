@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Path-scoped search now filters during SQL query instead of after retrieval** (#52)
+  - Previously, path filtering happened after retrieving results, which could return fewer results than requested
+  - Example: `ember find "query" tests/ -k 5` might only return 2 results if only 2 of the top-5 global results were in `tests/`
+  - Now filters during SQL queries (both FTS5 and sqlite-vec), guaranteeing full topk results from filtered paths
+  - Significantly improves performance by filtering earlier in the pipeline
+  - Adds regression test to ensure path filtering returns full topk results
+
 ### Added
 - **Subdirectory support** - Run ember from anywhere in your repository (#43)
   - All commands now work from any subdirectory, like git

@@ -415,3 +415,99 @@ def test_search_with_very_long_query(search_usecase: SearchUseCase) -> None:
     # Should not crash, should return results or empty list
     results = search_usecase.search(query)
     assert isinstance(results, list)
+
+
+@pytest.mark.slow
+def test_path_filter_returns_full_topk(db_path: Path) -> None:
+    """Test that path filtering happens during query, not after.
+
+    This is a regression test for issue #52. Previously, path filtering
+    happened after retrieval, which meant you could request topk=5 but
+    only get 2 results if only 2 of the top-5 global results matched the path.
+
+    Now path filtering happens during SQL queries, so we always get the
+    requested number of results (if they exist in the filtered path).
+    """
+    # Create chunks in different directories
+    chunk_repo = SQLiteChunkRepository(db_path)
+    vector_repo = SQLiteVectorRepository(db_path)
+
+    # Create 10 chunks in src/ directory
+    src_chunks = []
+    for i in range(10):
+        path = Path(f"src/file{i}.py")
+        content = f"def function_{i}(): pass"
+        chunk_id = Chunk.compute_id("test", path, 1, 3)
+        content_hash = Chunk.compute_content_hash(content)
+
+        chunk = Chunk(
+            id=chunk_id,
+            project_id="test",
+            path=path,
+            start_line=1,
+            end_line=3,
+            content=content,
+            symbol=f"function_{i}",
+            lang="python",
+            content_hash=content_hash,
+            file_hash=content_hash,
+            tree_sha="abc123",
+            rev="worktree",
+        )
+        chunk_repo.add(chunk)
+        src_chunks.append(chunk)
+
+    # Create 10 chunks in tests/ directory
+    for i in range(10):
+        path = Path(f"tests/test_file{i}.py")
+        content = f"def test_function_{i}(): pass"
+        chunk_id = Chunk.compute_id("test", path, 1, 3)
+        content_hash = Chunk.compute_content_hash(content)
+
+        chunk = Chunk(
+            id=chunk_id,
+            project_id="test",
+            path=path,
+            start_line=1,
+            end_line=3,
+            content=content,
+            symbol=f"test_function_{i}",
+            lang="python",
+            content_hash=content_hash,
+            file_hash=content_hash,
+            tree_sha="abc123",
+            rev="worktree",
+        )
+        chunk_repo.add(chunk)
+
+    # Add vectors for all chunks
+    embedder = JinaCodeEmbedder()
+    model_fingerprint = "test_model"
+    for chunk in chunk_repo.list_all():
+        embedding = embedder.embed_texts([chunk.content])[0]
+        vector_repo.add(chunk.id, embedding, model_fingerprint)
+
+    # Create search use case
+    text_search = SQLiteFTS(db_path)
+    vector_search = SqliteVecAdapter(db_path)
+    search_usecase = SearchUseCase(
+        text_search=text_search,
+        vector_search=vector_search,
+        chunk_repo=chunk_repo,
+        embedder=embedder,
+    )
+
+    # Search for "function" with path filter "src/**" and topk=5
+    query = Query(
+        text="function",
+        topk=5,
+        path_filter="src/*",  # Only src/ files
+    )
+    results = search_usecase.search(query)
+
+    # Should return exactly 5 results, all from src/
+    assert len(results) == 5, f"Expected 5 results, got {len(results)}"
+    for result in results:
+        assert str(result.chunk.path).startswith("src/"), (
+            f"Expected all results from src/, got {result.chunk.path}"
+        )
