@@ -584,3 +584,97 @@ def test_index_file_with_embedder_failure(
     assert response.success == False  # Embedder failure causes operation to fail
     assert response.error is not None  # Error message should be present
     assert len(response.error) > 0  # Error message should not be empty
+
+
+@pytest.mark.slow
+def test_realistic_repo_indexing(realistic_repo: Path, tmp_path: Path) -> None:
+    """Test indexing a realistic repository with diverse file types and content.
+
+    This test uses the realistic_repo fixture which contains:
+    - 10 files across multiple languages (Python, JS, TS, Markdown)
+    - Realistic code patterns (classes, functions, docstrings)
+    - Nested directory structure
+    - 100+ potential code chunks
+
+    Verifies that the indexing system can handle diverse, realistic codebases.
+    """
+    # Set up database
+    db_path = tmp_path / "realistic_test.db"
+    init_database(db_path)
+
+    # Create IndexingUseCase
+    vcs = GitAdapter(realistic_repo)
+    fs = LocalFileSystem()
+    tree_sitter_chunker = TreeSitterChunker()
+    line_chunker = LineChunker()
+    chunk_usecase = ChunkFileUseCase(tree_sitter_chunker, line_chunker)
+    embedder = JinaCodeEmbedder()
+    chunk_repo = SQLiteChunkRepository(db_path)
+    vector_repo = SQLiteVectorRepository(db_path)
+    file_repo = SQLiteFileRepository(db_path)
+    meta_repo = SQLiteMetaRepository(db_path)
+    project_id = "realistic_test_project"
+
+    indexing_usecase = IndexingUseCase(
+        vcs=vcs,
+        fs=fs,
+        chunk_usecase=chunk_usecase,
+        embedder=embedder,
+        chunk_repo=chunk_repo,
+        vector_repo=vector_repo,
+        file_repo=file_repo,
+        meta_repo=meta_repo,
+        project_id=project_id,
+    )
+
+    # Index the repository
+    request = IndexRequest(repo_root=realistic_repo, force_reindex=True)
+    response = indexing_usecase.execute(request)
+
+    # Verify successful indexing
+    assert response.success, f"Indexing failed: {response.error}"
+    # Note: 9 files indexed (README.md is not indexed as markdown is not a tracked language)
+    assert response.files_indexed >= 8, f"Expected at least 8 files, got {response.files_indexed}"
+    assert response.chunks_created >= 50, f"Expected at least 50 chunks, got {response.chunks_created}"
+    assert response.vectors_stored == response.chunks_created
+
+    # Verify chunks are in database
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    # Check total chunk count
+    cursor.execute("SELECT COUNT(*) FROM chunks")
+    chunk_count = cursor.fetchone()[0]
+    assert chunk_count >= 50, f"Expected at least 50 chunks in DB, got {chunk_count}"
+
+    # Check that we have chunks from different file types
+    cursor.execute("SELECT DISTINCT path FROM chunks ORDER BY path")
+    indexed_files = [row[0] for row in cursor.fetchall()]
+    assert len(indexed_files) >= 8, f"Expected at least 8 files indexed, got {len(indexed_files)}"
+
+    # Check for specific file types
+    file_extensions = set(Path(f).suffix for f in indexed_files)
+    assert '.py' in file_extensions, "Should have indexed Python files"
+    # Note: .jsx and .ts may not be indexed if tree-sitter doesn't support them yet
+    # or may be indexed with line chunker
+
+    # Verify we have chunks from nested directories
+    src_files = [f for f in indexed_files if f.startswith('src/')]
+    assert len(src_files) >= 8, f"Expected at least 8 files from src/, got {len(src_files)}"
+
+    # Check that chunks have proper metadata
+    cursor.execute("""
+        SELECT path, lang, symbol, start_line, end_line
+        FROM chunks
+        WHERE symbol IS NOT NULL AND symbol != ''
+        LIMIT 10
+    """)
+    sample_chunks = cursor.fetchall()
+    assert len(sample_chunks) > 0, "Should have chunks with symbols"
+
+    # Verify chunks have content
+    cursor.execute("SELECT content FROM chunks WHERE LENGTH(content) > 50 LIMIT 5")
+    content_samples = cursor.fetchall()
+    assert len(content_samples) >= 5, "Should have chunks with substantial content"
+
+    conn.close()
