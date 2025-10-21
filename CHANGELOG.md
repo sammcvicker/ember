@@ -59,6 +59,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Creating a new file? It's immediately searchable after auto-sync
   - Respects .gitignore patterns (won't index node_modules/, .venv/, etc.)
   - Makes ember feel natural - no mental overhead about git staging
+- **`ember status` command for index visibility** (#45)
+  - See index state at a glance: `ember status`
+  - Shows number of indexed files and chunks
+  - Indicates whether index is up to date or needs sync
+  - Displays current configuration (topk, chunk size, model)
+  - Works from any subdirectory (like all ember commands)
+  - Example output:
+    ```
+    ✓ Ember initialized at /Users/sam/project
+
+    Index Status:
+      Indexed files: 247
+      Total chunks: 1,834
+      Status: ✓ Up to date
+
+    Configuration:
+      Search results (topk): 5
+      Chunk size: 512 tokens
+      Model: jina-embeddings-v2-base-code
+    ```
   - Configuration in `.ember/config.toml`:
     ```toml
     [model]

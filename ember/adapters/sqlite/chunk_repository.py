@@ -374,3 +374,33 @@ class SQLiteChunkRepository:
             return chunks
         finally:
             conn.close()
+
+    def count_chunks(self) -> int:
+        """Get total number of chunks in the repository.
+
+        Returns:
+            Total count of all chunks.
+        """
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM chunks")
+            result = cursor.fetchone()
+            return result[0] if result else 0
+        finally:
+            conn.close()
+
+    def count_unique_files(self) -> int:
+        """Get count of unique files that have been indexed.
+
+        Returns:
+            Number of distinct file paths in chunks.
+        """
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(DISTINCT path) FROM chunks")
+            result = cursor.fetchone()
+            return result[0] if result else 0
+        finally:
+            conn.close()

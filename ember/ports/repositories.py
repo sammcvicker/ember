@@ -67,6 +67,22 @@ class ChunkRepository(Protocol):
         """
         ...
 
+    def count_chunks(self) -> int:
+        """Get total number of chunks in the repository.
+
+        Returns:
+            Total count of all chunks.
+        """
+        ...
+
+    def count_unique_files(self) -> int:
+        """Get count of unique files that have been indexed.
+
+        Returns:
+            Number of distinct file paths in chunks.
+        """
+        ...
+
 
 class MetaRepository(Protocol):
     """Repository for storing metadata (state, config, etc.)."""
