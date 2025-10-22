@@ -4,7 +4,10 @@ Simple JSON-RPC-style protocol over Unix sockets with newline-delimited messages
 """
 
 import json
+import logging
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 class ProtocolError(Exception):
@@ -151,6 +154,11 @@ def send_message(sock, message: Request | Response) -> None:
 def receive_message(sock, message_type: type[Request] | type[Response]) -> Request | Response:
     """Receive a message from a socket.
 
+    This function reads newline-delimited messages from a socket. It expects
+    one message per connection (the socket should be closed after sending the response).
+    If multiple messages are received in a single recv() call, only the first message
+    is returned and remaining data triggers a warning.
+
     Args:
         sock: Socket to receive from
         message_type: Type of message to expect (Request or Response)
@@ -162,18 +170,27 @@ def receive_message(sock, message_type: type[Request] | type[Response]) -> Reque
         ProtocolError: If receive fails or message is invalid
     """
     try:
-        # Read until newline
+        # Read until newline (use larger buffer to reduce recv() calls)
         buffer = b""
-        while True:
-            chunk = sock.recv(1024)
+        while b"\n" not in buffer:
+            chunk = sock.recv(4096)  # Increased from 1024 for better performance
             if not chunk:
                 raise ProtocolError("Connection closed")
             buffer += chunk
-            if b"\n" in buffer:
-                break
 
         # Parse first complete message
-        line = buffer.split(b"\n", 1)[0].decode("utf-8")
+        parts = buffer.split(b"\n", 1)
+        message_bytes = parts[0]
+
+        # Warn if there's remaining data (should not happen in one-message-per-connection model)
+        if len(parts) > 1 and parts[1]:
+            remaining_bytes = len(parts[1])
+            logger.warning(
+                f"Received {remaining_bytes} bytes after first message delimiter. "
+                "Protocol expects one message per connection. Data may be lost."
+            )
+
+        line = message_bytes.decode("utf-8")
         return message_type.from_json(line)
     except ProtocolError:
         raise

@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Daemon protocol now handles large messages correctly and warns about data loss** (#83)
+  - Increased buffer size from 1024 to 4096 bytes for better performance
+  - Added warning when multiple messages received in single recv() call (potential data loss)
+  - Documented one-message-per-connection protocol contract in function docstring
+  - Added comprehensive tests for large messages (>4KB) and multiple messages
+  - Prevents silent failures and makes debugging easier
 - **Daemon startup race condition no longer creates stale PID files** (#85)
   - Fixed race condition where PID file was written before verifying daemon process survived
   - Now waits 0.1s after spawn and checks if process died instantly before writing PID file
