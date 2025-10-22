@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Extracted error response helper in IndexingUseCase** (#61)
+  - Created `_create_error_response()` helper method for standardized error responses
+  - Eliminated 60+ lines of duplicated IndexResponse creation code
+  - All 6 exception handlers now use common helper
+  - Improved maintainability - error response structure defined once
+  - No user-facing changes - internal refactoring only
 - **Extracted common CLI error handling to reduce boilerplate** (#67)
   - Created `handle_cli_errors()` decorator for consistent error handling across all commands
   - Eliminated 40+ lines of duplicated exception handling code
