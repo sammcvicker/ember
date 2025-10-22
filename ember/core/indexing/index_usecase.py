@@ -170,6 +170,27 @@ class IndexingUseCase:
         self.meta_repo = meta_repo
         self.project_id = project_id
 
+    def _create_error_response(self, error: str) -> IndexResponse:
+        """Create a standardized error response with zero counts.
+
+        Args:
+            error: Error message to include in the response.
+
+        Returns:
+            IndexResponse with success=False and all counts set to zero.
+        """
+        return IndexResponse(
+            files_indexed=0,
+            chunks_created=0,
+            chunks_updated=0,
+            chunks_deleted=0,
+            vectors_stored=0,
+            tree_sha="",
+            is_incremental=False,
+            success=False,
+            error=error,
+        )
+
     def execute(
         self, request: IndexRequest, progress: ProgressCallback | None = None
     ) -> IndexResponse:
@@ -283,91 +304,39 @@ class IndexingUseCase:
         except FileNotFoundError as e:
             # File was deleted between detection and indexing
             logger.warning(f"File not found during indexing: {e}")
-            return IndexResponse(
-                files_indexed=0,
-                chunks_created=0,
-                chunks_updated=0,
-                chunks_deleted=0,
-                vectors_stored=0,
-                tree_sha="",
-                is_incremental=False,
-                success=False,
-                error=f"File not found: {e}. The file may have been deleted during indexing.",
+            return self._create_error_response(
+                f"File not found: {e}. The file may have been deleted during indexing."
             )
 
         except PermissionError as e:
             # Permission denied reading file or accessing repository
             logger.error(f"Permission denied during indexing: {e}")
-            return IndexResponse(
-                files_indexed=0,
-                chunks_created=0,
-                chunks_updated=0,
-                chunks_deleted=0,
-                vectors_stored=0,
-                tree_sha="",
-                is_incremental=False,
-                success=False,
-                error=f"Permission denied: {e}. Check file and directory permissions.",
+            return self._create_error_response(
+                f"Permission denied: {e}. Check file and directory permissions."
             )
 
         except OSError as e:
             # I/O errors (disk full, network filesystem issues, etc.)
             logger.error(f"I/O error during indexing: {e}")
-            return IndexResponse(
-                files_indexed=0,
-                chunks_created=0,
-                chunks_updated=0,
-                chunks_deleted=0,
-                vectors_stored=0,
-                tree_sha="",
-                is_incremental=False,
-                success=False,
-                error=f"I/O error: {e}. Check disk space and filesystem access.",
+            return self._create_error_response(
+                f"I/O error: {e}. Check disk space and filesystem access."
             )
 
         except ValueError as e:
             # Invalid configuration or parameters
             logger.error(f"Invalid configuration during indexing: {e}")
-            return IndexResponse(
-                files_indexed=0,
-                chunks_created=0,
-                chunks_updated=0,
-                chunks_deleted=0,
-                vectors_stored=0,
-                tree_sha="",
-                is_incremental=False,
-                success=False,
-                error=f"Configuration error: {e}",
-            )
+            return self._create_error_response(f"Configuration error: {e}")
 
         except RuntimeError as e:
             # Git errors, repository state errors, etc.
             logger.error(f"Runtime error during indexing: {e}")
-            return IndexResponse(
-                files_indexed=0,
-                chunks_created=0,
-                chunks_updated=0,
-                chunks_deleted=0,
-                vectors_stored=0,
-                tree_sha="",
-                is_incremental=False,
-                success=False,
-                error=f"Indexing error: {e}",
-            )
+            return self._create_error_response(f"Indexing error: {e}")
 
         except Exception:
             # Unexpected errors - log full traceback for debugging
             logger.exception("Unexpected error during indexing")
-            return IndexResponse(
-                files_indexed=0,
-                chunks_created=0,
-                chunks_updated=0,
-                chunks_deleted=0,
-                vectors_stored=0,
-                tree_sha="",
-                is_incremental=False,
-                success=False,
-                error="Internal error during indexing. Check logs for details.",
+            return self._create_error_response(
+                "Internal error during indexing. Check logs for details."
             )
 
     def _get_tree_sha(self, repo_root: Path, sync_mode: str) -> str:
