@@ -8,10 +8,13 @@ import sys
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import click
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
+
+if TYPE_CHECKING:
+    from ember.ports.daemon import DaemonManager
 
 
 class RichProgressCallback:
@@ -192,36 +195,25 @@ def format_result_header(result: dict[str, Any], index: int, show_symbol: bool =
 
 
 def ensure_daemon_with_progress(
-    daemon_timeout: int = 900, quiet: bool = False, startup_timeout: int = 10
+    daemon_manager: "DaemonManager", quiet: bool = False
 ) -> bool:
     """Ensure daemon is running, showing progress during startup.
 
     Args:
-        daemon_timeout: Daemon idle timeout in seconds
+        daemon_manager: Daemon manager instance (injected dependency)
         quiet: Suppress progress output
-        startup_timeout: Seconds to wait for daemon to start
 
     Returns:
         True if daemon is running, False if failed to start
     """
-    from ember.adapters.daemon.client import is_daemon_running
-    from ember.adapters.daemon.lifecycle import DaemonLifecycle
-
-    socket_path = Path.home() / ".ember" / "daemon.sock"
-
     # If already running, nothing to do
-    if is_daemon_running(socket_path):
+    if daemon_manager.is_running():
         return True
-
-    # Start daemon with progress feedback
-    lifecycle = DaemonLifecycle(
-        socket_path=socket_path, idle_timeout=daemon_timeout
-    )
 
     if quiet:
         # No progress, just start
         try:
-            return lifecycle.ensure_running()
+            return daemon_manager.ensure_running()
         except Exception:
             return False
 
@@ -235,7 +227,7 @@ def ensure_daemon_with_progress(
 
         try:
             # Start daemon
-            result = lifecycle.start(foreground=False)
+            result = daemon_manager.start(foreground=False)
 
             if result:
                 progress.update(task, description="✓ Daemon started")
