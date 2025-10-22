@@ -4,10 +4,14 @@ Orchestrates full-text search (BM25) and vector search (semantic similarity)
 with Reciprocal Rank Fusion for optimal retrieval quality.
 """
 
+import logging
+
 from ember.domain.entities import Chunk, Query, SearchResult
 from ember.ports.embedders import Embedder
 from ember.ports.repositories import ChunkRepository
 from ember.ports.search import TextSearch, VectorSearch
+
+logger = logging.getLogger(__name__)
 
 
 class SearchUseCase:
@@ -150,10 +154,25 @@ class SearchUseCase:
             List of Chunk objects in the same order as chunk_ids.
         """
         chunks = []
+        missing_ids = []
+
         for chunk_id in chunk_ids:
             chunk = self.chunk_repo.get(chunk_id)
             if chunk:
                 chunks.append(chunk)
+            else:
+                missing_ids.append(chunk_id)
+
+        # Log warning if chunks are missing
+        if missing_ids:
+            sample_ids = missing_ids[:5]  # Show first 5 for brevity
+            logger.warning(
+                f"Missing {len(missing_ids)} chunks during retrieval. "
+                f"This may indicate index corruption or stale data. "
+                f"Missing IDs: {sample_ids}"
+                + ("..." if len(missing_ids) > 5 else "")
+            )
+
         return chunks
 
     def _apply_filters(
