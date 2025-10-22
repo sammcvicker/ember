@@ -4,9 +4,8 @@ Tests the daemon server, client, and lifecycle management.
 """
 
 
-import os
 import signal
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -339,6 +338,68 @@ class TestDaemonLifecycle:
 
                 # SIGTERM should have been attempted
                 mock_kill.assert_called_once_with(fake_pid, signal.SIGTERM)
+
+    def test_start_instant_failure_no_pid_file(
+        self, temp_socket_path, temp_pid_file, temp_log_file
+    ):
+        """Test that instant daemon failure doesn't create PID file."""
+        lifecycle = DaemonLifecycle(
+            socket_path=temp_socket_path,
+            pid_file=temp_pid_file,
+            log_file=temp_log_file,
+        )
+
+        # Create mock process that exits immediately with error
+        mock_process = MagicMock()
+        mock_process.pid = 12345
+        mock_process.poll.return_value = 1  # Exit code 1 (failure)
+        mock_process.stderr.read.return_value = b"Model loading failed: corrupted file"
+
+        with patch("subprocess.Popen", return_value=mock_process):
+            with pytest.raises(RuntimeError) as exc_info:
+                lifecycle.start(foreground=False)
+
+            # Should raise error with exit code and stderr
+            error_msg = str(exc_info.value)
+            assert "exit code: 1" in error_msg
+            assert "Model loading failed" in error_msg
+
+            # PID file should NOT have been created
+            assert not temp_pid_file.exists()
+
+    def test_start_failure_during_ready_wait_cleans_pid(
+        self, temp_socket_path, temp_pid_file, temp_log_file
+    ):
+        """Test that failure during ready-wait cleans up PID file."""
+        lifecycle = DaemonLifecycle(
+            socket_path=temp_socket_path,
+            pid_file=temp_pid_file,
+            log_file=temp_log_file,
+        )
+
+        # Create mock process that survives initial check but dies during ready-wait
+        mock_process = MagicMock()
+        mock_process.pid = 12345
+        mock_process.poll.return_value = None  # Still alive initially
+        mock_process.stderr = None  # No stderr to read
+
+        with (
+            patch("subprocess.Popen", return_value=mock_process),
+            patch.object(lifecycle, "is_running", return_value=False),
+            patch.object(lifecycle, "is_process_alive") as mock_alive,
+        ):
+            # Process dies during ready-wait
+            mock_alive.return_value = False
+
+            with pytest.raises(RuntimeError) as exc_info:
+                lifecycle.start(foreground=False)
+
+            # Should raise error about unexpected exit
+            error_msg = str(exc_info.value)
+            assert "exited unexpectedly" in error_msg
+
+            # PID file should have been cleaned up
+            assert not temp_pid_file.exists()
 
 
 class TestEndToEnd:
