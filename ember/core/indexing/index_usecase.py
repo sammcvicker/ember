@@ -403,11 +403,19 @@ class IndexingUseCase:
 
         # Apply path filters if provided
         if path_filters:
-            # Simple filtering for now (exact match or contains)
+            # Use glob pattern matching for flexible filtering
             filtered = []
             for f in files:
+                # Convert to relative path for pattern matching
+                try:
+                    rel_path = f.relative_to(repo_root)
+                except ValueError:
+                    # File is not relative to repo_root, skip it
+                    continue
+
+                # Check if file matches any of the glob patterns
                 for pattern in path_filters:
-                    if pattern in str(f):
+                    if rel_path.match(pattern):
                         filtered.append(f)
                         break
             files = filtered

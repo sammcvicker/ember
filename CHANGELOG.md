@@ -29,6 +29,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - No user-facing changes - internal refactoring only
 
 ### Fixed
+- **Fixed path filtering to support glob patterns** (#60)
+  - Replaced naive substring matching with proper glob pattern support
+  - Now uses pathlib's `match()` method for flexible pattern matching
+  - Supports wildcards: `*` (any files), `**` (any directories), `?` (single char)
+  - Pattern "src/**/*.py" now correctly matches only Python files in src/ directory
+  - Fixes false positives (e.g., "src" no longer matches "resources/src/")
+  - Improves subdirectory support and path-scoped operations
 - **Removed duplicate message in 'ember daemon status' output** (#73)
   - Daemon status now shows running state once instead of twice
   - Message field only displayed for error states (unresponsive, stale, stopped)
