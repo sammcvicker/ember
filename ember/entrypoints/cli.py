@@ -10,7 +10,6 @@ import blake3
 import click
 
 from ember.core.cli_utils import (
-    check_and_auto_sync,
     format_result_header,
     load_cached_results,
     progress_context,
@@ -111,6 +110,79 @@ def _create_indexing_usecase(repo_root: Path, db_path: Path, config):
         meta_repo=meta_repo,
         project_id=project_id,
     )
+
+
+def check_and_auto_sync(
+    repo_root: Path,
+    db_path: Path,
+    config,
+    quiet_mode: bool = False,
+    verbose: bool = False,
+) -> None:
+    """Check if index is stale and auto-sync if needed.
+
+    Args:
+        repo_root: Repository root path.
+        db_path: Path to SQLite database.
+        config: Configuration object.
+        quiet_mode: If True, suppress progress and messages.
+        verbose: If True, show warnings on errors.
+
+    Note:
+        If staleness check fails, continues silently to allow search to proceed.
+    """
+    try:
+        # Import dependencies
+        from ember.adapters.git_cmd.git_adapter import GitAdapter
+        from ember.adapters.sqlite.meta_repository import SQLiteMetaRepository
+        from ember.core.indexing.index_usecase import IndexRequest
+
+        vcs = GitAdapter(repo_root)
+        meta_repo = SQLiteMetaRepository(db_path)
+
+        # Get current worktree tree SHA
+        current_tree_sha = vcs.get_worktree_tree_sha()
+
+        # Get last indexed tree SHA
+        last_tree_sha = meta_repo.get("last_tree_sha")
+
+        # If tree SHAs differ, index is stale - auto-sync
+        if last_tree_sha != current_tree_sha:
+            # Create indexing use case with all dependencies
+            indexing_usecase = _create_indexing_usecase(repo_root, db_path, config)
+
+            # Execute incremental sync
+            request = IndexRequest(
+                repo_root=repo_root,
+                sync_mode="worktree",
+                path_filters=[],
+                force_reindex=False,
+            )
+
+            # Use progress bars unless in quiet mode
+            from ember.core.cli_utils import progress_context
+
+            with progress_context(quiet_mode=quiet_mode) as progress:
+                if progress:
+                    response = indexing_usecase.execute(request, progress=progress)
+                else:
+                    # Silent mode
+                    response = indexing_usecase.execute(request)
+
+            # Show completion message AFTER progress context exits (ensures progress bar is cleared)
+            if not quiet_mode and response.success:
+                if response.files_indexed > 0:
+                    click.echo(
+                        f"✓ Synced {response.files_indexed} file(s)",
+                        err=True,
+                    )
+                else:
+                    click.echo("✓ Index up to date", err=True)
+
+    except Exception as e:
+        # If staleness check fails, continue with search anyway
+        if verbose:
+            click.echo(f"Warning: Could not check index staleness: {e}", err=True)
 
 
 @click.group()
