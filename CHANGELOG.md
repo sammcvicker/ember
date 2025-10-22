@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Extracted common CLI error handling to reduce boilerplate** (#67)
+  - Created `handle_cli_errors()` decorator for consistent error handling across all commands
+  - Eliminated 40+ lines of duplicated exception handling code
+  - All commands (sync, find, cat, open) now use centralized error handler
+  - Consistent error messages and verbose mode traceback support
+  - No user-facing changes - internal refactoring only
 - **Simplified editor detection logic in 'ember open' command** (#68)
   - Replaced 18-line if/elif chain with data-driven pattern lookup
   - Editor patterns defined once in `EDITOR_PATTERNS` dictionary
