@@ -673,6 +673,7 @@ def open_result(ctx: click.Context, index: int) -> None:
     Can be run from any subdirectory within the repository.
     """
     import os
+    import shutil
     import subprocess
 
     from ember.core.repo_utils import find_repo_root
@@ -729,6 +730,12 @@ def open_result(ctx: click.Context, index: int) -> None:
             # Unknown editor: try vim-style +line syntax
             cmd = [editor, f"+{line_num}", str(file_path)]
 
+        # Check if editor exists before trying to run it
+        if not shutil.which(editor):
+            click.echo(f"Error: Editor '{editor}' not found", err=True)
+            click.echo("Set $EDITOR or $VISUAL environment variable", err=True)
+            sys.exit(1)
+
         # Show what we're doing (if not quiet)
         if not ctx.obj.get("quiet", False):
             click.echo(f"Opening in {editor}:")
@@ -739,10 +746,6 @@ def open_result(ctx: click.Context, index: int) -> None:
 
     except subprocess.CalledProcessError as e:
         click.echo(f"Error: Failed to open editor: {e}", err=True)
-        sys.exit(1)
-    except FileNotFoundError:
-        click.echo(f"Error: Editor '{editor}' not found", err=True)
-        click.echo("Set $EDITOR or $VISUAL environment variable", err=True)
         sys.exit(1)
     except Exception as e:
         click.echo(f"Error: {e}", err=True)

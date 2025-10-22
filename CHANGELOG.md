@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Unreachable error handler in 'ember open' command** (#63)
+  - Fixed unreachable `FileNotFoundError` exception handler
+  - Now checks if editor exists using `shutil.which()` before running subprocess
+  - Users get helpful error message when editor is not found instead of generic subprocess error
+  - Removed dead code (unreachable exception handler)
 - **Architecture violation: cli_utils imports from adapters** (#58)
   - Moved `check_and_auto_sync()` from `core/cli_utils.py` to `entrypoints/cli.py`
   - Eliminates circular dependency between `entrypoints/cli` and `core/cli_utils`
