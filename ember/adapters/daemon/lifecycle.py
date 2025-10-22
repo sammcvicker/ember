@@ -140,16 +140,38 @@ class DaemonLifecycle:
                 # Run in background (detached)
                 logger.info("Starting daemon in background...")
 
-                # Spawn detached process
+                # Spawn detached process - capture stderr initially for debugging
                 process = subprocess.Popen(
                     cmd,
                     stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,  # Capture stderr to report startup failures
                     stdin=subprocess.DEVNULL,
                     start_new_session=True,  # Detach from parent
                 )
 
-                # Write PID file
+                # Check if process died instantly (before writing PID file)
+                time.sleep(0.1)  # Brief wait for instant failures
+                exit_code = process.poll()
+                if exit_code is not None:
+                    # Process already exited - try to get stderr
+                    stderr_output = ""
+                    try:
+                        stderr_bytes = process.stderr.read() if process.stderr else b""
+                        stderr_output = stderr_bytes.decode("utf-8", errors="replace").strip()
+                    except Exception:
+                        pass
+
+                    error_msg = f"Daemon failed to start (exit code: {exit_code})"
+                    if stderr_output:
+                        error_msg += f"\nStderr: {stderr_output}"
+                    error_msg += f"\nCheck daemon logs at: {self.log_file}"
+                    raise RuntimeError(error_msg)
+
+                # Close stderr now that we've confirmed startup
+                if process.stderr:
+                    process.stderr.close()
+
+                # NOW write PID file (process survived initial check)
                 self.pid_file.write_text(str(process.pid))
                 logger.info(f"Daemon started with PID {process.pid}")
 
@@ -165,12 +187,16 @@ class DaemonLifecycle:
                 # Daemon started but health check timed out
                 # Check if process is still alive
                 if self.is_process_alive(process.pid):
+                    # Clean up PID file for failed startup
+                    self.pid_file.unlink(missing_ok=True)
                     raise RuntimeError(
                         "Daemon process started but not responding to health checks after 20s. "
                         "This may indicate model loading issues. Check daemon logs at: "
                         f"{self.log_file}"
                     )
                 else:
+                    # Clean up PID file for failed startup
+                    self.pid_file.unlink(missing_ok=True)
                     raise RuntimeError(
                         f"Daemon process {process.pid} exited unexpectedly during startup. "
                         f"Check daemon logs at: {self.log_file}"

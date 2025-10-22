@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Daemon startup race condition no longer creates stale PID files** (#85)
+  - Fixed race condition where PID file was written before verifying daemon process survived
+  - Now waits 0.1s after spawn and checks if process died instantly before writing PID file
+  - Captures and reports stderr output when daemon fails to start (e.g., model loading errors)
+  - Cleans up PID file if daemon exits during ready-wait loop
+  - Prevents false success reports when daemon actually crashed
+  - Added 2 new integration tests for daemon startup failure scenarios
 - **Search now logs warnings when chunks can't be retrieved** (#88)
   - Missing chunks are now logged with count and sample IDs
   - Helps diagnose index corruption, stale data, or orphaned index entries
