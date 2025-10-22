@@ -201,31 +201,48 @@ class DaemonLifecycle:
             self.cleanup_stale_files()
             return True
 
-        # Send SIGTERM for graceful shutdown
+        # Try SIGTERM first for graceful shutdown
         logger.info(f"Stopping daemon (PID {pid})...")
         try:
             os.kill(pid, signal.SIGTERM)
         except OSError as e:
-            logger.error(f"Failed to send SIGTERM: {e}")
-            return False
-
-        # Wait for process to exit
-        for _ in range(timeout * 2):  # Check every 0.5s
-            time.sleep(0.5)
+            # SIGTERM failed - check if process already dead or no permission
             if not self.is_process_alive(pid):
-                logger.info("Daemon stopped gracefully")
+                logger.info("Process already dead")
                 self.cleanup_stale_files()
                 return True
+            logger.warning(f"SIGTERM failed: {e}, trying SIGKILL...")
+            # Don't return here! Fall through to SIGKILL
+        else:
+            # SIGTERM succeeded, wait for graceful shutdown
+            for _ in range(timeout * 2):  # Check every 0.5s
+                time.sleep(0.5)
+                if not self.is_process_alive(pid):
+                    logger.info("Daemon stopped gracefully")
+                    self.cleanup_stale_files()
+                    return True
 
-        # Force kill if still alive
+        # Still alive after SIGTERM - force kill
         logger.warning("Daemon did not stop gracefully, sending SIGKILL...")
         try:
             os.kill(pid, signal.SIGKILL)
-            time.sleep(0.5)
+        except OSError as e:
+            # SIGKILL failed - check if process died between check and kill
+            if not self.is_process_alive(pid):
+                logger.info("Process died before SIGKILL")
+                self.cleanup_stale_files()
+                return True
+            logger.error(f"Failed to kill daemon: {e}")
+            return False
+
+        # Verify SIGKILL worked before cleanup
+        time.sleep(0.5)
+        if not self.is_process_alive(pid):
+            logger.info("Daemon force-killed")
             self.cleanup_stale_files()
             return True
-        except OSError as e:
-            logger.error(f"Failed to kill daemon: {e}")
+        else:
+            logger.error("Daemon survived SIGKILL! Manual cleanup required.")
             return False
 
     def restart(self, foreground: bool = False) -> bool:

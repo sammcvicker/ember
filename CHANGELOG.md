@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Daemon stop now properly handles SIGTERM failures and verifies SIGKILL** (#90)
+  - SIGTERM failure now falls through to SIGKILL instead of giving up immediately
+  - SIGKILL is now verified to actually kill the process before returning success
+  - Cleanup of PID and socket files only happens after verified process death
+  - Fixes issue where orphaned daemon processes could accumulate
+  - Prevents stale PID files when process survives SIGKILL
+  - Added 4 new tests for SIGTERM/SIGKILL edge cases and race conditions
+
 ### Added
 - **CLI integration tests for all user-facing commands** (#62)
   - Added comprehensive test suite using `click.testing.CliRunner`

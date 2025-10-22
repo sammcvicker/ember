@@ -4,6 +4,10 @@ Tests the daemon server, client, and lifecycle management.
 """
 
 
+import os
+import signal
+from unittest.mock import MagicMock, call, patch
+
 import pytest
 
 from ember.adapters.daemon.client import DaemonEmbedderClient, is_daemon_running
@@ -199,6 +203,142 @@ class TestDaemonLifecycle:
         assert not status["running"]
         assert status["status"] == "stopped"
         assert "not running" in status["message"].lower()
+
+    def test_stop_sigterm_failure_falls_through_to_sigkill(
+        self, temp_socket_path, temp_pid_file
+    ):
+        """Test that SIGTERM failure falls through to SIGKILL instead of returning False."""
+        lifecycle = DaemonLifecycle(
+            socket_path=temp_socket_path,
+            pid_file=temp_pid_file,
+        )
+
+        # Create PID file with fake PID
+        temp_pid_file.parent.mkdir(parents=True, exist_ok=True)
+        fake_pid = 12345
+        temp_pid_file.write_text(str(fake_pid))
+
+        with patch("os.kill") as mock_kill:
+            # Track call count to os.kill
+            call_count = [0]
+
+            def kill_side_effect(pid, sig):
+                """Simulate SIGTERM failure, SIGKILL success."""
+                call_count[0] += 1
+                if sig == signal.SIGTERM:
+                    # SIGTERM fails with permission error
+                    raise OSError("Permission denied")
+                # SIGKILL succeeds (no exception)
+
+            mock_kill.side_effect = kill_side_effect
+
+            # Mock is_process_alive to show process dies after SIGKILL
+            with patch.object(lifecycle, "is_process_alive") as mock_alive:
+                # Initial check (alive), check after SIGTERM fails (alive),
+                # check after SIGKILL (dead), cleanup check (dead)
+                mock_alive.side_effect = [True, True, False, False]
+
+                result = lifecycle.stop()
+
+                # Should succeed via SIGKILL fallback
+                assert result is True
+
+                # Verify SIGKILL was attempted (after SIGTERM failed)
+                assert call_count[0] == 2  # SIGTERM + SIGKILL
+                mock_kill.assert_any_call(fake_pid, signal.SIGTERM)
+                mock_kill.assert_any_call(fake_pid, signal.SIGKILL)
+
+    def test_stop_sigkill_verifies_death(self, temp_socket_path, temp_pid_file):
+        """Test that SIGKILL verifies process death before returning True."""
+        lifecycle = DaemonLifecycle(
+            socket_path=temp_socket_path,
+            pid_file=temp_pid_file,
+        )
+
+        # Create PID file
+        temp_pid_file.parent.mkdir(parents=True, exist_ok=True)
+        fake_pid = 12345
+        temp_pid_file.write_text(str(fake_pid))
+
+        with patch("os.kill") as mock_kill:
+            # SIGTERM timeout (process ignores it)
+            # SIGKILL succeeds but process survives (zombie)
+            mock_kill.return_value = None  # No exception
+
+            with patch.object(lifecycle, "is_process_alive") as mock_alive:
+                # Process stays alive: initial, during SIGTERM wait (timeout * 2), after SIGKILL
+                mock_alive.return_value = True  # Always alive (zombie!)
+
+                result = lifecycle.stop(timeout=1)  # Short timeout for test speed
+
+                # Should return False because process survived SIGKILL
+                assert result is False
+
+                # Verify SIGKILL was attempted
+                mock_kill.assert_any_call(fake_pid, signal.SIGKILL)
+
+                # Verify is_process_alive was checked after SIGKILL
+                # (initial check + timeout checks + final verification)
+                assert mock_alive.call_count > 2
+
+    def test_stop_cleanup_only_after_verified_death(
+        self, temp_socket_path, temp_pid_file
+    ):
+        """Test that cleanup happens only after verified death."""
+        lifecycle = DaemonLifecycle(
+            socket_path=temp_socket_path,
+            pid_file=temp_pid_file,
+        )
+
+        # Create PID file and socket
+        temp_pid_file.parent.mkdir(parents=True, exist_ok=True)
+        fake_pid = 12345
+        temp_pid_file.write_text(str(fake_pid))
+        temp_socket_path.touch()
+
+        with patch("os.kill") as mock_kill:
+            mock_kill.return_value = None
+
+            with patch.object(lifecycle, "is_process_alive") as mock_alive:
+                # Initial check (alive), wait loop check (dead), cleanup check (dead)
+                mock_alive.side_effect = [True, False, False]
+
+                with patch.object(lifecycle, "cleanup_stale_files") as mock_cleanup:
+                    result = lifecycle.stop()
+
+                    # Should succeed
+                    assert result is True
+
+                    # Cleanup should be called exactly once after verification
+                    mock_cleanup.assert_called_once()
+
+    def test_stop_process_dies_before_sigterm(self, temp_socket_path, temp_pid_file):
+        """Test handling when process dies between existence check and SIGTERM."""
+        lifecycle = DaemonLifecycle(
+            socket_path=temp_socket_path,
+            pid_file=temp_pid_file,
+        )
+
+        # Create PID file
+        temp_pid_file.parent.mkdir(parents=True, exist_ok=True)
+        fake_pid = 12345
+        temp_pid_file.write_text(str(fake_pid))
+
+        with patch("os.kill") as mock_kill:
+            # SIGTERM fails because process no longer exists
+            mock_kill.side_effect = OSError("No such process")
+
+            with patch.object(lifecycle, "is_process_alive") as mock_alive:
+                # Initial check (alive), check after SIGTERM fails (dead), cleanup check (dead)
+                mock_alive.side_effect = [True, False, False]
+
+                result = lifecycle.stop()
+
+                # Should succeed (process already dead)
+                assert result is True
+
+                # SIGTERM should have been attempted
+                mock_kill.assert_called_once_with(fake_pid, signal.SIGTERM)
 
 
 class TestEndToEnd:
