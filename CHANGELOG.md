@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **CLI integration tests for all user-facing commands** (#62)
+  - Added comprehensive test suite using `click.testing.CliRunner`
+  - Tests cover all CLI commands: `init`, `sync`, `find`, `cat`, `open`, `status`
+  - Verified exit codes, output formatting, error handling, and flag parsing
+  - Tests ensure user-facing features work correctly end-to-end
+  - Improved CLI test coverage from 0% to 72% (338 of 469 lines covered)
+  - 38 new integration tests ensuring CLI reliability for v1.0.0
 - **Model fingerprint change detection** (#65)
   - Detects when embedding model changes between indexing operations
   - Warns users that existing vectors may be incompatible with new model
