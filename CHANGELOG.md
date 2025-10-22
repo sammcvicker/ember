@@ -51,6 +51,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - No user-facing changes - internal refactoring only
 
 ### Fixed
+- **Fixed vector encoding precision mismatch** (#84)
+  - Standardized vector encoding to use float32 in both VectorRepository and SqliteVecAdapter
+  - Eliminates precision loss during vector sync between storage layers
+  - Reduces storage size by 50% (4 bytes vs 8 bytes per dimension)
+  - Improves search quality by preventing gradual degradation from double→float conversion
+  - Added comprehensive unit tests for vector round-trip precision
 - **Fixed socket resource leaks in daemon client** (#64)
   - Added proper socket cleanup using finally blocks in `is_daemon_running()`
   - Socket now closed in all code paths, including exceptions

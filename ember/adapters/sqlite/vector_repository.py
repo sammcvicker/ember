@@ -36,7 +36,7 @@ class SQLiteVectorRepository:
     def _encode_vector(self, vector: list[float]) -> bytes:
         """Encode a vector as binary BLOB.
 
-        Uses simple struct packing: array of floats in native byte order.
+        Uses simple struct packing: array of float32 in native byte order.
 
         Args:
             vector: List of floats to encode.
@@ -44,8 +44,8 @@ class SQLiteVectorRepository:
         Returns:
             Binary BLOB representation.
         """
-        # Pack as array of doubles (8 bytes each)
-        return struct.pack(f"{len(vector)}d", *vector)
+        # Pack as array of float32 (4 bytes each)
+        return struct.pack(f"{len(vector)}f", *vector)
 
     def _decode_vector(self, blob: bytes, dim: int) -> list[float]:
         """Decode a vector from binary BLOB.
@@ -57,8 +57,8 @@ class SQLiteVectorRepository:
         Returns:
             List of floats.
         """
-        # Unpack array of doubles
-        return list(struct.unpack(f"{dim}d", blob))
+        # Unpack array of float32
+        return list(struct.unpack(f"{dim}f", blob))
 
     def _get_db_chunk_id(self, chunk_id: str) -> int | None:
         """Get the DB's internal integer id for a chunk.
