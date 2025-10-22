@@ -185,6 +185,51 @@ def check_and_auto_sync(
             click.echo(f"Warning: Could not check index staleness: {e}", err=True)
 
 
+# Editor command patterns for opening files at specific line numbers
+EDITOR_PATTERNS = {
+    # Editors that use +line syntax (vim, emacs, nano)
+    "vim-style": {
+        "editors": ["vim", "vi", "nvim", "emacs", "emacsclient", "nano"],
+        "build": lambda ed, fp, ln: [ed, f"+{ln}", str(fp)],
+    },
+    # VS Code: --goto file:line
+    "vscode-style": {
+        "editors": ["code", "vscode"],
+        "build": lambda ed, fp, ln: [ed, "--goto", f"{fp}:{ln}"],
+    },
+    # Sublime Text and Atom: file:line
+    "colon-style": {
+        "editors": ["subl", "atom"],
+        "build": lambda ed, fp, ln: [ed, f"{fp}:{ln}"],
+    },
+}
+
+
+def get_editor_command(editor: str, file_path: Path, line_num: int) -> list[str]:
+    """Build editor command with line number support.
+
+    Args:
+        editor: Editor executable name or path.
+        file_path: Path to file to open.
+        line_num: Line number to jump to.
+
+    Returns:
+        Command list for subprocess.run().
+
+    Note:
+        Falls back to vim-style +line syntax for unknown editors.
+    """
+    editor_name = Path(editor).name.lower()
+
+    # Find matching pattern
+    for pattern in EDITOR_PATTERNS.values():
+        if editor_name in pattern["editors"]:
+            return pattern["build"](editor, file_path, line_num)
+
+    # Default: vim-style +line syntax (most widely supported)
+    return [editor, f"+{line_num}", str(file_path)]
+
+
 @click.group()
 @click.version_option(version="0.2.0", prog_name="ember")
 @click.option(
@@ -707,28 +752,8 @@ def open_result(ctx: click.Context, index: int) -> None:
         editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "vim"
 
         # Build editor command with line number
-        # Different editors have different syntax for opening at a line
-        editor_name = Path(editor).name.lower()
         line_num = result["start_line"]
-
-        if editor_name in ("vim", "vi", "nvim", "nano"):
-            # vim/vi/nvim/nano: +line syntax
-            cmd = [editor, f"+{line_num}", str(file_path)]
-        elif editor_name in ("emacs", "emacsclient"):
-            # emacs: +line syntax
-            cmd = [editor, f"+{line_num}", str(file_path)]
-        elif editor_name in ("code", "vscode"):
-            # VS Code: --goto file:line syntax
-            cmd = [editor, "--goto", f"{file_path}:{line_num}"]
-        elif editor_name == "subl":
-            # Sublime Text: file:line syntax
-            cmd = [editor, f"{file_path}:{line_num}"]
-        elif editor_name == "atom":
-            # Atom: file:line syntax
-            cmd = [editor, f"{file_path}:{line_num}"]
-        else:
-            # Unknown editor: try vim-style +line syntax
-            cmd = [editor, f"+{line_num}", str(file_path)]
+        cmd = get_editor_command(editor, file_path, line_num)
 
         # Check if editor exists before trying to run it
         if not shutil.which(editor):
