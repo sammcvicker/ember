@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Simplified editor detection logic in 'ember open' command** (#68)
+  - Replaced 18-line if/elif chain with data-driven pattern lookup
+  - Editor patterns defined once in `EDITOR_PATTERNS` dictionary
+  - New editors can be added by updating the dictionary (no code changes)
+  - Reduced code duplication (vim/emacs/nano now share pattern, subl/atom share pattern)
+  - Improved maintainability and extensibility
+  - No user-facing changes - internal refactoring only
+
 ### Fixed
 - **Unreachable error handler in 'ember open' command** (#63)
   - Fixed unreachable `FileNotFoundError` exception handler
