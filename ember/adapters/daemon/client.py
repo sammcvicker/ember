@@ -158,12 +158,16 @@ class DaemonEmbedderClient:
         if not self.socket_path.exists():
             raise DaemonError(f"Daemon socket not found: {self.socket_path}")
 
+        sock = None
         try:
             sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
             sock.settimeout(5.0)  # 5 second timeout
             sock.connect(str(self.socket_path))
             return sock
         except Exception as e:
+            # Clean up socket on failure
+            if sock:
+                sock.close()
             raise DaemonError(f"Failed to connect to daemon: {e}") from e
 
     def _daemon_embed(self, texts: list[str]) -> list[list[float]]:
@@ -263,6 +267,7 @@ def is_daemon_running(socket_path: Path | None = None) -> bool:
     if not socket_path.exists():
         return False
 
+    sock = None
     try:
         # Try to connect and send health check
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -273,8 +278,10 @@ def is_daemon_running(socket_path: Path | None = None) -> bool:
         send_message(sock, request)
 
         response = receive_message(sock, Response)
-        sock.close()
 
         return not response.is_error()
     except Exception:
         return False
+    finally:
+        if sock:
+            sock.close()
