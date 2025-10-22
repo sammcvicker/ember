@@ -15,13 +15,16 @@ class SQLiteVectorRepository:
     to map from Chunk.id (string hash) to the DB id when storing/retrieving.
     """
 
-    def __init__(self, db_path: Path) -> None:
+    def __init__(self, db_path: Path, expected_dim: int | None = None) -> None:
         """Initialize vector repository.
 
         Args:
             db_path: Path to SQLite database file.
+            expected_dim: Expected embedding dimension for validation (e.g., 768 for Jina v2).
+                         If provided, validates that all embeddings have this dimension.
         """
         self.db_path = db_path
+        self.expected_dim = expected_dim
 
     def _get_connection(self) -> sqlite3.Connection:
         """Get a database connection with foreign keys enabled.
@@ -101,7 +104,19 @@ class SQLiteVectorRepository:
             chunk_id: The chunk identifier (blake3 hash).
             embedding: The embedding vector.
             model_fingerprint: Fingerprint of the model that generated this embedding.
+
+        Raises:
+            ValueError: If embedding dimension doesn't match expected dimension.
         """
+        # Validate embedding dimension if expected_dim is configured
+        if self.expected_dim is not None:
+            actual_dim = len(embedding)
+            if actual_dim != self.expected_dim:
+                raise ValueError(
+                    f"Invalid embedding dimension for chunk {chunk_id}: "
+                    f"expected {self.expected_dim}, got {actual_dim}"
+                )
+
         # Get the DB's internal chunk id
         db_chunk_id = self._get_db_chunk_id(chunk_id)
         if db_chunk_id is None:

@@ -119,7 +119,7 @@ def _create_indexing_usecase(repo_root: Path, db_path: Path, config):
 
     # Initialize repositories
     chunk_repo = SQLiteChunkRepository(db_path)
-    vector_repo = SQLiteVectorRepository(db_path)
+    vector_repo = SQLiteVectorRepository(db_path, expected_dim=embedder.dim)
     file_repo = SQLiteFileRepository(db_path)
     meta_repo = SQLiteMetaRepository(db_path)
 
