@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
 from ember.adapters.sqlite.schema import init_database
 from ember.adapters.sqlite.vector_repository import SQLiteVectorRepository
 from ember.domain.entities import Chunk
@@ -97,3 +98,112 @@ def test_vector_encoding_consistency_with_sqlite_vec(vector_repo: SQLiteVectorRe
     expected_encoding = struct.pack(f"{len(test_vector)}f", *test_vector)
 
     assert encoded == expected_encoding, "VectorRepository should use same float32 encoding as SqliteVecAdapter"
+
+
+def test_dimension_validation_accepts_correct_dimension(tmp_path: Path) -> None:
+    """Test that validation passes when embedding has correct dimension."""
+    db_path = tmp_path / "test.db"
+    init_database(db_path)
+
+    # Create vector repo with expected dimension
+    vector_repo = SQLiteVectorRepository(db_path, expected_dim=768)
+    chunk_repo = SQLiteChunkRepository(db_path)
+
+    # Create a test chunk with all required fields
+    content = "test content"
+    chunk = Chunk(
+        id=Chunk.compute_id("test_proj", Path("test.py"), 1, 10),
+        project_id="test_proj",
+        path=Path("test.py"),
+        start_line=1,
+        end_line=10,
+        content=content,
+        content_hash=Chunk.compute_content_hash(content),
+        file_hash="file123",
+        lang="python",
+        symbol=None,
+        tree_sha="abc123",
+        rev="worktree",
+    )
+    chunk_repo.add(chunk)
+
+    # Create embedding with correct dimension
+    embedding = [1.0] * 768
+
+    # Should not raise
+    vector_repo.add(chunk.id, embedding, "test-model-v1")
+
+
+def test_dimension_validation_rejects_wrong_dimension(tmp_path: Path) -> None:
+    """Test that validation raises ValueError for wrong dimension."""
+    db_path = tmp_path / "test.db"
+    init_database(db_path)
+
+    # Create vector repo with expected dimension
+    vector_repo = SQLiteVectorRepository(db_path, expected_dim=768)
+    chunk_repo = SQLiteChunkRepository(db_path)
+
+    # Create a test chunk with all required fields
+    content = "test content"
+    chunk = Chunk(
+        id=Chunk.compute_id("test_proj", Path("test.py"), 1, 10),
+        project_id="test_proj",
+        path=Path("test.py"),
+        start_line=1,
+        end_line=10,
+        content=content,
+        content_hash=Chunk.compute_content_hash(content),
+        file_hash="file123",
+        lang="python",
+        symbol=None,
+        tree_sha="abc123",
+        rev="worktree",
+    )
+    chunk_repo.add(chunk)
+
+    # Create embedding with WRONG dimension
+    wrong_embedding = [1.0] * 512  # Wrong! Expected 768
+
+    # Should raise ValueError with clear message
+    with pytest.raises(ValueError) as exc_info:
+        vector_repo.add(chunk.id, wrong_embedding, "test-model-v1")
+
+    error_message = str(exc_info.value)
+    assert "Invalid embedding dimension" in error_message
+    assert "expected 768" in error_message
+    assert "got 512" in error_message
+    assert chunk.id in error_message
+
+
+def test_dimension_validation_skipped_when_not_configured(tmp_path: Path) -> None:
+    """Test that validation is skipped when expected_dim is None."""
+    db_path = tmp_path / "test.db"
+    init_database(db_path)
+
+    # Create vector repo WITHOUT expected dimension
+    vector_repo = SQLiteVectorRepository(db_path, expected_dim=None)
+    chunk_repo = SQLiteChunkRepository(db_path)
+
+    # Create a test chunk with all required fields
+    content = "test content"
+    chunk = Chunk(
+        id=Chunk.compute_id("test_proj", Path("test.py"), 1, 10),
+        project_id="test_proj",
+        path=Path("test.py"),
+        start_line=1,
+        end_line=10,
+        content=content,
+        content_hash=Chunk.compute_content_hash(content),
+        file_hash="file123",
+        lang="python",
+        symbol=None,
+        tree_sha="abc123",
+        rev="worktree",
+    )
+    chunk_repo.add(chunk)
+
+    # Create embedding with any dimension (validation is disabled)
+    embedding = [1.0] * 512  # Any size works
+
+    # Should not raise even though dimension != 768
+    vector_repo.add(chunk.id, embedding, "test-model-v1")

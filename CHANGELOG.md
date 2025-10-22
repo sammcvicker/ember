@@ -51,6 +51,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - No user-facing changes - internal refactoring only
 
 ### Fixed
+- **Added vector dimension validation to prevent silent corruption** (#92)
+  - VectorRepository now validates embedding dimensions before storing
+  - Raises clear `ValueError` when dimension mismatch detected (e.g., expected 768, got 512)
+  - Error messages include chunk ID for easy debugging
+  - Optional validation via `expected_dim` parameter (backward compatible)
+  - CLI automatically passes embedder dimension (768 for Jina v2 Code)
+  - Prevents silent data corruption from malformed embeddings
 - **Fixed vector encoding precision mismatch** (#84)
   - Standardized vector encoding to use float32 in both VectorRepository and SqliteVecAdapter
   - Eliminates precision loss during vector sync between storage layers
