@@ -3,6 +3,7 @@
 Command-line interface for Ember code search tool.
 """
 
+import functools
 import sys
 from pathlib import Path
 
@@ -16,6 +17,41 @@ from ember.core.cli_utils import (
     validate_result_index,
 )
 from ember.core.presentation import ResultPresenter
+
+
+def handle_cli_errors(command_name: str):
+    """Decorator to handle common CLI errors.
+
+    Catches RuntimeError and Exception, displaying appropriate messages
+    and showing tracebacks in verbose mode.
+
+    Args:
+        command_name: Name of the command for error messages.
+
+    Returns:
+        Decorated function with error handling.
+    """
+
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except RuntimeError as e:
+                click.echo(f"Error: {e}", err=True)
+                sys.exit(1)
+            except Exception as e:
+                ctx = click.get_current_context()
+                click.echo(f"Unexpected error in {command_name}: {e}", err=True)
+                if ctx.obj.get("verbose", False):
+                    import traceback
+
+                    traceback.print_exc()
+                sys.exit(1)
+
+        return wrapper
+
+    return decorator
 
 
 def _create_embedder(config, show_progress: bool = True):
@@ -325,6 +361,7 @@ def init(ctx: click.Context, force: bool) -> None:
     help="Force full reindex (ignore incremental state).",
 )
 @click.pass_context
+@handle_cli_errors("sync")
 def sync(
     ctx: click.Context,
     worktree: bool,
@@ -366,77 +403,65 @@ def sync(
     config_provider = TomlConfigProvider()
     config = config_provider.load(ember_dir)
 
-    try:
-        # Import only what's needed for this command
-        from ember.adapters.git_cmd.git_adapter import GitAdapter
-        from ember.adapters.sqlite.meta_repository import SQLiteMetaRepository
-        from ember.core.indexing.index_usecase import IndexRequest
+    # Import only what's needed for this command
+    from ember.adapters.git_cmd.git_adapter import GitAdapter
+    from ember.adapters.sqlite.meta_repository import SQLiteMetaRepository
+    from ember.core.indexing.index_usecase import IndexRequest
 
-        # Quick check: if not force reindex and tree SHA unchanged, skip expensive setup
-        if not reindex and sync_mode == "worktree":
-            vcs = GitAdapter(repo_root)
-            meta_repo = SQLiteMetaRepository(db_path)
-            try:
-                current_tree_sha = vcs.get_worktree_tree_sha()
-                last_indexed_sha = meta_repo.get("last_tree_sha")
-                if current_tree_sha == last_indexed_sha:
-                    click.echo("✓ No changes detected (quick check)")
-                    return
-            except Exception as e:
-                # If quick check fails, fall through to full sync
-                click.echo(f"Warning: Quick check failed, performing full sync: {e}", err=True)
+    # Quick check: if not force reindex and tree SHA unchanged, skip expensive setup
+    if not reindex and sync_mode == "worktree":
+        vcs = GitAdapter(repo_root)
+        meta_repo = SQLiteMetaRepository(db_path)
+        try:
+            current_tree_sha = vcs.get_worktree_tree_sha()
+            last_indexed_sha = meta_repo.get("last_tree_sha")
+            if current_tree_sha == last_indexed_sha:
+                click.echo("✓ No changes detected (quick check)")
+                return
+        except Exception as e:
+            # If quick check fails, fall through to full sync
+            click.echo(f"Warning: Quick check failed, performing full sync: {e}", err=True)
 
-        # Create indexing use case with all dependencies (starts daemon if needed)
-        indexing_usecase = _create_indexing_usecase(repo_root, db_path, config)
+    # Create indexing use case with all dependencies (starts daemon if needed)
+    indexing_usecase = _create_indexing_usecase(repo_root, db_path, config)
 
-        # Execute indexing with progress reporting (unless quiet mode)
-        request = IndexRequest(
-            repo_root=repo_root,
-            sync_mode=sync_mode,
-            path_filters=[],
-            force_reindex=reindex,
-        )
+    # Execute indexing with progress reporting (unless quiet mode)
+    request = IndexRequest(
+        repo_root=repo_root,
+        sync_mode=sync_mode,
+        path_filters=[],
+        force_reindex=reindex,
+    )
 
-        # Use progress bar unless in quiet mode
-        with progress_context(quiet_mode=ctx.obj.get("quiet", False)) as progress:
-            if progress:
-                response = indexing_usecase.execute(request, progress=progress)
-            else:
-                response = indexing_usecase.execute(request)
-
-        if not response.success:
-            click.echo(f"Error during indexing: {response.error}", err=True)
-            sys.exit(1)
-
-        # Report results
-        sync_type = "incremental" if response.is_incremental else "full"
-
-        if response.files_indexed == 0 and response.chunks_deleted == 0:
-            click.echo("✓ No changes detected (full scan)")
+    # Use progress bar unless in quiet mode
+    with progress_context(quiet_mode=ctx.obj.get("quiet", False)) as progress:
+        if progress:
+            response = indexing_usecase.execute(request, progress=progress)
         else:
-            click.echo(f"✓ Indexed {response.files_indexed} files ({sync_type} sync)")
+            response = indexing_usecase.execute(request)
 
-        if response.chunks_created > 0:
-            click.echo(f"  • {response.chunks_created} chunks created")
-        if response.chunks_updated > 0:
-            click.echo(f"  • {response.chunks_updated} chunks updated")
-        if response.chunks_deleted > 0:
-            click.echo(f"  • {response.chunks_deleted} chunks deleted")
-        if response.vectors_stored > 0:
-            click.echo(f"  • {response.vectors_stored} vectors stored")
-        if response.files_indexed > 0 or response.chunks_deleted > 0:
-            click.echo(f"  • Tree SHA: {response.tree_sha[:12]}...")
-
-    except RuntimeError as e:
-        click.echo(f"Error: {e}", err=True)
+    if not response.success:
+        click.echo(f"Error during indexing: {response.error}", err=True)
         sys.exit(1)
-    except Exception as e:
-        click.echo(f"Unexpected error during sync: {e}", err=True)
-        if ctx.obj.get("verbose", False):
-            import traceback
 
-            traceback.print_exc()
-        sys.exit(1)
+    # Report results
+    sync_type = "incremental" if response.is_incremental else "full"
+
+    if response.files_indexed == 0 and response.chunks_deleted == 0:
+        click.echo("✓ No changes detected (full scan)")
+    else:
+        click.echo(f"✓ Indexed {response.files_indexed} files ({sync_type} sync)")
+
+    if response.chunks_created > 0:
+        click.echo(f"  • {response.chunks_created} chunks created")
+    if response.chunks_updated > 0:
+        click.echo(f"  • {response.chunks_updated} chunks updated")
+    if response.chunks_deleted > 0:
+        click.echo(f"  • {response.chunks_deleted} chunks deleted")
+    if response.vectors_stored > 0:
+        click.echo(f"  • {response.vectors_stored} vectors stored")
+    if response.files_indexed > 0 or response.chunks_deleted > 0:
+        click.echo(f"  • Tree SHA: {response.tree_sha[:12]}...")
 
 
 @cli.command()
@@ -474,6 +499,7 @@ def sync(
     help="Skip auto-sync check before searching (faster but may return stale results).",
 )
 @click.pass_context
+@handle_cli_errors("find")
 def find(
     ctx: click.Context,
     query: str,
@@ -551,68 +577,56 @@ def find(
             verbose=ctx.obj.get("verbose", False),
         )
 
+    # Lazy imports - only load heavy dependencies when find is actually called
+    from ember.adapters.fts.sqlite_fts import SQLiteFTS
+    from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
+    from ember.adapters.vss.sqlite_vec_adapter import SqliteVecAdapter
+    from ember.core.retrieval.search_usecase import SearchUseCase
+    from ember.domain.entities import Query
+
+    # Initialize dependencies
+    text_search = SQLiteFTS(db_path)
+    vector_search = SqliteVecAdapter(db_path)
+    chunk_repo = SQLiteChunkRepository(db_path)
+    embedder = _create_embedder(config)
+
+    # Create search use case
+    search_usecase = SearchUseCase(
+        text_search=text_search,
+        vector_search=vector_search,
+        chunk_repo=chunk_repo,
+        embedder=embedder,
+    )
+
+    # Create query object
+    query_obj = Query(
+        text=query,
+        topk=topk,
+        path_filter=path_filter,
+        lang_filter=lang_filter,
+        json_output=json_output,
+    )
+
+    # Execute search
+    results = search_usecase.search(query_obj)
+
+    # Cache results for cat/open commands
+    cache_path = ember_dir / ".last_search.json"
     try:
-        # Lazy imports - only load heavy dependencies when find is actually called
-        from ember.adapters.fts.sqlite_fts import SQLiteFTS
-        from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
-        from ember.adapters.vss.sqlite_vec_adapter import SqliteVecAdapter
-        from ember.core.retrieval.search_usecase import SearchUseCase
-        from ember.domain.entities import Query
+        import json
 
-        # Initialize dependencies
-        text_search = SQLiteFTS(db_path)
-        vector_search = SqliteVecAdapter(db_path)
-        chunk_repo = SQLiteChunkRepository(db_path)
-        embedder = _create_embedder(config)
-
-        # Create search use case
-        search_usecase = SearchUseCase(
-            text_search=text_search,
-            vector_search=vector_search,
-            chunk_repo=chunk_repo,
-            embedder=embedder,
-        )
-
-        # Create query object
-        query_obj = Query(
-            text=query,
-            topk=topk,
-            path_filter=path_filter,
-            lang_filter=lang_filter,
-            json_output=json_output,
-        )
-
-        # Execute search
-        results = search_usecase.search(query_obj)
-
-        # Cache results for cat/open commands
-        cache_path = ember_dir / ".last_search.json"
-        try:
-            import json
-
-            cache_data = ResultPresenter.serialize_for_cache(query, results)
-            cache_path.write_text(json.dumps(cache_data, indent=2))
-        except Exception as e:
-            # Log cache errors but don't fail the command
-            if ctx.obj.get("verbose", False):
-                click.echo(f"Warning: Could not cache results: {e}", err=True)
-
-        # Display results
-        if json_output:
-            click.echo(ResultPresenter.format_json_output(results))
-        else:
-            ResultPresenter.format_human_output(results)
-
-    except RuntimeError as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
+        cache_data = ResultPresenter.serialize_for_cache(query, results)
+        cache_path.write_text(json.dumps(cache_data, indent=2))
     except Exception as e:
-        click.echo(f"Unexpected error during search: {e}", err=True)
+        # Log cache errors but don't fail the command
         if ctx.obj.get("verbose", False):
-            import traceback
+            click.echo(f"Warning: Could not cache results: {e}", err=True)
 
-            traceback.print_exc()
-        sys.exit(1)
+    # Display results
+    if json_output:
+        click.echo(ResultPresenter.format_json_output(results))
+    else:
+        ResultPresenter.format_human_output(results)
 
 
 @cli.command()
@@ -625,6 +639,7 @@ def find(
     help="Number of surrounding lines to show.",
 )
 @click.pass_context
+@handle_cli_errors("cat")
 def cat(ctx: click.Context, index: int, context: int) -> None:
     """Display content of a search result by index.
 
@@ -641,77 +656,69 @@ def cat(ctx: click.Context, index: int, context: int) -> None:
 
     cache_path = ember_dir / ".last_search.json"
 
-    try:
-        # Load cached results
-        cache_data = load_cached_results(cache_path)
-        results = cache_data.get("results", [])
+    # Load cached results
+    cache_data = load_cached_results(cache_path)
+    results = cache_data.get("results", [])
 
-        # Validate and get the result
-        result = validate_result_index(index, results)
+    # Validate and get the result
+    result = validate_result_index(index, results)
 
-        # Display header
-        format_result_header(result, index, show_symbol=True)
-        click.echo(
-            click.style(
-                f"Lines {result['start_line']}-{result['end_line']} ({result['lang'] or 'text'})",
-                dim=True,
-            )
+    # Display header
+    format_result_header(result, index, show_symbol=True)
+    click.echo(
+        click.style(
+            f"Lines {result['start_line']}-{result['end_line']} ({result['lang'] or 'text'})",
+            dim=True,
         )
-        click.echo()
+    )
+    click.echo()
 
-        # Get chunk content
-        content = result["content"]
+    # Get chunk content
+    content = result["content"]
 
-        # If context requested, read file and show surrounding lines
-        if context > 0:
-            file_path = repo_root / result["path"]
-            if file_path.exists():
-                try:
-                    file_lines = file_path.read_text(errors="replace").splitlines()
-                    start_line = result["start_line"]
-                    end_line = result["end_line"]
+    # If context requested, read file and show surrounding lines
+    if context > 0:
+        file_path = repo_root / result["path"]
+        if file_path.exists():
+            try:
+                file_lines = file_path.read_text(errors="replace").splitlines()
+                start_line = result["start_line"]
+                end_line = result["end_line"]
 
-                    # Calculate context range (1-based line numbers)
-                    context_start = max(1, start_line - context)
-                    context_end = min(len(file_lines), end_line + context)
+                # Calculate context range (1-based line numbers)
+                context_start = max(1, start_line - context)
+                context_end = min(len(file_lines), end_line + context)
 
-                    # Display with line numbers
-                    for line_num in range(context_start, context_end + 1):
-                        line_content = file_lines[line_num - 1]  # Convert to 0-based
-                        # Highlight the chunk lines
-                        if start_line <= line_num <= end_line:
-                            click.echo(f"{line_num:5} | {line_content}")
-                        else:
-                            click.echo(click.style(f"{line_num:5} | {line_content}", dim=True))
-                except Exception as e:
-                    # Fall back to just chunk content if file read fails
-                    click.echo(
-                        f"Warning: Could not read context from {result['path']}: {e}", err=True
-                    )
-                    click.echo(content)
-            else:
+                # Display with line numbers
+                for line_num in range(context_start, context_end + 1):
+                    line_content = file_lines[line_num - 1]  # Convert to 0-based
+                    # Highlight the chunk lines
+                    if start_line <= line_num <= end_line:
+                        click.echo(f"{line_num:5} | {line_content}")
+                    else:
+                        click.echo(click.style(f"{line_num:5} | {line_content}", dim=True))
+            except Exception as e:
+                # Fall back to just chunk content if file read fails
                 click.echo(
-                    f"Warning: File {result['path']} not found, showing chunk only", err=True
+                    f"Warning: Could not read context from {result['path']}: {e}", err=True
                 )
                 click.echo(content)
         else:
-            # Just display the chunk content
+            click.echo(
+                f"Warning: File {result['path']} not found, showing chunk only", err=True
+            )
             click.echo(content)
+    else:
+        # Just display the chunk content
+        click.echo(content)
 
-        click.echo()
-
-    except Exception as e:
-        click.echo(f"Error: {e}", err=True)
-        if ctx.obj.get("verbose", False):
-            import traceback
-
-            traceback.print_exc()
-        sys.exit(1)
+    click.echo()
 
 
 @cli.command()
 @click.argument("index", type=int)
 @click.pass_context
+@handle_cli_errors("open")
 def open_result(ctx: click.Context, index: int) -> None:
     """Open search result in editor.
 
@@ -732,54 +739,42 @@ def open_result(ctx: click.Context, index: int) -> None:
 
     cache_path = ember_dir / ".last_search.json"
 
-    try:
-        # Load cached results
-        cache_data = load_cached_results(cache_path)
-        results = cache_data.get("results", [])
+    # Load cached results
+    cache_data = load_cached_results(cache_path)
+    results = cache_data.get("results", [])
 
-        # Validate and get the result
-        result = validate_result_index(index, results)
+    # Validate and get the result
+    result = validate_result_index(index, results)
 
-        # Build absolute file path
-        file_path = repo_root / result["path"]
+    # Build absolute file path
+    file_path = repo_root / result["path"]
 
-        # Check if file exists
-        if not file_path.exists():
-            click.echo(f"Error: File not found: {result['path']}", err=True)
-            sys.exit(1)
-
-        # Determine which editor to use
-        # Priority: $VISUAL > $EDITOR > vim (fallback)
-        editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "vim"
-
-        # Build editor command with line number
-        line_num = result["start_line"]
-        cmd = get_editor_command(editor, file_path, line_num)
-
-        # Check if editor exists before trying to run it
-        if not shutil.which(editor):
-            click.echo(f"Error: Editor '{editor}' not found", err=True)
-            click.echo("Set $EDITOR or $VISUAL environment variable", err=True)
-            sys.exit(1)
-
-        # Show what we're doing (if not quiet)
-        if not ctx.obj.get("quiet", False):
-            click.echo(f"Opening in {editor}:")
-            format_result_header(result, index, show_symbol=True)
-
-        # Execute editor command
-        subprocess.run(cmd, check=True)
-
-    except subprocess.CalledProcessError as e:
-        click.echo(f"Error: Failed to open editor: {e}", err=True)
+    # Check if file exists
+    if not file_path.exists():
+        click.echo(f"Error: File not found: {result['path']}", err=True)
         sys.exit(1)
-    except Exception as e:
-        click.echo(f"Error: {e}", err=True)
-        if ctx.obj.get("verbose", False):
-            import traceback
 
-            traceback.print_exc()
+    # Determine which editor to use
+    # Priority: $VISUAL > $EDITOR > vim (fallback)
+    editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "vim"
+
+    # Build editor command with line number
+    line_num = result["start_line"]
+    cmd = get_editor_command(editor, file_path, line_num)
+
+    # Check if editor exists before trying to run it
+    if not shutil.which(editor):
+        click.echo(f"Error: Editor '{editor}' not found", err=True)
+        click.echo("Set $EDITOR or $VISUAL environment variable", err=True)
         sys.exit(1)
+
+    # Show what we're doing (if not quiet)
+    if not ctx.obj.get("quiet", False):
+        click.echo(f"Opening in {editor}:")
+        format_result_header(result, index, show_symbol=True)
+
+    # Execute editor command
+    subprocess.run(cmd, check=True)
 
 
 @cli.command()
