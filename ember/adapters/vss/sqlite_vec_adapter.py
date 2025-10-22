@@ -133,8 +133,8 @@ class SqliteVecAdapter:
                 start_line = row[5]
                 end_line = row[6]
 
-                # Decode vector from BLOB (stored as doubles)
-                vector = list(struct.unpack(f"{dim}d", embedding_blob))
+                # Decode vector from BLOB (stored as float32)
+                vector = list(struct.unpack(f"{dim}f", embedding_blob))
 
                 vectors_to_add.append((vector, project_id, path, start_line, end_line, chunk_db_id))
 
