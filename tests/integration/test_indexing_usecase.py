@@ -633,3 +633,62 @@ def test_realistic_repo_indexing(realistic_repo: Path, tmp_path: Path) -> None:
     assert len(content_samples) >= 5, "Should have chunks with substantial content"
 
     conn.close()
+
+
+@pytest.mark.slow
+def test_model_fingerprint_change_warning(
+    indexing_usecase: IndexingUseCase, git_repo: Path, db_path: Path, caplog
+) -> None:
+    """Test that changing the embedding model fingerprint triggers a warning.
+
+    This is a regression test for issue #65: when the embedding model changes,
+    users should be warned that existing vectors may be incompatible.
+    """
+    import logging
+
+    # Enable logging capture
+    caplog.set_level(logging.WARNING)
+
+    # Initial index with original fingerprint
+    request1 = IndexRequest(repo_root=git_repo, force_reindex=True)
+    response1 = indexing_usecase.execute(request1)
+    assert response1.success
+
+    # Get the stored fingerprint
+    meta_repo = SQLiteMetaRepository(db_path)
+    original_fingerprint = meta_repo.get("model_fingerprint")
+    assert original_fingerprint is not None, "Fingerprint should be stored after indexing"
+
+    # Mock the embedder to return a different fingerprint
+    original_fingerprint_fn = indexing_usecase.embedder.fingerprint
+    new_fingerprint = "jina-embeddings-v3-code:xyz789"
+
+    def mock_fingerprint():
+        return new_fingerprint
+
+    indexing_usecase.embedder.fingerprint = mock_fingerprint
+
+    # Clear the log capture
+    caplog.clear()
+
+    # Run index again with the new fingerprint
+    request2 = IndexRequest(repo_root=git_repo)
+    response2 = indexing_usecase.execute(request2)
+
+    # Should still succeed
+    assert response2.success
+
+    # Verify warning was logged
+    warning_messages = [record.message for record in caplog.records if record.levelno == logging.WARNING]
+    assert any(original_fingerprint in msg for msg in warning_messages), (
+        f"Expected warning about fingerprint change from {original_fingerprint}, got: {warning_messages}"
+    )
+    assert any(new_fingerprint in msg for msg in warning_messages), (
+        f"Expected warning about new fingerprint {new_fingerprint}, got: {warning_messages}"
+    )
+    assert any("ember sync --force" in msg for msg in warning_messages), (
+        "Warning should suggest running 'ember sync --force' to rebuild index"
+    )
+
+    # Restore original method
+    indexing_usecase.embedder.fingerprint = original_fingerprint_fn

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Model fingerprint change detection** (#65)
+  - Detects when embedding model changes between indexing operations
+  - Warns users that existing vectors may be incompatible with new model
+  - Suggests running `ember sync --force` to rebuild index with new model
+  - Prevents silent search quality degradation after model upgrades
+  - Fingerprint comparison happens at start of each indexing operation
+
 ### Changed
 - **Extracted error response helper in IndexingUseCase** (#61)
   - Created `_create_error_response()` helper method for standardized error responses

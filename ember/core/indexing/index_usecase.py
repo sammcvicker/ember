@@ -206,6 +206,19 @@ class IndexingUseCase:
         logger.info(f"Starting indexing for {request.repo_root} (mode: {request.sync_mode})")
 
         try:
+            # Check if embedding model has changed
+            stored_fingerprint = self.meta_repo.get("model_fingerprint")
+            current_fingerprint = self.embedder.fingerprint()
+
+            if stored_fingerprint and stored_fingerprint != current_fingerprint:
+                logger.warning(
+                    f"Embedding model changed: {stored_fingerprint} → {current_fingerprint}"
+                )
+                logger.warning(
+                    "Existing vectors may be incompatible with the new model. "
+                    "Run 'ember sync --force' to rebuild the index with the new model."
+                )
+
             # Get current tree SHA based on sync mode
             tree_sha = self._get_tree_sha(request.repo_root, request.sync_mode)
             logger.debug(f"Tree SHA for indexing: {tree_sha}")
