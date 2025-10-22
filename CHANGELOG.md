@@ -37,6 +37,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - No user-facing changes - internal refactoring only
 
 ### Fixed
+- **Fixed socket resource leaks in daemon client** (#64)
+  - Added proper socket cleanup using finally blocks in `is_daemon_running()`
+  - Socket now closed in all code paths, including exceptions
+  - Fixed socket leak in `_connect()` method when connection fails
+  - Prevents file descriptor leaks during daemon health checks and connection errors
 - **Fixed path filtering to support glob patterns** (#60)
   - Replaced naive substring matching with proper glob pattern support
   - Now uses pathlib's `match()` method for flexible pattern matching
