@@ -70,6 +70,78 @@ class TestProtocol:
         with pytest.raises(ProtocolError):
             Request.from_json("{invalid json")
 
+    def test_large_message_handling(self):
+        """Test that messages larger than buffer size (4096 bytes) are handled correctly."""
+        import socket
+        import threading
+
+        from ember.adapters.daemon.protocol import receive_message, send_message
+
+        # Create a large request (>4096 bytes)
+        large_texts = ["x" * 1000 for _ in range(10)]  # ~10KB of text
+        large_request = Request(
+            method="embed_texts", params={"texts": large_texts}, request_id=1
+        )
+
+        # Create socket pair for testing
+        server_sock, client_sock = socket.socketpair()
+
+        try:
+            # Send large message in separate thread
+            def send_large_message():
+                send_message(client_sock, large_request)
+
+            sender = threading.Thread(target=send_large_message)
+            sender.start()
+
+            # Receive and verify
+            received = receive_message(server_sock, Request)
+            sender.join()
+
+            assert received.method == "embed_texts"
+            assert received.params["texts"] == large_texts
+            assert len(large_request.to_json()) > 4096  # Verify it's actually large
+
+        finally:
+            server_sock.close()
+            client_sock.close()
+
+    def test_multiple_messages_warns(self, caplog):
+        """Test that multiple messages in one recv() triggers a warning."""
+        import socket
+
+        from ember.adapters.daemon.protocol import receive_message
+
+        # Create two small messages
+        req1 = Request(method="health", params={}, request_id=1)
+        req2 = Request(method="health", params={}, request_id=2)
+
+        # Create socket pair
+        server_sock, client_sock = socket.socketpair()
+
+        try:
+            # Send both messages at once (without waiting for response)
+            data = req1.to_json().encode("utf-8") + req2.to_json().encode("utf-8")
+            client_sock.sendall(data)
+
+            # Receive should get first message and warn about second
+            with caplog.at_level("WARNING"):
+                received = receive_message(server_sock, Request)
+
+            # Should receive first message
+            assert received.method == "health"
+            assert received.id == 1
+
+            # Should have logged warning about remaining data
+            assert any(
+                "bytes after first message delimiter" in record.message
+                for record in caplog.records
+            )
+
+        finally:
+            server_sock.close()
+            client_sock.close()
+
 
 class TestDaemonServer:
     """Test daemon server."""
