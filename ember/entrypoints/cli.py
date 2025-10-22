@@ -67,13 +67,13 @@ def _create_embedder(config, show_progress: bool = True):
     if config.model.mode == "daemon":
         # Use daemon mode (default)
         from ember.adapters.daemon.client import DaemonEmbedderClient
+        from ember.adapters.daemon.lifecycle import DaemonLifecycle
         from ember.core.cli_utils import ensure_daemon_with_progress
 
         # Pre-start daemon with progress feedback
         if show_progress:
-            ensure_daemon_with_progress(
-                daemon_timeout=config.model.daemon_timeout, quiet=False
-            )
+            daemon_manager = DaemonLifecycle(idle_timeout=config.model.daemon_timeout)
+            ensure_daemon_with_progress(daemon_manager, quiet=False)
 
         return DaemonEmbedderClient(
             fallback=True,
@@ -955,10 +955,11 @@ def start(ctx: click.Context, foreground: bool) -> None:
             sys.exit(1)
     else:
         # Background mode with progress
+        from ember.adapters.daemon.lifecycle import DaemonLifecycle
+
         quiet = ctx.obj.get("quiet", False)
-        if ensure_daemon_with_progress(
-            daemon_timeout=config.model.daemon_timeout, quiet=quiet
-        ):
+        daemon_manager = DaemonLifecycle(idle_timeout=config.model.daemon_timeout)
+        if ensure_daemon_with_progress(daemon_manager, quiet=quiet):
             if not quiet:
                 click.echo("✓ Daemon started successfully")
         else:

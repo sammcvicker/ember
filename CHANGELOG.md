@@ -51,6 +51,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fingerprint comparison happens at start of each indexing operation
 
 ### Changed
+- **CLI utilities no longer import from adapters layer** (#89)
+  - Created `DaemonManager` protocol in `ports/daemon.py` for dependency inversion
+  - Refactored `ensure_daemon_with_progress()` to accept injected `DaemonManager` instead of importing adapters
+  - CLI commands (entrypoints layer) now inject `DaemonLifecycle` adapter implementation
+  - Eliminates core → adapters dependency violation in Clean Architecture
+  - Improves testability and flexibility (can swap daemon implementations without changing core code)
+  - All 207 tests passing - no user-facing changes
 - **Eliminated O(N) table scans with chunk_id column** (#59)
   - Added `chunk_id` column to chunks table for O(1) lookups
   - Created unique index on `chunk_id` for fast queries
