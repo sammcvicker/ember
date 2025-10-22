@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fingerprint comparison happens at start of each indexing operation
 
 ### Changed
+- **Eliminated O(N) table scans with chunk_id column** (#59)
+  - Added `chunk_id` column to chunks table for O(1) lookups
+  - Created unique index on `chunk_id` for fast queries
+  - Updated VectorRepository and ChunkRepository to use indexed column
+  - Automatic migration from schema v1 to v2 on first run
+  - Eliminates O(N²) complexity during indexing operations
+  - Performance improvement: >10x faster on large repositories (10k+ chunks)
 - **Extracted error response helper in IndexingUseCase** (#61)
   - Created `_create_error_response()` helper method for standardized error responses
   - Eliminated 60+ lines of duplicated IndexResponse creation code

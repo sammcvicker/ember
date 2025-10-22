@@ -17,7 +17,7 @@ import sqlite3
 from pathlib import Path
 
 # Schema version for migrations
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def init_database(db_path: Path) -> None:
@@ -57,6 +57,7 @@ def _create_tables(conn: sqlite3.Connection) -> None:
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS chunks (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            chunk_id TEXT UNIQUE,
             project_id TEXT,
             path TEXT NOT NULL,
             lang TEXT,
@@ -229,5 +230,64 @@ def check_schema_version(db_path: Path) -> int:
         return int(row[0]) if row else 0
     except sqlite3.Error:
         return 0
+    finally:
+        conn.close()
+
+
+def migrate_database(db_path: Path) -> None:
+    """Migrate database schema to the latest version.
+
+    Args:
+        db_path: Path to the SQLite database
+    """
+    current_version = check_schema_version(db_path)
+
+    if current_version >= SCHEMA_VERSION:
+        return  # Already at latest version
+
+    conn = sqlite3.connect(db_path)
+    try:
+        # Migration from version 1 to version 2: Add chunk_id column
+        if current_version < 2:
+            cursor = conn.cursor()
+
+            # Check if column already exists (defensive)
+            cursor.execute("PRAGMA table_info(chunks)")
+            columns = [row[1] for row in cursor.fetchall()]
+
+            if 'chunk_id' not in columns:
+                # Add the chunk_id column
+                cursor.execute("ALTER TABLE chunks ADD COLUMN chunk_id TEXT")
+
+                # Backfill chunk_id for existing rows
+                # Compute chunk IDs using the same logic as Chunk.compute_id()
+                cursor.execute("""
+                    SELECT id, project_id, path, start_line, end_line
+                    FROM chunks
+                """)
+                rows = cursor.fetchall()
+
+                for row in rows:
+                    db_id, project_id, path, start_line, end_line = row
+                    # Compute chunk_id using blake3 hash of key components
+                    import blake3
+                    key = f"{project_id}:{path}:{start_line}:{end_line}"
+                    chunk_id = blake3.blake3(key.encode()).hexdigest()[:16]
+
+                    cursor.execute(
+                        "UPDATE chunks SET chunk_id = ? WHERE id = ?",
+                        (chunk_id, db_id)
+                    )
+
+                # Create unique index on chunk_id
+                cursor.execute("CREATE UNIQUE INDEX idx_chunks_chunk_id ON chunks(chunk_id)")
+
+            # Update schema version
+            cursor.execute(
+                "UPDATE meta SET value = ? WHERE key = 'schema_version'",
+                (str(2),)
+            )
+
+            conn.commit()
     finally:
         conn.close()

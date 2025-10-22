@@ -76,28 +76,16 @@ class SQLiteVectorRepository:
         try:
             cursor = conn.cursor()
 
-            # We need to compute chunk IDs for all chunks to find a match
-            # This is inefficient - consider adding chunk_id column to schema
+            # Use chunk_id column for O(1) lookup
             cursor.execute(
                 """
-                SELECT id, project_id, path, start_line, end_line
-                FROM chunks
-                """
+                SELECT id FROM chunks WHERE chunk_id = ?
+                """,
+                (chunk_id,)
             )
 
-            rows = cursor.fetchall()
-            for row in rows:
-                db_id = row[0]
-                project_id = row[1]
-                path = Path(row[2])
-                start_line = row[3]
-                end_line = row[4]
-
-                computed_id = Chunk.compute_id(project_id, path, start_line, end_line)
-                if computed_id == chunk_id:
-                    return db_id
-
-            return None
+            row = cursor.fetchone()
+            return row[0] if row else None
         finally:
             conn.close()
 

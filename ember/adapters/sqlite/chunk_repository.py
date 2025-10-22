@@ -4,6 +4,7 @@ import sqlite3
 import time
 from pathlib import Path
 
+from ember.adapters.sqlite.schema import migrate_database
 from ember.domain.entities import Chunk
 
 
@@ -17,6 +18,10 @@ class SQLiteChunkRepository:
             db_path: Path to SQLite database file.
         """
         self.db_path = db_path
+
+        # Run any pending migrations
+        if db_path.exists():
+            migrate_database(db_path)
 
     def _get_connection(self) -> sqlite3.Connection:
         """Get a database connection with foreign keys enabled.
@@ -47,11 +52,12 @@ class SQLiteChunkRepository:
             cursor.execute(
                 """
                 INSERT INTO chunks (
-                    project_id, path, lang, symbol, start_line, end_line,
+                    chunk_id, project_id, path, lang, symbol, start_line, end_line,
                     content, content_hash, file_hash, tree_sha, rev, created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(tree_sha, path, start_line, end_line) DO UPDATE SET
+                    chunk_id = excluded.chunk_id,
                     project_id = excluded.project_id,
                     lang = excluded.lang,
                     symbol = excluded.symbol,
@@ -61,6 +67,7 @@ class SQLiteChunkRepository:
                     rev = excluded.rev
                 """,
                 (
+                    chunk.id,  # chunk.id is the computed chunk_id
                     chunk.project_id,
                     path_str,
                     chunk.lang,
@@ -82,10 +89,6 @@ class SQLiteChunkRepository:
     def get(self, chunk_id: str) -> Chunk | None:
         """Retrieve a chunk by its ID.
 
-        The chunk_id is a blake3 hash of (project_id:path:start_line:end_line).
-        We need to scan all chunks and compute IDs to find a match.
-        This is not efficient for large datasets - consider adding a chunk_id column.
-
         Args:
             chunk_id: The unique identifier for the chunk.
 
@@ -96,40 +99,35 @@ class SQLiteChunkRepository:
         try:
             cursor = conn.cursor()
 
-            # Retrieve all chunks and compute IDs (inefficient but works for MVP)
+            # Use chunk_id column for O(1) lookup
             cursor.execute(
                 """
-                SELECT project_id, path, lang, symbol, start_line, end_line,
+                SELECT chunk_id, project_id, path, lang, symbol, start_line, end_line,
                        content, content_hash, file_hash, tree_sha, rev
                 FROM chunks
-                """
+                WHERE chunk_id = ?
+                """,
+                (chunk_id,)
             )
 
-            rows = cursor.fetchall()
-            for row in rows:
-                project_id = row[0]
-                path = Path(row[1])
-                start_line = row[4]
-                end_line = row[5]
+            row = cursor.fetchone()
+            if row is None:
+                return None
 
-                computed_id = Chunk.compute_id(project_id, path, start_line, end_line)
-                if computed_id == chunk_id:
-                    return Chunk(
-                        id=computed_id,
-                        project_id=project_id,
-                        path=path,
-                        lang=row[2],
-                        symbol=row[3],
-                        start_line=start_line,
-                        end_line=end_line,
-                        content=row[6],
-                        content_hash=row[7],
-                        file_hash=row[8],
-                        tree_sha=row[9],
-                        rev=row[10],
-                    )
-
-            return None
+            return Chunk(
+                id=row[0],  # chunk_id from database
+                project_id=row[1],
+                path=Path(row[2]),
+                lang=row[3],
+                symbol=row[4],
+                start_line=row[5],
+                end_line=row[6],
+                content=row[7],
+                content_hash=row[8],
+                file_hash=row[9],
+                tree_sha=row[10],
+                rev=row[11],
+            )
         finally:
             conn.close()
 
