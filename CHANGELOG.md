@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - No user-facing changes - internal refactoring only
 
 ### Fixed
+- **Removed duplicate message in 'ember daemon status' output** (#73)
+  - Daemon status now shows running state once instead of twice
+  - Message field only displayed for error states (unresponsive, stale, stopped)
+  - Cleaner, more concise status output
 - **Improved error handling in 'ember sync' command** (#66)
   - Fixed duplicate "No changes detected" messages - now shows "(quick check)" vs "(full scan)" to indicate which code path executed
   - Quick check failures now always visible (not just in verbose mode) with clear warning message

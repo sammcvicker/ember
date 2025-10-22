@@ -1021,7 +1021,8 @@ def status() -> None:
     click.echo(f"  PID file: {status['pid_file']}")
     click.echo(f"  Log file: {status['log_file']}")
 
-    if status.get("message"):
+    # Only show message for non-running states (errors/warnings)
+    if status.get("message") and status["status"] != "running":
         click.echo(f"\n{status['message']}")
 
 
