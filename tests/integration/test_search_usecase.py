@@ -5,6 +5,7 @@ RRF fusion, filtering, and result ranking.
 """
 
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -511,3 +512,86 @@ def test_path_filter_returns_full_topk(db_path: Path) -> None:
         assert str(result.chunk.path).startswith("src/"), (
             f"Expected all results from src/, got {result.chunk.path}"
         )
+
+
+def test_missing_chunks_logged(db_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """Test that missing chunks are logged with count and sample IDs.
+
+    This is a regression test for issue #88. Previously, missing chunks
+    were silently dropped without any logging, making it hard to diagnose
+    index corruption or stale data.
+    """
+    import logging
+
+    # Create a mock chunk repository that returns None for some chunks
+    chunk_repo = MagicMock()
+    real_chunks = {
+        "chunk_1": Chunk(
+            id="chunk_1",
+            project_id="test",
+            path=Path("test.py"),
+            start_line=1,
+            end_line=3,
+            content="def test1(): pass",
+            symbol="test1",
+            lang="python",
+            content_hash="hash1",
+            file_hash="file_hash1",
+            tree_sha="abc123",
+            rev="worktree",
+        ),
+        "chunk_2": Chunk(
+            id="chunk_2",
+            project_id="test",
+            path=Path("test.py"),
+            start_line=5,
+            end_line=7,
+            content="def test2(): pass",
+            symbol="test2",
+            lang="python",
+            content_hash="hash2",
+            file_hash="file_hash2",
+            tree_sha="abc123",
+            rev="worktree",
+        ),
+    }
+
+    def mock_get(chunk_id: str) -> Chunk | None:
+        """Return chunks 1 and 2, but None for chunks 3, 4, 5."""
+        return real_chunks.get(chunk_id)
+
+    chunk_repo.get.side_effect = mock_get
+
+    # Create search use case with mock repo
+    text_search = SQLiteFTS(db_path)
+    vector_search = SqliteVecAdapter(db_path)
+    embedder = JinaCodeEmbedder()
+
+    use_case = SearchUseCase(
+        text_search=text_search,
+        vector_search=vector_search,
+        chunk_repo=chunk_repo,
+        embedder=embedder,
+    )
+
+    # Simulate search results with 5 chunk IDs, but only 2 are retrievable
+    chunk_ids = ["chunk_1", "chunk_2", "chunk_3", "chunk_4", "chunk_5"]
+
+    # Enable logging capture at WARNING level
+    with caplog.at_level(logging.WARNING):
+        chunks = use_case._retrieve_chunks(chunk_ids)
+
+    # Should return only the 2 found chunks
+    assert len(chunks) == 2
+    assert chunks[0].id == "chunk_1"
+    assert chunks[1].id == "chunk_2"
+
+    # Should have logged a warning about missing chunks
+    assert len(caplog.records) == 1
+    log_record = caplog.records[0]
+    assert log_record.levelname == "WARNING"
+    assert "Missing 3 chunks" in log_record.message
+    assert "chunk_3" in log_record.message
+    assert "chunk_4" in log_record.message
+    assert "chunk_5" in log_record.message
+    assert "index corruption or stale data" in log_record.message

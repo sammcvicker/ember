@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Search now logs warnings when chunks can't be retrieved** (#88)
+  - Missing chunks are now logged with count and sample IDs
+  - Helps diagnose index corruption, stale data, or orphaned index entries
+  - Warning includes first 5 missing chunk IDs for debugging
+  - Previously silently dropped missing chunks, making problems invisible
+  - Added test for missing chunk scenario
 - **Daemon stop now properly handles SIGTERM failures and verifies SIGKILL** (#90)
   - SIGTERM failure now falls through to SIGKILL instead of giving up immediately
   - SIGKILL is now verified to actually kill the process before returning success
