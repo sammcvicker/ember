@@ -347,7 +347,12 @@ def sync(
 
     db_path = ember_dir / "index.db"
 
-    # Determine sync mode
+    # Determine sync mode - validate mutually exclusive options
+    exclusive_options = sum([bool(rev), staged, worktree])
+    if exclusive_options > 1:
+        click.echo("Error: --rev, --staged, and --worktree are mutually exclusive", err=True)
+        sys.exit(1)
+
     if rev:
         sync_mode = rev
     elif staged:
@@ -373,17 +378,13 @@ def sync(
             meta_repo = SQLiteMetaRepository(db_path)
             try:
                 current_tree_sha = vcs.get_worktree_tree_sha()
-                last_indexed_sha = meta_repo.get_last_indexed_tree_sha()
+                last_indexed_sha = meta_repo.get("last_tree_sha")
                 if current_tree_sha == last_indexed_sha:
-                    if ctx.obj.get("verbose", False):
-                        click.echo("DEBUG: Tree SHAs match, returning early", err=True)
-                    click.echo("✓ No changes detected (index up to date)")
+                    click.echo("✓ No changes detected (quick check)")
                     return
             except Exception as e:
                 # If quick check fails, fall through to full sync
-                if ctx.obj.get("verbose", False):
-                    click.echo(f"Quick check failed: {e}", err=True)
-                pass
+                click.echo(f"Warning: Quick check failed, performing full sync: {e}", err=True)
 
         # Create indexing use case with all dependencies (starts daemon if needed)
         indexing_usecase = _create_indexing_usecase(repo_root, db_path, config)
@@ -411,7 +412,7 @@ def sync(
         sync_type = "incremental" if response.is_incremental else "full"
 
         if response.files_indexed == 0 and response.chunks_deleted == 0:
-            click.echo("✓ No changes detected (index up to date)")
+            click.echo("✓ No changes detected (full scan)")
         else:
             click.echo(f"✓ Indexed {response.files_indexed} files ({sync_type} sync)")
 

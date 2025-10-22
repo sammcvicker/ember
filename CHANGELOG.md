@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - No user-facing changes - internal refactoring only
 
 ### Fixed
+- **Improved error handling in 'ember sync' command** (#66)
+  - Fixed duplicate "No changes detected" messages - now shows "(quick check)" vs "(full scan)" to indicate which code path executed
+  - Quick check failures now always visible (not just in verbose mode) with clear warning message
+  - Added validation for mutually exclusive sync options (--rev, --staged, --worktree)
+  - Users now get immediate error when conflicting options are specified instead of silent last-one-wins behavior
+  - Better observability: users can tell if quick check ran or full indexing occurred
 - **Unreachable error handler in 'ember open' command** (#63)
   - Fixed unreachable `FileNotFoundError` exception handler
   - Now checks if editor exists using `shutil.which()` before running subprocess
