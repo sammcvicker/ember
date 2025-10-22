@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Architecture violation: cli_utils imports from adapters** (#58)
+  - Moved `check_and_auto_sync()` from `core/cli_utils.py` to `entrypoints/cli.py`
+  - Eliminates circular dependency between `entrypoints/cli` and `core/cli_utils`
+  - Restores clean architecture: `core/` now only depends on `ports/`, never `adapters/`
+  - No user-facing changes - internal refactoring only
 - **Daemon startup timeout increased and error reporting improved** (#50)
   - Increased daemon startup timeout from 10s to 20s to handle model loading
   - Model loading typically takes 3-5 seconds, but can be longer on first download
