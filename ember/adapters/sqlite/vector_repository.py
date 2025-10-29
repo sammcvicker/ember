@@ -4,8 +4,6 @@ import sqlite3
 import struct
 from pathlib import Path
 
-from ember.domain.entities import Chunk
-
 
 class SQLiteVectorRepository:
     """SQLite implementation of VectorRepository for storing embeddings.
@@ -25,16 +23,26 @@ class SQLiteVectorRepository:
         """
         self.db_path = db_path
         self.expected_dim = expected_dim
+        self._conn: sqlite3.Connection | None = None
 
     def _get_connection(self) -> sqlite3.Connection:
         """Get a database connection with foreign keys enabled.
 
+        Reuses an existing connection if available, otherwise creates a new one.
+
         Returns:
             SQLite connection object.
         """
-        conn = sqlite3.connect(self.db_path)
-        conn.execute("PRAGMA foreign_keys = ON")
-        return conn
+        if self._conn is None:
+            self._conn = sqlite3.connect(self.db_path)
+            self._conn.execute("PRAGMA foreign_keys = ON")
+        return self._conn
+
+    def close(self) -> None:
+        """Close the database connection if open."""
+        if self._conn is not None:
+            self._conn.close()
+            self._conn = None
 
     def _encode_vector(self, vector: list[float]) -> bytes:
         """Encode a vector as binary BLOB.
@@ -76,21 +84,18 @@ class SQLiteVectorRepository:
             The DB integer id if found, None otherwise.
         """
         conn = self._get_connection()
-        try:
-            cursor = conn.cursor()
+        cursor = conn.cursor()
 
-            # Use chunk_id column for O(1) lookup
-            cursor.execute(
-                """
-                SELECT id FROM chunks WHERE chunk_id = ?
-                """,
-                (chunk_id,)
-            )
+        # Use chunk_id column for O(1) lookup
+        cursor.execute(
+            """
+            SELECT id FROM chunks WHERE chunk_id = ?
+            """,
+            (chunk_id,)
+        )
 
-            row = cursor.fetchone()
-            return row[0] if row else None
-        finally:
-            conn.close()
+        row = cursor.fetchone()
+        return row[0] if row else None
 
     def add(
         self,
@@ -123,28 +128,25 @@ class SQLiteVectorRepository:
             raise ValueError(f"Chunk not found: {chunk_id}")
 
         conn = self._get_connection()
-        try:
-            cursor = conn.cursor()
+        cursor = conn.cursor()
 
-            # Encode vector as BLOB
-            blob = self._encode_vector(embedding)
-            dim = len(embedding)
+        # Encode vector as BLOB
+        blob = self._encode_vector(embedding)
+        dim = len(embedding)
 
-            # UPSERT: insert or update if chunk_id exists
-            cursor.execute(
-                """
-                INSERT INTO vectors (chunk_id, embedding, dim, model_fingerprint)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(chunk_id) DO UPDATE SET
-                    embedding = excluded.embedding,
-                    dim = excluded.dim,
-                    model_fingerprint = excluded.model_fingerprint
-                """,
-                (db_chunk_id, blob, dim, model_fingerprint),
-            )
-            conn.commit()
-        finally:
-            conn.close()
+        # UPSERT: insert or update if chunk_id exists
+        cursor.execute(
+            """
+            INSERT INTO vectors (chunk_id, embedding, dim, model_fingerprint)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(chunk_id) DO UPDATE SET
+                embedding = excluded.embedding,
+                dim = excluded.dim,
+                model_fingerprint = excluded.model_fingerprint
+            """,
+            (db_chunk_id, blob, dim, model_fingerprint),
+        )
+        conn.commit()
 
     def get(self, chunk_id: str) -> list[float] | None:
         """Retrieve an embedding vector for a chunk.
@@ -161,28 +163,25 @@ class SQLiteVectorRepository:
             return None
 
         conn = self._get_connection()
-        try:
-            cursor = conn.cursor()
+        cursor = conn.cursor()
 
-            cursor.execute(
-                """
-                SELECT embedding, dim
-                FROM vectors
-                WHERE chunk_id = ?
-                """,
-                (db_chunk_id,),
-            )
+        cursor.execute(
+            """
+            SELECT embedding, dim
+            FROM vectors
+            WHERE chunk_id = ?
+            """,
+            (db_chunk_id,),
+        )
 
-            row = cursor.fetchone()
-            if row is None:
-                return None
+        row = cursor.fetchone()
+        if row is None:
+            return None
 
-            blob = row[0]
-            dim = row[1]
+        blob = row[0]
+        dim = row[1]
 
-            return self._decode_vector(blob, dim)
-        finally:
-            conn.close()
+        return self._decode_vector(blob, dim)
 
     def delete(self, chunk_id: str) -> None:
         """Delete an embedding vector.
@@ -196,13 +195,10 @@ class SQLiteVectorRepository:
             return  # Already deleted or doesn't exist
 
         conn = self._get_connection()
-        try:
-            cursor = conn.cursor()
+        cursor = conn.cursor()
 
-            cursor.execute(
-                "DELETE FROM vectors WHERE chunk_id = ?",
-                (db_chunk_id,),
-            )
-            conn.commit()
-        finally:
-            conn.close()
+        cursor.execute(
+            "DELETE FROM vectors WHERE chunk_id = ?",
+            (db_chunk_id,),
+        )
+        conn.commit()
