@@ -339,6 +339,92 @@ def init(ctx: click.Context, force: bool) -> None:
         sys.exit(1)
 
 
+def _parse_sync_mode(rev: str | None, staged: bool, worktree: bool) -> str:
+    """Determine sync mode from CLI options.
+
+    Args:
+        rev: Git revision to index (commit SHA, branch, tag).
+        staged: Whether to index staged changes only.
+        worktree: Whether to index worktree explicitly.
+
+    Returns:
+        Sync mode string ("worktree", "staged", or revision identifier).
+
+    Raises:
+        click.UsageError: If multiple mutually exclusive options are provided.
+    """
+    exclusive_options = sum([bool(rev), staged, worktree])
+    if exclusive_options > 1:
+        raise click.UsageError("--rev, --staged, and --worktree are mutually exclusive")
+
+    if rev:
+        return rev
+    elif staged:
+        return "staged"
+    else:
+        return "worktree"
+
+
+def _quick_check_unchanged(
+    repo_root: Path, db_path: Path, sync_mode: str, reindex: bool
+) -> bool:
+    """Check if index is up-to-date without expensive setup.
+
+    Performs a quick check to see if the worktree tree SHA matches
+    the last indexed SHA, allowing us to skip expensive model initialization.
+
+    Args:
+        repo_root: Repository root path.
+        db_path: Path to SQLite database.
+        sync_mode: Sync mode (worktree, staged, or revision).
+        reindex: Whether force reindex is requested.
+
+    Returns:
+        True if index is unchanged and sync can be skipped, False otherwise.
+    """
+    if reindex or sync_mode != "worktree":
+        return False
+
+    from ember.adapters.git_cmd.git_adapter import GitAdapter
+    from ember.adapters.sqlite.meta_repository import SQLiteMetaRepository
+
+    vcs = GitAdapter(repo_root)
+    meta_repo = SQLiteMetaRepository(db_path)
+    try:
+        current_tree_sha = vcs.get_worktree_tree_sha()
+        last_indexed_sha = meta_repo.get("last_tree_sha")
+        return current_tree_sha == last_indexed_sha
+    except Exception as e:
+        # If quick check fails, fall through to full sync
+        click.echo(f"Warning: Quick check failed, performing full sync: {e}", err=True)
+        return False
+
+
+def _format_sync_results(response) -> None:
+    """Print formatted sync results.
+
+    Args:
+        response: IndexResponse from indexing use case.
+    """
+    sync_type = "incremental" if response.is_incremental else "full"
+
+    if response.files_indexed == 0 and response.chunks_deleted == 0:
+        click.echo("✓ No changes detected (full scan)")
+    else:
+        click.echo(f"✓ Indexed {response.files_indexed} files ({sync_type} sync)")
+
+    if response.chunks_created > 0:
+        click.echo(f"  • {response.chunks_created} chunks created")
+    if response.chunks_updated > 0:
+        click.echo(f"  • {response.chunks_updated} chunks updated")
+    if response.chunks_deleted > 0:
+        click.echo(f"  • {response.chunks_deleted} chunks deleted")
+    if response.vectors_stored > 0:
+        click.echo(f"  • {response.vectors_stored} vectors stored")
+    if response.files_indexed > 0 or response.chunks_deleted > 0:
+        click.echo(f"  • Tree SHA: {response.tree_sha[:12]}...")
+
+
 @cli.command()
 @click.option(
     "--worktree",
@@ -374,6 +460,8 @@ def sync(
     By default, indexes the current worktree.
     Can be run from any subdirectory within the repository.
     """
+    from ember.adapters.config.toml_config_provider import TomlConfigProvider
+    from ember.core.indexing.index_usecase import IndexRequest
     from ember.core.repo_utils import find_repo_root
 
     try:
@@ -383,49 +471,18 @@ def sync(
         sys.exit(1)
 
     db_path = ember_dir / "index.db"
+    sync_mode = _parse_sync_mode(rev, staged, worktree)
 
-    # Determine sync mode - validate mutually exclusive options
-    exclusive_options = sum([bool(rev), staged, worktree])
-    if exclusive_options > 1:
-        click.echo("Error: --rev, --staged, and --worktree are mutually exclusive", err=True)
-        sys.exit(1)
+    # Quick check optimization
+    if _quick_check_unchanged(repo_root, db_path, sync_mode, reindex):
+        click.echo("✓ No changes detected (quick check)")
+        return
 
-    if rev:
-        sync_mode = rev
-    elif staged:
-        sync_mode = "staged"
-    else:
-        sync_mode = "worktree"
-
-    # Load config
-    from ember.adapters.config.toml_config_provider import TomlConfigProvider
-
-    config_provider = TomlConfigProvider()
-    config = config_provider.load(ember_dir)
-
-    # Import only what's needed for this command
-    from ember.adapters.git_cmd.git_adapter import GitAdapter
-    from ember.adapters.sqlite.meta_repository import SQLiteMetaRepository
-    from ember.core.indexing.index_usecase import IndexRequest
-
-    # Quick check: if not force reindex and tree SHA unchanged, skip expensive setup
-    if not reindex and sync_mode == "worktree":
-        vcs = GitAdapter(repo_root)
-        meta_repo = SQLiteMetaRepository(db_path)
-        try:
-            current_tree_sha = vcs.get_worktree_tree_sha()
-            last_indexed_sha = meta_repo.get("last_tree_sha")
-            if current_tree_sha == last_indexed_sha:
-                click.echo("✓ No changes detected (quick check)")
-                return
-        except Exception as e:
-            # If quick check fails, fall through to full sync
-            click.echo(f"Warning: Quick check failed, performing full sync: {e}", err=True)
-
-    # Create indexing use case with all dependencies (starts daemon if needed)
+    # Load config and create indexing use case
+    config = TomlConfigProvider().load(ember_dir)
     indexing_usecase = _create_indexing_usecase(repo_root, db_path, config)
 
-    # Execute indexing with progress reporting (unless quiet mode)
+    # Execute indexing with progress reporting
     request = IndexRequest(
         repo_root=repo_root,
         sync_mode=sync_mode,
@@ -433,7 +490,6 @@ def sync(
         force_reindex=reindex,
     )
 
-    # Use progress bar unless in quiet mode
     with progress_context(quiet_mode=ctx.obj.get("quiet", False)) as progress:
         if progress:
             response = indexing_usecase.execute(request, progress=progress)
@@ -444,24 +500,7 @@ def sync(
         click.echo(f"Error during indexing: {response.error}", err=True)
         sys.exit(1)
 
-    # Report results
-    sync_type = "incremental" if response.is_incremental else "full"
-
-    if response.files_indexed == 0 and response.chunks_deleted == 0:
-        click.echo("✓ No changes detected (full scan)")
-    else:
-        click.echo(f"✓ Indexed {response.files_indexed} files ({sync_type} sync)")
-
-    if response.chunks_created > 0:
-        click.echo(f"  • {response.chunks_created} chunks created")
-    if response.chunks_updated > 0:
-        click.echo(f"  • {response.chunks_updated} chunks updated")
-    if response.chunks_deleted > 0:
-        click.echo(f"  • {response.chunks_deleted} chunks deleted")
-    if response.vectors_stored > 0:
-        click.echo(f"  • {response.vectors_stored} vectors stored")
-    if response.files_indexed > 0 or response.chunks_deleted > 0:
-        click.echo(f"  • Tree SHA: {response.tree_sha[:12]}...")
+    _format_sync_results(response)
 
 
 @cli.command()
