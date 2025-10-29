@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Refactored sync CLI command to reduce complexity** (#91)
+  - Reduced cyclomatic complexity from C-level (20) to manageable levels by extracting 3 helper functions
+  - Extracted `_parse_sync_mode()` for CLI option validation and sync mode determination
+  - Extracted `_quick_check_unchanged()` for optimization logic to skip unchanged indexes
+  - Extracted `_format_sync_results()` for result formatting and display
+  - Improved readability and maintainability of sync command
+  - All 257 tests passing - pure refactor, no behavior changes
+
 ### Performance
 - **Implemented SQLite connection pooling to reduce overhead** (#87)
   - All SQLite repository adapters now reuse database connections instead of creating new ones for each operation
