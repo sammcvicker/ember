@@ -8,7 +8,6 @@ Tests the complete CLI flow end-to-end to verify:
 """
 
 import json
-import os
 import subprocess
 from pathlib import Path
 

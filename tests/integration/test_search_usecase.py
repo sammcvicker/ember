@@ -234,10 +234,12 @@ def test_search_topk_limit(search_usecase: SearchUseCase) -> None:
 @pytest.mark.slow
 def test_search_empty_query(search_usecase: SearchUseCase) -> None:
     """Test behavior with empty query."""
+    import sqlite3
+
     query = Query(text="", topk=5)
     # Empty query causes FTS5 syntax error (expected behavior)
     # This is a known limitation of FTS5
-    with pytest.raises(Exception):  # Could be OperationalError or other
+    with pytest.raises((sqlite3.OperationalError, Exception)):
         search_usecase.search(query)
 
 
@@ -256,7 +258,7 @@ def test_search_no_matches(search_usecase: SearchUseCase) -> None:
 def test_rrf_fusion_basic(db_path: Path) -> None:
     """Test RRF fusion logic with known inputs."""
     chunk_repo = SQLiteChunkRepository(db_path)
-    vector_repo = SQLiteVectorRepository(db_path)
+    SQLiteVectorRepository(db_path)
     text_search = SQLiteFTS(db_path)
     embedder = JinaCodeEmbedder()
     vector_search = SqliteVecAdapter(db_path)
@@ -293,7 +295,7 @@ def test_rrf_fusion_basic(db_path: Path) -> None:
 def test_rrf_fusion_single_ranker(db_path: Path) -> None:
     """Test RRF with single ranker (degenerates to that ranker)."""
     chunk_repo = SQLiteChunkRepository(db_path)
-    vector_repo = SQLiteVectorRepository(db_path)
+    SQLiteVectorRepository(db_path)
     text_search = SQLiteFTS(db_path)
     embedder = JinaCodeEmbedder()
     vector_search = SqliteVecAdapter(db_path)

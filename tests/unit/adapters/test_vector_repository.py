@@ -1,7 +1,6 @@
 """Unit tests for SQLiteVectorRepository."""
 
 import struct
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -59,7 +58,7 @@ def test_vector_round_trip_preserves_precision(vector_repo: SQLiteVectorReposito
 
     # Verify values are preserved within float32 precision
     # Float32 has ~7 decimal digits of precision
-    for original, decoded_val in zip(test_vector, decoded):
+    for original, decoded_val in zip(test_vector, decoded, strict=False):
         # Use relative tolerance for float32 precision
         assert abs(decoded_val - original) < abs(original) * 1e-6 or abs(decoded_val - original) < 1e-6
 
@@ -79,7 +78,7 @@ def test_vector_round_trip_realistic_embedding(vector_repo: SQLiteVectorReposito
     assert len(decoded) == 768
 
     # Verify all values are preserved within float32 precision
-    for original, decoded_val in zip(test_vector, decoded):
+    for original, decoded_val in zip(test_vector, decoded, strict=False):
         assert abs(decoded_val - original) < abs(original) * 1e-6 or abs(decoded_val - original) < 1e-6
 
 

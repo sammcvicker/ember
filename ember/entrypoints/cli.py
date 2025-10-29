@@ -926,12 +926,12 @@ def status(ctx: click.Context) -> None:
         if response.last_tree_sha:
             if response.is_stale:
                 click.echo(f"  Status: {click.style('⚠ Out of date', fg='yellow')}")
-                click.echo(f"    Run 'ember sync' to update index")
+                click.echo("    Run 'ember sync' to update index")
             else:
                 click.echo(f"  Status: {click.style('✓ Up to date', fg='green')}")
         else:
             click.echo(f"  Status: {click.style('⚠ Never synced', fg='yellow')}")
-            click.echo(f"    Run 'ember sync' to index your repository")
+            click.echo("    Run 'ember sync' to index your repository")
 
         # Show configuration
         if response.config:
@@ -1040,8 +1040,8 @@ def restart() -> None:
         sys.exit(1)
 
 
-@daemon.command()
-def status() -> None:
+@daemon.command(name="status")
+def daemon_status() -> None:
     """Show daemon status."""
     from ember.adapters.daemon.lifecycle import DaemonLifecycle
 

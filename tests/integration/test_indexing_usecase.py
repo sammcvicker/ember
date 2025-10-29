@@ -4,6 +4,7 @@ Tests the complete indexing flow including git integration, chunking,
 embedding, and incremental sync with proper cleanup of old chunks.
 """
 
+import contextlib
 import sqlite3
 from pathlib import Path
 
@@ -434,10 +435,8 @@ def test_index_file_with_unreadable_file(
 
     finally:
         # Restore permissions for cleanup
-        try:
+        with contextlib.suppress(Exception):
             os.chmod(restricted_file, stat.S_IREAD | stat.S_IWRITE)
-        except:
-            pass  # Best effort cleanup
 
 
 @pytest.mark.slow
@@ -534,7 +533,7 @@ def test_index_file_with_embedder_failure(git_repo: Path, db_path: Path) -> None
 
     # Current implementation: embedder failure causes indexing to fail
     # This is acceptable behavior - documents that errors are reported
-    assert response.success == False  # Embedder failure causes operation to fail
+    assert not response.success  # Embedder failure causes operation to fail
     assert response.error is not None  # Error message should be present
     assert len(response.error) > 0  # Error message should not be empty
 
@@ -608,7 +607,7 @@ def test_realistic_repo_indexing(realistic_repo: Path, tmp_path: Path) -> None:
     assert len(indexed_files) >= 8, f"Expected at least 8 files indexed, got {len(indexed_files)}"
 
     # Check for specific file types
-    file_extensions = set(Path(f).suffix for f in indexed_files)
+    file_extensions = {Path(f).suffix for f in indexed_files}
     assert ".py" in file_extensions, "Should have indexed Python files"
     # Note: .jsx and .ts may not be indexed if tree-sitter doesn't support them yet
     # or may be indexed with line chunker
