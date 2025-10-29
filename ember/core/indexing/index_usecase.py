@@ -191,6 +191,154 @@ class IndexingUseCase:
             error=error,
         )
 
+    def _verify_model_compatibility(self) -> None:
+        """Verify embedding model compatibility with stored fingerprint.
+
+        Logs a warning if the model has changed, indicating that existing
+        vectors may be incompatible and a force reindex should be considered.
+        """
+        stored_fingerprint = self.meta_repo.get("model_fingerprint")
+        current_fingerprint = self.embedder.fingerprint()
+
+        if stored_fingerprint and stored_fingerprint != current_fingerprint:
+            logger.warning(
+                f"Embedding model changed: {stored_fingerprint} → {current_fingerprint}"
+            )
+            logger.warning(
+                "Existing vectors may be incompatible with the new model. "
+                "Run 'ember sync --force' to rebuild the index with the new model."
+            )
+
+    def _ensure_model_loaded(self, progress: ProgressCallback | None) -> None:
+        """Eagerly load embedding model before indexing.
+
+        Loading the model upfront (can take 2-3 seconds) prevents misleading
+        progress reporting on the first file.
+
+        Args:
+            progress: Optional progress callback for reporting model loading.
+        """
+        if hasattr(self.embedder, "ensure_loaded"):
+            logger.debug("Loading embedding model")
+            if progress:
+                progress.on_start(1, "Loading embedding model")
+            self.embedder.ensure_loaded()  # type: ignore[attr-defined]
+            if progress:
+                progress.on_complete()
+
+    def _index_files_with_progress(
+        self,
+        files_to_index: list[Path],
+        repo_root: Path,
+        tree_sha: str,
+        sync_mode: str,
+        sync_type: str,
+        progress: ProgressCallback | None,
+    ) -> dict[str, int]:
+        """Index all files with progress reporting.
+
+        Args:
+            files_to_index: List of absolute file paths to index.
+            repo_root: Repository root path.
+            tree_sha: Current tree SHA.
+            sync_mode: Sync mode (for rev field).
+            sync_type: Human-readable sync type ("incremental" or "full").
+            progress: Optional progress callback.
+
+        Returns:
+            Dict with counts: files_indexed, chunks_created, chunks_updated, vectors_stored.
+        """
+        files_indexed = 0
+        chunks_created = 0
+        chunks_updated = 0
+        vectors_stored = 0
+
+        # Report progress start
+        if progress and files_to_index:
+            progress.on_start(len(files_to_index), f"Indexing files ({sync_type})")
+
+        for idx, file_path in enumerate(files_to_index, start=1):
+            # Report progress for current file
+            if progress:
+                rel_path = file_path.relative_to(repo_root)
+                progress.on_progress(idx, str(rel_path))
+
+            result = self._index_file(
+                file_path=file_path,
+                repo_root=repo_root,
+                tree_sha=tree_sha,
+                sync_mode=sync_mode,
+            )
+
+            files_indexed += 1
+            chunks_created += result["chunks_created"]
+            chunks_updated += result["chunks_updated"]
+            vectors_stored += result["vectors_stored"]
+
+        # Report completion
+        if progress and files_to_index:
+            progress.on_complete()
+
+        return {
+            "files_indexed": files_indexed,
+            "chunks_created": chunks_created,
+            "chunks_updated": chunks_updated,
+            "vectors_stored": vectors_stored,
+        }
+
+    def _update_metadata(self, tree_sha: str, sync_mode: str) -> None:
+        """Update metadata after successful indexing.
+
+        Args:
+            tree_sha: Current tree SHA.
+            sync_mode: Sync mode that was used.
+        """
+        self.meta_repo.set("last_tree_sha", tree_sha)
+        self.meta_repo.set("last_sync_mode", sync_mode)
+        self.meta_repo.set("model_fingerprint", self.embedder.fingerprint())
+
+    def _create_success_response(
+        self,
+        files_indexed: int,
+        chunks_created: int,
+        chunks_updated: int,
+        chunks_deleted: int,
+        vectors_stored: int,
+        tree_sha: str,
+        is_incremental: bool,
+    ) -> IndexResponse:
+        """Create a success response with indexing statistics.
+
+        Args:
+            files_indexed: Number of files processed.
+            chunks_created: Number of chunks created.
+            chunks_updated: Number of chunks updated.
+            chunks_deleted: Number of chunks deleted.
+            vectors_stored: Number of vectors stored.
+            tree_sha: Git tree SHA that was indexed.
+            is_incremental: Whether this was an incremental sync.
+
+        Returns:
+            IndexResponse with success=True and all statistics.
+        """
+        logger.info(
+            f"Indexing complete: {files_indexed} files, "
+            f"{chunks_created} chunks created, {chunks_updated} updated, "
+            f"{chunks_deleted} deleted, {vectors_stored} vectors stored"
+        )
+
+        return IndexResponse(
+            files_indexed=files_indexed,
+            chunks_created=chunks_created,
+            chunks_updated=chunks_updated,
+            chunks_deleted=chunks_deleted,
+            vectors_stored=vectors_stored,
+            tree_sha=tree_sha,
+            is_incremental=is_incremental,
+            success=True,
+            error=None,
+        )
+
     def execute(
         self, request: IndexRequest, progress: ProgressCallback | None = None
     ) -> IndexResponse:
@@ -207,17 +355,7 @@ class IndexingUseCase:
 
         try:
             # Check if embedding model has changed
-            stored_fingerprint = self.meta_repo.get("model_fingerprint")
-            current_fingerprint = self.embedder.fingerprint()
-
-            if stored_fingerprint and stored_fingerprint != current_fingerprint:
-                logger.warning(
-                    f"Embedding model changed: {stored_fingerprint} → {current_fingerprint}"
-                )
-                logger.warning(
-                    "Existing vectors may be incompatible with the new model. "
-                    "Run 'ember sync --force' to rebuild the index with the new model."
-                )
+            self._verify_model_compatibility()
 
             # Get current tree SHA based on sync mode
             tree_sha = self._get_tree_sha(request.repo_root, request.sync_mode)
@@ -244,69 +382,32 @@ class IndexingUseCase:
                 if chunks_deleted > 0:
                     logger.info(f"Deleted {chunks_deleted} chunk(s) from removed files")
 
-            # Eagerly load embedding model before indexing to avoid misleading
-            # progress on first file (model loading can take 2-3 seconds)
-            if files_to_index and hasattr(self.embedder, "ensure_loaded"):
-                logger.debug("Loading embedding model")
-                if progress:
-                    progress.on_start(1, "Loading embedding model")
-                self.embedder.ensure_loaded()  # type: ignore[attr-defined]
-                if progress:
-                    progress.on_complete()
+            # Eagerly load embedding model before indexing
+            if files_to_index:
+                self._ensure_model_loaded(progress)
 
-            # Index each file
-            files_indexed = 0
-            chunks_created = 0
-            chunks_updated = 0
-            vectors_stored = 0
-
-            # Report progress start
-            if progress and files_to_index:
-                progress.on_start(len(files_to_index), f"Indexing files ({sync_type})")
-
-            for idx, file_path in enumerate(files_to_index, start=1):
-                # Report progress for current file
-                if progress:
-                    rel_path = file_path.relative_to(request.repo_root)
-                    progress.on_progress(idx, str(rel_path))
-
-                result = self._index_file(
-                    file_path=file_path,
-                    repo_root=request.repo_root,
-                    tree_sha=tree_sha,
-                    sync_mode=request.sync_mode,
-                )
-
-                files_indexed += 1
-                chunks_created += result["chunks_created"]
-                chunks_updated += result["chunks_updated"]
-                vectors_stored += result["vectors_stored"]
-
-            # Report completion
-            if progress and files_to_index:
-                progress.on_complete()
-
-            # Update metadata with new tree SHA
-            self.meta_repo.set("last_tree_sha", tree_sha)
-            self.meta_repo.set("last_sync_mode", request.sync_mode)
-            self.meta_repo.set("model_fingerprint", self.embedder.fingerprint())
-
-            logger.info(
-                f"Indexing complete: {files_indexed} files, "
-                f"{chunks_created} chunks created, {chunks_updated} updated, "
-                f"{chunks_deleted} deleted, {vectors_stored} vectors stored"
+            # Index all files with progress reporting
+            stats = self._index_files_with_progress(
+                files_to_index=files_to_index,
+                repo_root=request.repo_root,
+                tree_sha=tree_sha,
+                sync_mode=request.sync_mode,
+                sync_type=sync_type,
+                progress=progress,
             )
 
-            return IndexResponse(
-                files_indexed=files_indexed,
-                chunks_created=chunks_created,
-                chunks_updated=chunks_updated,
+            # Update metadata with new tree SHA
+            self._update_metadata(tree_sha, request.sync_mode)
+
+            # Return success response
+            return self._create_success_response(
+                files_indexed=stats["files_indexed"],
+                chunks_created=stats["chunks_created"],
+                chunks_updated=stats["chunks_updated"],
                 chunks_deleted=chunks_deleted,
-                vectors_stored=vectors_stored,
+                vectors_stored=stats["vectors_stored"],
                 tree_sha=tree_sha,
                 is_incremental=is_incremental,
-                success=True,
-                error=None,
             )
 
         except (KeyboardInterrupt, SystemExit):
