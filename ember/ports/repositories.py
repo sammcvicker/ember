@@ -83,6 +83,36 @@ class ChunkRepository(Protocol):
         """
         ...
 
+    def delete_by_path(self, path: Path, tree_sha: str) -> int:
+        """Delete all chunks for a given file path and tree SHA.
+
+        This is more efficient than calling delete() for each chunk.
+        Used for handling deleted files during incremental sync.
+
+        Args:
+            path: File path relative to repository root.
+            tree_sha: Tree SHA to delete chunks for.
+
+        Returns:
+            Number of chunks deleted.
+        """
+        ...
+
+    def delete_all_for_path(self, path: Path) -> int:
+        """Delete all chunks for a given file path across all tree SHAs.
+
+        This is used when re-indexing a file to remove all old chunks
+        before adding new ones, preventing duplicate accumulation across
+        multiple syncs.
+
+        Args:
+            path: File path relative to repository root.
+
+        Returns:
+            Number of chunks deleted.
+        """
+        ...
+
 
 class MetaRepository(Protocol):
     """Repository for storing metadata (state, config, etc.)."""

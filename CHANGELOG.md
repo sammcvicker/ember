@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Added missing methods to ChunkRepository port interface** (#82)
+  - Added `delete_by_path()` and `delete_all_for_path()` to ChunkRepository protocol
+  - Eliminates architectural violation where core layer called undocumented adapter methods
+  - Port interface now matches adapter implementation completely
+  - Improves maintainability and ensures future adapters implement required methods
+  - No user-facing changes - internal architecture cleanup
+
 ### Fixed
 - **find_ember_root() now respects git repository boundaries** (#100)
   - Prevents confusion between global daemon directory (~/.ember) and repository directories
