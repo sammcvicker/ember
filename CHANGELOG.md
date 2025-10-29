@@ -17,6 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - All 210 tests passing - no functional changes, pure performance improvement
 
 ### Changed
+- **Refactored IndexingUseCase.execute() to reduce complexity** (#86)
+  - Reduced cyclomatic complexity from D-level (23) to manageable levels by extracting 5 helper methods
+  - Extracted `_verify_model_compatibility()` for model fingerprint verification
+  - Extracted `_ensure_model_loaded()` for eager model loading with progress reporting
+  - Extracted `_index_files_with_progress()` for file indexing loop
+  - Extracted `_update_metadata()` for metadata updates after successful indexing
+  - Extracted `_create_success_response()` for success response creation with logging
+  - Improved readability and maintainability of core indexing logic
+  - All 210 tests passing - pure refactor, no behavior changes
 - **Added missing methods to ChunkRepository port interface** (#82)
   - Added `delete_by_path()` and `delete_all_for_path()` to ChunkRepository protocol
   - Eliminates architectural violation where core layer called undocumented adapter methods
