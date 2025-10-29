@@ -4,10 +4,14 @@ Orchestrates full-text search (BM25) and vector search (semantic similarity)
 with Reciprocal Rank Fusion for optimal retrieval quality.
 """
 
+import logging
+
 from ember.domain.entities import Chunk, Query, SearchResult
 from ember.ports.embedders import Embedder
 from ember.ports.repositories import ChunkRepository
 from ember.ports.search import TextSearch, VectorSearch
+
+logger = logging.getLogger(__name__)
 
 
 class SearchUseCase:
@@ -58,11 +62,16 @@ class SearchUseCase:
 
         # 2. Get BM25 results from full-text search
         # Use a larger retrieval pool for fusion (e.g., 100)
+        # Pass path_filter to filter during SQL query (not after)
         retrieval_pool = max(query.topk * 5, 100)
-        fts_results = self.text_search.query(query.text, topk=retrieval_pool)
+        fts_results = self.text_search.query(
+            query.text, topk=retrieval_pool, path_filter=query.path_filter
+        )
 
         # 3. Get vector search results
-        vector_results = self.vector_search.query(query_embedding, topk=retrieval_pool)
+        vector_results = self.vector_search.query(
+            query_embedding, topk=retrieval_pool, path_filter=query.path_filter
+        )
 
         # 4. Fuse results using Reciprocal Rank Fusion
         fused_scores = self._reciprocal_rank_fusion(
@@ -145,10 +154,25 @@ class SearchUseCase:
             List of Chunk objects in the same order as chunk_ids.
         """
         chunks = []
+        missing_ids = []
+
         for chunk_id in chunk_ids:
             chunk = self.chunk_repo.get(chunk_id)
             if chunk:
                 chunks.append(chunk)
+            else:
+                missing_ids.append(chunk_id)
+
+        # Log warning if chunks are missing
+        if missing_ids:
+            sample_ids = missing_ids[:5]  # Show first 5 for brevity
+            logger.warning(
+                f"Missing {len(missing_ids)} chunks during retrieval. "
+                f"This may indicate index corruption or stale data. "
+                f"Missing IDs: {sample_ids}"
+                + ("..." if len(missing_ids) > 5 else "")
+            )
+
         return chunks
 
     def _apply_filters(
@@ -157,22 +181,22 @@ class SearchUseCase:
         path_filter: str | None,
         lang_filter: str | None,
     ) -> list[Chunk]:
-        """Apply path and language filters to chunks.
+        """Apply language filter to chunks.
+
+        Note: Path filtering now happens during SQL queries in the search adapters,
+        not here. This method only handles lang_filter for backwards compatibility.
 
         Args:
             chunks: List of chunks to filter.
-            path_filter: Optional glob pattern for file paths.
+            path_filter: Unused (kept for backwards compatibility).
             lang_filter: Optional language code filter.
 
         Returns:
             Filtered list of chunks.
         """
-        import fnmatch
-
         filtered = chunks
 
-        if path_filter:
-            filtered = [c for c in filtered if fnmatch.fnmatch(str(c.path), path_filter)]
+        # Path filtering now happens during SQL query, not here
 
         if lang_filter:
             filtered = [c for c in filtered if c.lang == lang_filter]

@@ -8,10 +8,13 @@ import sys
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import click
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
+
+if TYPE_CHECKING:
+    from ember.ports.daemon import DaemonManager
 
 
 class RichProgressCallback:
@@ -32,18 +35,17 @@ class RichProgressCallback:
     def on_start(self, total: int, description: str) -> None:
         """Create progress bar when operation starts."""
         # Use transient=True to auto-hide when complete
-        self.task_id = self.progress.add_task(description, total=total)
+        # Initialize with empty current_file field
+        self.task_id = self.progress.add_task(description, total=total, current_file="")
 
     def on_progress(self, current: int, item_description: str | None = None) -> None:
         """Update progress bar with current item."""
         if self.task_id is not None:
-            # Update the task description to show current file
-            if item_description:
-                self.progress.update(
-                    self.task_id, completed=current, description=f"[cyan]{item_description}"
-                )
-            else:
-                self.progress.update(self.task_id, completed=current)
+            # Update progress and current file using task fields
+            # This keeps the progress bar position stable
+            self.progress.update(
+                self.task_id, completed=current, current_file=item_description or ""
+            )
 
     def on_complete(self) -> None:
         """Mark progress as complete and hide it."""
@@ -79,6 +81,7 @@ def progress_context(
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
             TaskProgressColumn(),
+            TextColumn("[cyan]{task.fields[current_file]}"),
             transient=True,
         ) as progress:
             yield RichProgressCallback(progress)
@@ -191,74 +194,44 @@ def format_result_header(result: dict[str, Any], index: int, show_symbol: bool =
     click.echo(f"{rank} {line_num}:{symbol_display}")
 
 
-def check_and_auto_sync(
-    repo_root: Path,
-    db_path: Path,
-    config,
-    quiet_mode: bool = False,
-    verbose: bool = False,
-) -> None:
-    """Check if index is stale and auto-sync if needed.
+def ensure_daemon_with_progress(
+    daemon_manager: "DaemonManager", quiet: bool = False
+) -> bool:
+    """Ensure daemon is running, showing progress during startup.
 
     Args:
-        repo_root: Repository root path.
-        db_path: Path to SQLite database.
-        config: Configuration object.
-        quiet_mode: If True, suppress progress and messages.
-        verbose: If True, show warnings on errors.
+        daemon_manager: Daemon manager instance (injected dependency)
+        quiet: Suppress progress output
 
-    Note:
-        If staleness check fails, continues silently to allow search to proceed.
+    Returns:
+        True if daemon is running, False if failed to start
     """
-    try:
-        # Import dependencies lazily
-        from ember.adapters.git_cmd.git_adapter import GitAdapter
-        from ember.adapters.sqlite.meta_repository import SQLiteMetaRepository
-        from ember.core.indexing.index_usecase import IndexRequest
+    # If already running, nothing to do
+    if daemon_manager.is_running():
+        return True
 
-        # Import the usecase creation helper (avoid circular import)
-        from ember.entrypoints.cli import _create_indexing_usecase
+    if quiet:
+        # No progress, just start
+        try:
+            return daemon_manager.ensure_running()
+        except Exception:
+            return False
 
-        vcs = GitAdapter(repo_root)
-        meta_repo = SQLiteMetaRepository(db_path)
+    # Show progress during startup
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        transient=True,
+    ) as progress:
+        task = progress.add_task("Starting embedding daemon...", total=None)
 
-        # Get current worktree tree SHA
-        current_tree_sha = vcs.get_worktree_tree_sha()
+        try:
+            # Start daemon
+            result = daemon_manager.start(foreground=False)
 
-        # Get last indexed tree SHA
-        last_tree_sha = meta_repo.get("last_tree_sha")
-
-        # If tree SHAs differ, index is stale - auto-sync
-        if last_tree_sha != current_tree_sha:
-            # Create indexing use case with all dependencies
-            indexing_usecase = _create_indexing_usecase(repo_root, db_path, config)
-
-            # Execute incremental sync
-            request = IndexRequest(
-                repo_root=repo_root,
-                sync_mode="worktree",
-                path_filters=[],
-                force_reindex=False,
-            )
-
-            # Use progress bars unless in quiet mode
-            with progress_context(quiet_mode=quiet_mode) as progress:
-                if progress:
-                    response = indexing_usecase.execute(request, progress=progress)
-                    # Show completion message
-                    if response.success:
-                        if response.files_indexed > 0:
-                            click.echo(
-                                f"✓ Synced {response.files_indexed} file(s)",
-                                err=True,
-                            )
-                        else:
-                            click.echo("✓ Index up to date", err=True)
-                else:
-                    # Silent mode
-                    indexing_usecase.execute(request)
-
-    except Exception as e:
-        # If staleness check fails, continue with search anyway
-        if verbose:
-            click.echo(f"Warning: Could not check index staleness: {e}", err=True)
+            if result:
+                progress.update(task, description="✓ Daemon started")
+            return result
+        except Exception as e:
+            progress.update(task, description=f"✗ Failed to start daemon: {e}")
+            return False

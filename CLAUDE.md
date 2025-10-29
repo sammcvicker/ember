@@ -6,31 +6,54 @@
 
 ## 📍 CURRENT STATE
 
-**Status:** Post-v0.1.0 release, working towards v0.2.0
+**Status:** Post-v0.2.0 release, working towards v1.0.0
 **Branch:** `develop` (for ongoing work)
-**Last Release:** v0.1.0 (2025-10-15)
-**Active Milestone:** 0.2.0
+**Last Release:** v0.2.0 (2025-10-20)
+**Active Milestone:** 1.0.0
+**Theme:** "Be like water" - Remove all friction, make ember feel invisible and natural
 
 **What's Working:**
 - Core indexing and search functionality ✅
-- 103 automated tests passing ✅
+- Auto-sync on search (zero-friction workflow) ✅
+- Functional config system (.ember/config.toml) ✅
+- sqlite-vec for fast vector search (100x speedup) ✅
+- Batch embedding optimization (2-6x faster indexing) ✅
+- Fast test suite (<10s) ✅
+- Clean, refactored CLI (29% complexity reduction) ✅
+- 125 automated tests passing ✅
 - Clean architecture with ports/adapters ✅
 
-**Current Focus:** Implementing v0.2.0 features (see `docs/SCOPE_v0.2.0.md`)
+**Current Focus:** Removing friction for 1.0.0 - make ember instant, effortless, and complete
 
 ---
 
-## 🎯 NEXT MILESTONE: v0.2.0
+## 🎯 NEXT MILESTONE: v1.0.0 "Be Like Water"
 
-See [GitHub milestone](https://github.com/sammcvicker/ember/milestone/1) for all issues.
+See [GitHub milestone](https://github.com/sammcvicker/ember/milestone/4) for all issues.
 
-**Scope:** See `docs/SCOPE_v0.2.0.md` for full roadmap
+**Philosophy:** Remove every snag. Make ember feel instant, effortless, and natural - like water flowing through a streambed.
 
-**Priority Issues:**
-1. **#25** - Implement functional config system (enhancement)
-2. **#26** - Auto-sync on search for zero-friction workflow (enhancement)
-3. **#14** - Batch embedding optimization (2-6x speedup)
-4. **#20** - Fast test suite (<10s target)
+**Critical Path (High Priority):**
+1. **#46** - Reduce model initialization time (2+ seconds → instant) ⚡ `[performance]`
+   - *Biggest friction point - investigate daemon architecture*
+2. **#43** - Support subdirectories and path-scoped search 📁 `[enhancement]`
+   - *Work from anywhere, like git*
+3. **#47** - Index untracked/unstaged files 📝 `[enhancement]`
+   - *Search what you see, not what's committed*
+
+**Polish & Visibility (Medium Priority):**
+4. **#44** - Fix progress bar jumping 🎨 `[dx, performance]`
+   - *Quick visual win - stable progress display*
+5. **#45** - Add `ember status` command 📊 `[dx, enhancement]`
+   - *Observability: show index state and config*
+
+**Total:** 5 issues, ~25-38 hours effort
+**Outcome:** A tool that feels invisible - fast, complete, and friction-free
+
+**Completed in v0.2.0:**
+- All 11 milestone issues closed ✅
+- All 7 tech debt issues from audit closed ✅
+- Zero open issues at release (clean slate!) ✅
 
 ---
 
@@ -45,7 +68,7 @@ See [GitHub milestone](https://github.com/sammcvicker/ember/milestone/1) for all
 cat CLAUDE.md | head -30
 
 # 2. See what needs doing
-gh issue list --state open --milestone "0.2.0"
+gh issue list --state open --milestone "1.0.0"
 
 # 3. Check branch status
 git status
@@ -91,8 +114,8 @@ ember/
 
 - SQLite at `.ember/index.db`
 - FTS5 for text search
-- Simple vector search (BLOB-based)
-- State file at `.ember/state.json`
+- sqlite-vec for fast vector similarity search
+- Metadata stored in same database
 
 ---
 
@@ -123,7 +146,7 @@ git checkout -b feat/...   # Create feature branch
 git log --oneline -10      # Recent commits
 
 # GitHub CLI
-gh issue list --milestone "0.2.0"  # Current milestone issues
+gh issue list --milestone "1.0.0"  # Current milestone issues
 gh pr create --base develop        # PR to develop (NOT main!)
 gh pr merge --squash               # Merge and squash commits
 
@@ -173,5 +196,5 @@ See `docs/decisions/` for full ADRs:
 
 ---
 
-**Last Updated:** 2025-10-19 (v0.2.0 scope finalized, ready for implementation)
+**Last Updated:** 2025-10-21 (v1.0.0 milestone planned - "be like water")
 **Format Version:** 2.0 (Simplified)

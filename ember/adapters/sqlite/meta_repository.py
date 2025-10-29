@@ -14,14 +14,25 @@ class SQLiteMetaRepository:
             db_path: Path to SQLite database file.
         """
         self.db_path = db_path
+        self._conn: sqlite3.Connection | None = None
 
     def _get_connection(self) -> sqlite3.Connection:
         """Get a database connection.
 
+        Reuses an existing connection if available, otherwise creates a new one.
+
         Returns:
             SQLite connection object.
         """
-        return sqlite3.connect(self.db_path)
+        if self._conn is None:
+            self._conn = sqlite3.connect(self.db_path)
+        return self._conn
+
+    def close(self) -> None:
+        """Close the database connection if open."""
+        if self._conn is not None:
+            self._conn.close()
+            self._conn = None
 
     def get(self, key: str) -> str | None:
         """Get a metadata value by key.
@@ -33,18 +44,15 @@ class SQLiteMetaRepository:
             The value if found, None otherwise.
         """
         conn = self._get_connection()
-        try:
-            cursor = conn.cursor()
+        cursor = conn.cursor()
 
-            cursor.execute(
-                "SELECT value FROM meta WHERE key = ?",
-                (key,),
-            )
+        cursor.execute(
+            "SELECT value FROM meta WHERE key = ?",
+            (key,),
+        )
 
-            row = cursor.fetchone()
-            return row[0] if row else None
-        finally:
-            conn.close()
+        row = cursor.fetchone()
+        return row[0] if row else None
 
     def set(self, key: str, value: str) -> None:
         """Set a metadata key-value pair.
@@ -56,22 +64,19 @@ class SQLiteMetaRepository:
             value: The value to store.
         """
         conn = self._get_connection()
-        try:
-            cursor = conn.cursor()
+        cursor = conn.cursor()
 
-            # UPSERT: insert or update if key exists
-            cursor.execute(
-                """
-                INSERT INTO meta (key, value)
-                VALUES (?, ?)
-                ON CONFLICT(key) DO UPDATE SET
-                    value = excluded.value
-                """,
-                (key, value),
-            )
-            conn.commit()
-        finally:
-            conn.close()
+        # UPSERT: insert or update if key exists
+        cursor.execute(
+            """
+            INSERT INTO meta (key, value)
+            VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET
+                value = excluded.value
+            """,
+            (key, value),
+        )
+        conn.commit()
 
     def delete(self, key: str) -> None:
         """Delete a metadata key.
@@ -80,13 +85,10 @@ class SQLiteMetaRepository:
             key: The metadata key to delete.
         """
         conn = self._get_connection()
-        try:
-            cursor = conn.cursor()
+        cursor = conn.cursor()
 
-            cursor.execute(
-                "DELETE FROM meta WHERE key = ?",
-                (key,),
-            )
-            conn.commit()
-        finally:
-            conn.close()
+        cursor.execute(
+            "DELETE FROM meta WHERE key = ?",
+            (key,),
+        )
+        conn.commit()

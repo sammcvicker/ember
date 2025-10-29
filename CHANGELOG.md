@@ -7,6 +7,264 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2025-10-29
+
+### Changed
+- **Refactored sync CLI command to reduce complexity** (#91)
+  - Reduced cyclomatic complexity from C-level (20) to manageable levels by extracting 3 helper functions
+  - Extracted `_parse_sync_mode()` for CLI option validation and sync mode determination
+  - Extracted `_quick_check_unchanged()` for optimization logic to skip unchanged indexes
+  - Extracted `_format_sync_results()` for result formatting and display
+  - Improved readability and maintainability of sync command
+  - All 257 tests passing - pure refactor, no behavior changes
+
+### Performance
+- **Implemented SQLite connection pooling to reduce overhead** (#87)
+  - All SQLite repository adapters now reuse database connections instead of creating new ones for each operation
+  - Reduces connection creation overhead from 1-5ms per operation to effectively zero
+  - Batch indexing of 1000+ chunks is ~90%+ faster (3-5s overhead reduced to ~0.1s)
+  - Memory overhead reduced by eliminating redundant connection setup/teardown
+  - Added `close()` method to all SQLite repositories for explicit connection cleanup
+  - All 210 tests passing - no functional changes, pure performance improvement
+
+### Changed
+- **Refactored IndexingUseCase.execute() to reduce complexity** (#86)
+  - Reduced cyclomatic complexity from D-level (23) to manageable levels by extracting 5 helper methods
+  - Extracted `_verify_model_compatibility()` for model fingerprint verification
+  - Extracted `_ensure_model_loaded()` for eager model loading with progress reporting
+  - Extracted `_index_files_with_progress()` for file indexing loop
+  - Extracted `_update_metadata()` for metadata updates after successful indexing
+  - Extracted `_create_success_response()` for success response creation with logging
+  - Improved readability and maintainability of core indexing logic
+  - All 210 tests passing - pure refactor, no behavior changes
+- **Added missing methods to ChunkRepository port interface** (#82)
+  - Added `delete_by_path()` and `delete_all_for_path()` to ChunkRepository protocol
+  - Eliminates architectural violation where core layer called undocumented adapter methods
+  - Port interface now matches adapter implementation completely
+  - Improves maintainability and ensures future adapters implement required methods
+  - No user-facing changes - internal architecture cleanup
+
+### Fixed
+- **find_ember_root() now respects git repository boundaries** (#100)
+  - Prevents confusion between global daemon directory (~/.ember) and repository directories
+  - Search now stops at git repository root, preventing false "Not a git repository" errors
+  - Fixes issue where daemon running (with ~/.ember) would cause commands to fail in uninitialized repos
+  - Added git boundary check to prevent crossing into parent directories beyond git root
+  - Added comprehensive tests for git boundary checking and nested repository scenarios
+  - Ensures ember only searches for .ember within the current git repository
+- **Daemon protocol now handles large messages correctly and warns about data loss** (#83)
+  - Increased buffer size from 1024 to 4096 bytes for better performance
+  - Added warning when multiple messages received in single recv() call (potential data loss)
+  - Documented one-message-per-connection protocol contract in function docstring
+  - Added comprehensive tests for large messages (>4KB) and multiple messages
+  - Prevents silent failures and makes debugging easier
+- **Daemon startup race condition no longer creates stale PID files** (#85)
+  - Fixed race condition where PID file was written before verifying daemon process survived
+  - Now waits 0.1s after spawn and checks if process died instantly before writing PID file
+  - Captures and reports stderr output when daemon fails to start (e.g., model loading errors)
+  - Cleans up PID file if daemon exits during ready-wait loop
+  - Prevents false success reports when daemon actually crashed
+  - Added 2 new integration tests for daemon startup failure scenarios
+- **Search now logs warnings when chunks can't be retrieved** (#88)
+  - Missing chunks are now logged with count and sample IDs
+  - Helps diagnose index corruption, stale data, or orphaned index entries
+  - Warning includes first 5 missing chunk IDs for debugging
+  - Previously silently dropped missing chunks, making problems invisible
+  - Added test for missing chunk scenario
+- **Daemon stop now properly handles SIGTERM failures and verifies SIGKILL** (#90)
+  - SIGTERM failure now falls through to SIGKILL instead of giving up immediately
+  - SIGKILL is now verified to actually kill the process before returning success
+  - Cleanup of PID and socket files only happens after verified process death
+  - Fixes issue where orphaned daemon processes could accumulate
+  - Prevents stale PID files when process survives SIGKILL
+  - Added 4 new tests for SIGTERM/SIGKILL edge cases and race conditions
+
+### Added
+- **CLI integration tests for all user-facing commands** (#62)
+  - Added comprehensive test suite using `click.testing.CliRunner`
+  - Tests cover all CLI commands: `init`, `sync`, `find`, `cat`, `open`, `status`
+  - Verified exit codes, output formatting, error handling, and flag parsing
+  - Tests ensure user-facing features work correctly end-to-end
+  - Improved CLI test coverage from 0% to 72% (338 of 469 lines covered)
+  - 38 new integration tests ensuring CLI reliability for v1.0.0
+- **Model fingerprint change detection** (#65)
+  - Detects when embedding model changes between indexing operations
+  - Warns users that existing vectors may be incompatible with new model
+  - Suggests running `ember sync --force` to rebuild index with new model
+  - Prevents silent search quality degradation after model upgrades
+  - Fingerprint comparison happens at start of each indexing operation
+
+### Changed
+- **CLI utilities no longer import from adapters layer** (#89)
+  - Created `DaemonManager` protocol in `ports/daemon.py` for dependency inversion
+  - Refactored `ensure_daemon_with_progress()` to accept injected `DaemonManager` instead of importing adapters
+  - CLI commands (entrypoints layer) now inject `DaemonLifecycle` adapter implementation
+  - Eliminates core → adapters dependency violation in Clean Architecture
+  - Improves testability and flexibility (can swap daemon implementations without changing core code)
+  - All 207 tests passing - no user-facing changes
+- **Eliminated O(N) table scans with chunk_id column** (#59)
+  - Added `chunk_id` column to chunks table for O(1) lookups
+  - Created unique index on `chunk_id` for fast queries
+  - Updated VectorRepository and ChunkRepository to use indexed column
+  - Automatic migration from schema v1 to v2 on first run
+  - Eliminates O(N²) complexity during indexing operations
+  - Performance improvement: >10x faster on large repositories (10k+ chunks)
+- **Extracted error response helper in IndexingUseCase** (#61)
+  - Created `_create_error_response()` helper method for standardized error responses
+  - Eliminated 60+ lines of duplicated IndexResponse creation code
+  - All 6 exception handlers now use common helper
+  - Improved maintainability - error response structure defined once
+  - No user-facing changes - internal refactoring only
+- **Extracted common CLI error handling to reduce boilerplate** (#67)
+  - Created `handle_cli_errors()` decorator for consistent error handling across all commands
+  - Eliminated 40+ lines of duplicated exception handling code
+  - All commands (sync, find, cat, open) now use centralized error handler
+  - Consistent error messages and verbose mode traceback support
+  - No user-facing changes - internal refactoring only
+- **Simplified editor detection logic in 'ember open' command** (#68)
+  - Replaced 18-line if/elif chain with data-driven pattern lookup
+  - Editor patterns defined once in `EDITOR_PATTERNS` dictionary
+  - New editors can be added by updating the dictionary (no code changes)
+  - Reduced code duplication (vim/emacs/nano now share pattern, subl/atom share pattern)
+  - Improved maintainability and extensibility
+  - No user-facing changes - internal refactoring only
+
+### Fixed
+- **Added vector dimension validation to prevent silent corruption** (#92)
+  - VectorRepository now validates embedding dimensions before storing
+  - Raises clear `ValueError` when dimension mismatch detected (e.g., expected 768, got 512)
+  - Error messages include chunk ID for easy debugging
+  - Optional validation via `expected_dim` parameter (backward compatible)
+  - CLI automatically passes embedder dimension (768 for Jina v2 Code)
+  - Prevents silent data corruption from malformed embeddings
+- **Fixed vector encoding precision mismatch** (#84)
+  - Standardized vector encoding to use float32 in both VectorRepository and SqliteVecAdapter
+  - Eliminates precision loss during vector sync between storage layers
+  - Reduces storage size by 50% (4 bytes vs 8 bytes per dimension)
+  - Improves search quality by preventing gradual degradation from double→float conversion
+  - Added comprehensive unit tests for vector round-trip precision
+- **Fixed socket resource leaks in daemon client** (#64)
+  - Added proper socket cleanup using finally blocks in `is_daemon_running()`
+  - Socket now closed in all code paths, including exceptions
+  - Fixed socket leak in `_connect()` method when connection fails
+  - Prevents file descriptor leaks during daemon health checks and connection errors
+- **Fixed path filtering to support glob patterns** (#60)
+  - Replaced naive substring matching with proper glob pattern support
+  - Now uses pathlib's `match()` method for flexible pattern matching
+  - Supports wildcards: `*` (any files), `**` (any directories), `?` (single char)
+  - Pattern "src/**/*.py" now correctly matches only Python files in src/ directory
+  - Fixes false positives (e.g., "src" no longer matches "resources/src/")
+  - Improves subdirectory support and path-scoped operations
+- **Removed duplicate message in 'ember daemon status' output** (#73)
+  - Daemon status now shows running state once instead of twice
+  - Message field only displayed for error states (unresponsive, stale, stopped)
+  - Cleaner, more concise status output
+- **Improved error handling in 'ember sync' command** (#66)
+  - Fixed duplicate "No changes detected" messages - now shows "(quick check)" vs "(full scan)" to indicate which code path executed
+  - Quick check failures now always visible (not just in verbose mode) with clear warning message
+  - Added validation for mutually exclusive sync options (--rev, --staged, --worktree)
+  - Users now get immediate error when conflicting options are specified instead of silent last-one-wins behavior
+  - Better observability: users can tell if quick check ran or full indexing occurred
+- **Unreachable error handler in 'ember open' command** (#63)
+  - Fixed unreachable `FileNotFoundError` exception handler
+  - Now checks if editor exists using `shutil.which()` before running subprocess
+  - Users get helpful error message when editor is not found instead of generic subprocess error
+  - Removed dead code (unreachable exception handler)
+- **Architecture violation: cli_utils imports from adapters** (#58)
+  - Moved `check_and_auto_sync()` from `core/cli_utils.py` to `entrypoints/cli.py`
+  - Eliminates circular dependency between `entrypoints/cli` and `core/cli_utils`
+  - Restores clean architecture: `core/` now only depends on `ports/`, never `adapters/`
+  - No user-facing changes - internal refactoring only
+- **Daemon startup timeout increased and error reporting improved** (#50)
+  - Increased daemon startup timeout from 10s to 20s to handle model loading
+  - Model loading typically takes 3-5 seconds, but can be longer on first download
+  - Now distinguishes between different failure modes with actionable error messages:
+    - Process not responding after timeout (suggests checking logs)
+    - Process crashed during startup (suggests checking logs)
+  - Logs actual startup time when daemon becomes ready
+  - Eliminates false "failed to start" warnings when daemon is successfully loading
+- **Progress bars now clear properly during auto-sync** (#48)
+  - Fixed progress bars not disappearing when `ember find` triggers auto-sync
+  - Progress bars now fully clear before showing completion messages
+  - Ensures clean, professional output without leftover progress bar artifacts
+- **Path-scoped search now filters during SQL query instead of after retrieval** (#52)
+  - Previously, path filtering happened after retrieving results, which could return fewer results than requested
+  - Example: `ember find "query" tests/ -k 5` might only return 2 results if only 2 of the top-5 global results were in `tests/`
+  - Now filters during SQL queries (both FTS5 and sqlite-vec), guaranteeing full topk results from filtered paths
+  - Significantly improves performance by filtering earlier in the pipeline
+  - Adds regression test to ensure path filtering returns full topk results
+- **Progress bar stays in fixed position during indexing** (#44)
+  - Progress bar no longer jumps horizontally as filenames change
+  - Filename now appears after the progress percentage in a separate column
+  - Makes progress display smooth and easier to read
+  - Format: `⠋ Indexing files ━━━━━━━━━━━━━━━━━━━━ 50% src/adapters/file.py`
+
+### Added
+- **Subdirectory support** - Run ember from anywhere in your repository (#43)
+  - All commands now work from any subdirectory, like git
+  - `ember init` automatically finds git root and initializes there
+  - `ember sync`, `ember find`, `ember cat`, `ember open` all discover `.ember/` by walking up directories
+  - Clear error messages when not in an ember repository: "Not in an ember repository (or any parent directory)"
+  - Path-scoped search with positional path argument:
+    - `ember find "query"` - Search entire repo
+    - `ember find "query" .` - Search current directory subtree
+    - `ember find "query" src/` - Search specific path
+  - Paths are relative to current working directory for natural workflow
+  - Makes ember feel more natural and ergonomic for day-to-day use
+- **Daemon-based model server for instant searches** (#46)
+  - Keeps embedding model loaded in memory for near-instant searches
+  - **18.6x faster** than direct mode: 43ms average vs 806ms
+  - First search after daemon starts: ~1s (one-time model loading cost)
+  - Subsequent searches: ~20ms (model already loaded)
+  - Auto-starts transparently on first `ember find` or `ember sync` command
+  - Auto-shuts down after 15 minutes of inactivity (configurable)
+  - Manual daemon management: `ember daemon start|stop|status|restart`
+  - Graceful fallback to direct mode if daemon fails
+- **Index all files in working directory including untracked files** (#47)
+  - Ember now indexes untracked and unstaged files, not just git-tracked files
+  - Search what you see in your editor, regardless of git status
+  - Creating a new file? It's immediately searchable after auto-sync
+  - Respects .gitignore patterns (won't index node_modules/, .venv/, etc.)
+  - Makes ember feel natural - no mental overhead about git staging
+- **`ember status` command for index visibility** (#45)
+  - See index state at a glance: `ember status`
+  - Shows number of indexed files and chunks
+  - Indicates whether index is up to date or needs sync
+  - Displays current configuration (topk, chunk size, model)
+  - Works from any subdirectory (like all ember commands)
+  - Example output:
+    ```
+    ✓ Ember initialized at /Users/sam/project
+
+    Index Status:
+      Indexed files: 247
+      Total chunks: 1,834
+      Status: ✓ Up to date
+
+    Configuration:
+      Search results (topk): 5
+      Chunk size: 512 tokens
+      Model: jina-embeddings-v2-base-code
+    ```
+  - Configuration in `.ember/config.toml`:
+    ```toml
+    [model]
+    mode = "daemon"  # or "direct" to disable daemon
+    daemon_timeout = 900  # seconds (default: 15 min)
+    ```
+  - Eliminates the 2+ second model initialization delay on every command
+  - Makes ember feel instant and effortless ("be like water")
+- **Lazy daemon startup** - daemon only starts when embedding is needed
+  - `ember sync` with no changes: 0.173s (was 2+ seconds)
+  - `ember sync` with changes: 2.785s (daemon starts when needed)
+  - Quick SHA check before creating indexing pipeline
+  - Daemon auto-starts on first embedding request
+- **Progress feedback during daemon startup**
+  - Shows "Starting embedding daemon..." spinner during 3-5s startup
+  - Transient progress that disappears when complete
+  - Applied to `ember sync`, `ember find`, and `ember daemon start`
+  - Makes startup feel responsive instead of hung
+
 ## [0.2.0] - 2025-10-20
 
 ### Changed

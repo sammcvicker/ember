@@ -94,6 +94,21 @@ class RedactionConfig:
 
 
 @dataclass(frozen=True)
+class ModelConfig:
+    """Configuration for embedding model and daemon.
+
+    Attributes:
+        mode: Model loading mode - "daemon" (default) or "direct"
+        daemon_timeout: Idle timeout for daemon in seconds (default: 900 = 15 min)
+        daemon_startup_timeout: Max seconds to wait for daemon startup (default: 5)
+    """
+
+    mode: Literal["daemon", "direct"] = "daemon"
+    daemon_timeout: int = 900  # 15 minutes
+    daemon_startup_timeout: int = 5
+
+
+@dataclass(frozen=True)
 class EmberConfig:
     """Complete ember configuration.
 
@@ -104,11 +119,13 @@ class EmberConfig:
         index: Indexing configuration
         search: Search configuration
         redaction: Redaction configuration
+        model: Model and daemon configuration
     """
 
     index: IndexConfig = field(default_factory=IndexConfig)
     search: SearchConfig = field(default_factory=SearchConfig)
     redaction: RedactionConfig = field(default_factory=RedactionConfig)
+    model: ModelConfig = field(default_factory=ModelConfig)
 
     @staticmethod
     def default() -> "EmberConfig":
@@ -117,4 +134,5 @@ class EmberConfig:
             index=IndexConfig(),
             search=SearchConfig(),
             redaction=RedactionConfig(),
+            model=ModelConfig(),
         )

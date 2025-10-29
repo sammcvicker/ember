@@ -5,6 +5,7 @@ RRF fusion, filtering, and result ranking.
 """
 
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -233,10 +234,12 @@ def test_search_topk_limit(search_usecase: SearchUseCase) -> None:
 @pytest.mark.slow
 def test_search_empty_query(search_usecase: SearchUseCase) -> None:
     """Test behavior with empty query."""
+    import sqlite3
+
     query = Query(text="", topk=5)
     # Empty query causes FTS5 syntax error (expected behavior)
     # This is a known limitation of FTS5
-    with pytest.raises(Exception):  # Could be OperationalError or other
+    with pytest.raises((sqlite3.OperationalError, Exception)):
         search_usecase.search(query)
 
 
@@ -255,7 +258,7 @@ def test_search_no_matches(search_usecase: SearchUseCase) -> None:
 def test_rrf_fusion_basic(db_path: Path) -> None:
     """Test RRF fusion logic with known inputs."""
     chunk_repo = SQLiteChunkRepository(db_path)
-    vector_repo = SQLiteVectorRepository(db_path)
+    SQLiteVectorRepository(db_path)
     text_search = SQLiteFTS(db_path)
     embedder = JinaCodeEmbedder()
     vector_search = SqliteVecAdapter(db_path)
@@ -292,7 +295,7 @@ def test_rrf_fusion_basic(db_path: Path) -> None:
 def test_rrf_fusion_single_ranker(db_path: Path) -> None:
     """Test RRF with single ranker (degenerates to that ranker)."""
     chunk_repo = SQLiteChunkRepository(db_path)
-    vector_repo = SQLiteVectorRepository(db_path)
+    SQLiteVectorRepository(db_path)
     text_search = SQLiteFTS(db_path)
     embedder = JinaCodeEmbedder()
     vector_search = SqliteVecAdapter(db_path)
@@ -415,3 +418,182 @@ def test_search_with_very_long_query(search_usecase: SearchUseCase) -> None:
     # Should not crash, should return results or empty list
     results = search_usecase.search(query)
     assert isinstance(results, list)
+
+
+@pytest.mark.slow
+def test_path_filter_returns_full_topk(db_path: Path) -> None:
+    """Test that path filtering happens during query, not after.
+
+    This is a regression test for issue #52. Previously, path filtering
+    happened after retrieval, which meant you could request topk=5 but
+    only get 2 results if only 2 of the top-5 global results matched the path.
+
+    Now path filtering happens during SQL queries, so we always get the
+    requested number of results (if they exist in the filtered path).
+    """
+    # Create chunks in different directories
+    chunk_repo = SQLiteChunkRepository(db_path)
+    vector_repo = SQLiteVectorRepository(db_path)
+
+    # Create 10 chunks in src/ directory
+    src_chunks = []
+    for i in range(10):
+        path = Path(f"src/file{i}.py")
+        content = f"def function_{i}(): pass"
+        chunk_id = Chunk.compute_id("test", path, 1, 3)
+        content_hash = Chunk.compute_content_hash(content)
+
+        chunk = Chunk(
+            id=chunk_id,
+            project_id="test",
+            path=path,
+            start_line=1,
+            end_line=3,
+            content=content,
+            symbol=f"function_{i}",
+            lang="python",
+            content_hash=content_hash,
+            file_hash=content_hash,
+            tree_sha="abc123",
+            rev="worktree",
+        )
+        chunk_repo.add(chunk)
+        src_chunks.append(chunk)
+
+    # Create 10 chunks in tests/ directory
+    for i in range(10):
+        path = Path(f"tests/test_file{i}.py")
+        content = f"def test_function_{i}(): pass"
+        chunk_id = Chunk.compute_id("test", path, 1, 3)
+        content_hash = Chunk.compute_content_hash(content)
+
+        chunk = Chunk(
+            id=chunk_id,
+            project_id="test",
+            path=path,
+            start_line=1,
+            end_line=3,
+            content=content,
+            symbol=f"test_function_{i}",
+            lang="python",
+            content_hash=content_hash,
+            file_hash=content_hash,
+            tree_sha="abc123",
+            rev="worktree",
+        )
+        chunk_repo.add(chunk)
+
+    # Add vectors for all chunks
+    embedder = JinaCodeEmbedder()
+    model_fingerprint = "test_model"
+    for chunk in chunk_repo.list_all():
+        embedding = embedder.embed_texts([chunk.content])[0]
+        vector_repo.add(chunk.id, embedding, model_fingerprint)
+
+    # Create search use case
+    text_search = SQLiteFTS(db_path)
+    vector_search = SqliteVecAdapter(db_path)
+    search_usecase = SearchUseCase(
+        text_search=text_search,
+        vector_search=vector_search,
+        chunk_repo=chunk_repo,
+        embedder=embedder,
+    )
+
+    # Search for "function" with path filter "src/**" and topk=5
+    query = Query(
+        text="function",
+        topk=5,
+        path_filter="src/*",  # Only src/ files
+    )
+    results = search_usecase.search(query)
+
+    # Should return exactly 5 results, all from src/
+    assert len(results) == 5, f"Expected 5 results, got {len(results)}"
+    for result in results:
+        assert str(result.chunk.path).startswith("src/"), (
+            f"Expected all results from src/, got {result.chunk.path}"
+        )
+
+
+def test_missing_chunks_logged(db_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """Test that missing chunks are logged with count and sample IDs.
+
+    This is a regression test for issue #88. Previously, missing chunks
+    were silently dropped without any logging, making it hard to diagnose
+    index corruption or stale data.
+    """
+    import logging
+
+    # Create a mock chunk repository that returns None for some chunks
+    chunk_repo = MagicMock()
+    real_chunks = {
+        "chunk_1": Chunk(
+            id="chunk_1",
+            project_id="test",
+            path=Path("test.py"),
+            start_line=1,
+            end_line=3,
+            content="def test1(): pass",
+            symbol="test1",
+            lang="python",
+            content_hash="hash1",
+            file_hash="file_hash1",
+            tree_sha="abc123",
+            rev="worktree",
+        ),
+        "chunk_2": Chunk(
+            id="chunk_2",
+            project_id="test",
+            path=Path("test.py"),
+            start_line=5,
+            end_line=7,
+            content="def test2(): pass",
+            symbol="test2",
+            lang="python",
+            content_hash="hash2",
+            file_hash="file_hash2",
+            tree_sha="abc123",
+            rev="worktree",
+        ),
+    }
+
+    def mock_get(chunk_id: str) -> Chunk | None:
+        """Return chunks 1 and 2, but None for chunks 3, 4, 5."""
+        return real_chunks.get(chunk_id)
+
+    chunk_repo.get.side_effect = mock_get
+
+    # Create search use case with mock repo
+    text_search = SQLiteFTS(db_path)
+    vector_search = SqliteVecAdapter(db_path)
+    embedder = JinaCodeEmbedder()
+
+    use_case = SearchUseCase(
+        text_search=text_search,
+        vector_search=vector_search,
+        chunk_repo=chunk_repo,
+        embedder=embedder,
+    )
+
+    # Simulate search results with 5 chunk IDs, but only 2 are retrievable
+    chunk_ids = ["chunk_1", "chunk_2", "chunk_3", "chunk_4", "chunk_5"]
+
+    # Enable logging capture at WARNING level
+    with caplog.at_level(logging.WARNING):
+        chunks = use_case._retrieve_chunks(chunk_ids)
+
+    # Should return only the 2 found chunks
+    assert len(chunks) == 2
+    assert chunks[0].id == "chunk_1"
+    assert chunks[1].id == "chunk_2"
+
+    # Should have logged a warning about missing chunks
+    assert len(caplog.records) == 1
+    log_record = caplog.records[0]
+    assert log_record.levelname == "WARNING"
+    assert "Missing 3 chunks" in log_record.message
+    assert "chunk_3" in log_record.message
+    assert "chunk_4" in log_record.message
+    assert "chunk_5" in log_record.message
+    assert "index corruption or stale data" in log_record.message
