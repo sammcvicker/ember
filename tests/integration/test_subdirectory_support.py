@@ -251,3 +251,114 @@ def test_find_ember_root():
         # Should return None if not found
         outside = root.parent
         assert find_ember_root(outside) is None
+
+
+def test_find_ember_root_respects_git_boundary(tmp_path):
+    """Test that find_ember_root() stops at git repository boundary.
+
+    Regression test for issue #100: find_ember_root() should not cross
+    git repository boundaries when searching for .ember/, preventing
+    confusion between global daemon directory (~/.ember) and repo-specific
+    ember directories.
+    """
+    from ember.core.repo_utils import find_ember_root
+
+    # Create parent directory with .ember (simulating ~/.ember for daemon)
+    parent = tmp_path / "parent"
+    parent.mkdir()
+    (parent / ".ember").mkdir()
+
+    # Create git repo subdirectory without .ember
+    git_repo = parent / "my-git-repo"
+    git_repo.mkdir()
+    subprocess.run(["git", "init"], cwd=git_repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=git_repo, check=True)
+    subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=git_repo, check=True)
+
+    # Create a file and commit to make it a valid git repo
+    (git_repo / "README.md").write_text("# Test Repo")
+    subprocess.run(["git", "add", "."], cwd=git_repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "Initial commit"], cwd=git_repo, check=True, capture_output=True
+    )
+
+    # CRITICAL: find_ember_root from within git_repo should NOT find parent/.ember
+    # It should stop at the git boundary and return None
+    result = find_ember_root(git_repo)
+    assert result is None, (
+        f"find_ember_root() crossed git boundary! "
+        f"Found {result} but should have stopped at git root {git_repo}"
+    )
+
+    # Also test from a subdirectory within the git repo
+    subdir = git_repo / "src"
+    subdir.mkdir()
+    result = find_ember_root(subdir)
+    assert result is None, (
+        f"find_ember_root() crossed git boundary from subdirectory! "
+        f"Found {result} but should have stopped at git root {git_repo}"
+    )
+
+
+def test_find_ember_root_works_within_git_repo(tmp_path):
+    """Test that find_ember_root() still works normally within a git repo."""
+    from ember.core.repo_utils import find_ember_root
+
+    # Create git repo with .ember at root
+    git_repo = tmp_path / "my-repo"
+    git_repo.mkdir()
+    subprocess.run(["git", "init"], cwd=git_repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=git_repo, check=True)
+    subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=git_repo, check=True)
+
+    # Create .ember and some subdirectories
+    (git_repo / ".ember").mkdir()
+    (git_repo / "src" / "deep").mkdir(parents=True)
+
+    # Should find .ember from repo root
+    assert find_ember_root(git_repo) == git_repo
+
+    # Should find .ember from subdirectory
+    assert find_ember_root(git_repo / "src") == git_repo
+
+    # Should find .ember from deep subdirectory
+    assert find_ember_root(git_repo / "src" / "deep") == git_repo
+
+
+def test_find_ember_root_nested_git_repos(tmp_path):
+    """Test find_ember_root() with nested git repositories (monorepo scenario).
+
+    In a monorepo with nested git submodules or independent repos,
+    find_ember_root() should respect each repo's boundary.
+    """
+    from ember.core.repo_utils import find_ember_root
+
+    # Create outer repo with .ember
+    outer_repo = tmp_path / "outer"
+    outer_repo.mkdir()
+    subprocess.run(["git", "init"], cwd=outer_repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=outer_repo, check=True)
+    subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=outer_repo, check=True)
+    (outer_repo / ".ember").mkdir()
+
+    # Create inner nested git repo without .ember
+    inner_repo = outer_repo / "subprojects" / "inner"
+    inner_repo.mkdir(parents=True)
+    subprocess.run(["git", "init"], cwd=inner_repo, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=inner_repo, check=True)
+    subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=inner_repo, check=True)
+
+    # From outer repo, should find outer .ember
+    assert find_ember_root(outer_repo) == outer_repo
+
+    # From inner repo, should NOT find outer .ember (respects git boundary)
+    assert find_ember_root(inner_repo) is None
+
+    # Now add .ember to inner repo
+    (inner_repo / ".ember").mkdir()
+
+    # From inner repo, should find inner .ember
+    assert find_ember_root(inner_repo) == inner_repo
+
+    # From outer repo, should still find outer .ember
+    assert find_ember_root(outer_repo) == outer_repo
