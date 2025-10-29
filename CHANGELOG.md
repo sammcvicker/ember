@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **find_ember_root() now respects git repository boundaries** (#100)
+  - Prevents confusion between global daemon directory (~/.ember) and repository directories
+  - Search now stops at git repository root, preventing false "Not a git repository" errors
+  - Fixes issue where daemon running (with ~/.ember) would cause commands to fail in uninitialized repos
+  - Added git boundary check to prevent crossing into parent directories beyond git root
+  - Added comprehensive tests for git boundary checking and nested repository scenarios
+  - Ensures ember only searches for .ember within the current git repository
 - **Daemon protocol now handles large messages correctly and warns about data loss** (#83)
   - Increased buffer size from 1024 to 4096 bytes for better performance
   - Added warning when multiple messages received in single recv() call (potential data loss)

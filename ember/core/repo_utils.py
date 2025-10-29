@@ -11,25 +11,34 @@ def find_ember_root(start_path: Path | None = None) -> Path | None:
     """Find the ember repository root by walking up directories.
 
     Searches for .ember/ directory starting from start_path and walking
-    up to filesystem root, similar to how git finds .git/.
+    up to git repository boundary (if in a git repo) or filesystem root.
+    This prevents confusion between global daemon directories (like ~/.ember)
+    and repository-specific ember directories.
 
     Args:
         start_path: Directory to start searching from. Defaults to CWD.
 
     Returns:
         Absolute path to repository root (directory containing .ember/),
-        or None if not found.
+        or None if not found within git repository boundaries.
     """
     if start_path is None:
         start_path = Path.cwd()
 
     current = start_path.resolve()
 
-    # Walk up directory tree until we find .ember/ or reach root
+    # Find git root boundary (if in a git repo)
+    git_root = find_git_root(start_path)
+
+    # Walk up directory tree until we find .ember/ or reach boundary
     while True:
         ember_dir = current / ".ember"
         if ember_dir.exists() and ember_dir.is_dir():
             return current
+
+        # Stop at git root boundary if we're in a git repo
+        if git_root and current == git_root:
+            return None
 
         # Check if we've reached the filesystem root
         parent = current.parent
