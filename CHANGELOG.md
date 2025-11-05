@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Updated README.md for v1.0.0 accuracy** (#109)
+  - Fixed test count badge (116 → 257 tests)
+  - Added version 1.0.0 badge
+  - Updated "Why Ember?" section to highlight instant search with daemon (18.6x faster)
+  - Added subdirectory support and untracked file indexing to feature list
+  - Updated Quick Start to mention daemon and `ember status` command
+  - Fixed `ember sync` documentation to mention untracked files are indexed
+  - Added `ember status` command documentation
+  - Added `ember daemon` command documentation
+  - Updated Configuration section to reflect v1.0.0 functional settings
+  - Updated File Indexing section to mention untracked files are now indexed
+  - Updated Architecture section to mention sqlite-vec instead of BLOB-based storage
+  - Added daemon.py port to architecture diagram
+  - Updated Performance section with daemon vs direct mode comparison
+  - Updated Quality Standards to show 257 tests (210 fast, 47 slow)
+  - Updated FAQ to mention daemon and v1.0.0 config status
+  - Replaced outdated roadmap with current v1.0.0 release status and GitHub Issues link
+  - Fixed version mismatch: `ember --version` now correctly reports 1.0.0
+
 ## [1.0.0] - 2025-10-29
 
 ### Changed

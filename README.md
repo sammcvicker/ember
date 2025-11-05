@@ -2,23 +2,26 @@
 
 **Local codebase embedding and semantic search for developers and AI agents**
 
-Ember turns any codebase into a searchable knowledge base using hybrid search (BM25 + vector embeddings). Fast, deterministic, and completely localno servers, no MCP, no cloud dependencies.
+Ember turns any codebase into a searchable knowledge base using hybrid search (BM25 + vector embeddings). Fast, deterministic, and completely local—no servers, no MCP, no cloud dependencies.
 
-[![Tests](https://img.shields.io/badge/tests-116%20passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-257%20passing-brightgreen)]()
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)]()
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)]()
+[![Version](https://img.shields.io/badge/version-1.0.0-blue)]()
 
 ---
 
 ## Why Ember?
 
-- **Fast local indexing**: Index your entire codebase in minutes, not hours
+- **Instant search**: Daemon keeps model loaded in memory for 18.6x faster searches (~40ms)
+- **Fast local indexing**: Index your entire codebase in minutes with optimized batching
 - **Hybrid search**: Combines BM25 (keyword) + vector embeddings (semantic) for best results
 - **Incremental sync**: Only re-indexes changed files (9x+ speedup on typical workflows)
 - **Multi-language**: Supports 9+ languages with tree-sitter-based semantic chunking
 - **Developer-friendly**: `find -> cat -> open` workflow integrates with your editor
+- **Works like git**: Run from any subdirectory, search what you see (including untracked files)
 - **Deterministic**: Reproducible indexes via git tree SHAs and model fingerprints
-- **Zero dependencies**: No servers, APIs, or cloud servicesruns entirely offline
+- **Zero dependencies**: No servers, APIs, or cloud services—runs entirely offline
 
 ---
 
@@ -28,7 +31,7 @@ Ember turns any codebase into a searchable knowledge base using hybrid search (B
 
 ```bash
 # Using uv (recommended)
-git clone https://github.com/yourusername/ember.git
+git clone https://github.com/sammcvicker/ember.git
 cd ember
 uv sync
 uv run ember --version
@@ -44,11 +47,14 @@ pip install -e .
 cd /path/to/your/codebase
 ember init
 
-# Index your codebase
+# Index your codebase (daemon starts automatically)
 ember sync
 
-# Search for code
+# Search for code (instant after first search)
 ember find "authentication logic" -k 10
+
+# Check daemon and index status
+ember status
 
 # View full chunk with context
 ember cat 1 --context 5
@@ -57,7 +63,7 @@ ember cat 1 --context 5
 ember open 1
 ```
 
-That's it! Ember will download the embedding model (~600MB) on first sync and cache it for future use.
+**First-time setup:** Ember will download the embedding model (~600MB) on first sync and cache it for future use. The daemon will start automatically and keep the model loaded in memory for near-instant searches.
 
 ---
 
@@ -81,9 +87,9 @@ Initialize Ember in the current directory. Creates `.ember/` folder with:
 cd src/nested/directory
 ember init
 # Initialized ember index at /path/to/project/.ember (at git root)
-#    Created config.toml
-#    Created index.db
-#    Created state.json
+#    Created config.toml
+#    Created index.db
+#    Created state.json
 ```
 
 ---
@@ -93,7 +99,7 @@ ember init
 Index your codebase. Automatically uses incremental sync after the first full index.
 
 **Options:**
-- `--worktree` (default): Index working directory including unstaged changes
+- `--worktree` (default): Index working directory including unstaged and untracked files
 - `--staged`: Index only staged changes
 - `--rev <ref>`: Index specific commit/branch
 - `--reindex`: Force full reindex (ignores incremental detection)
@@ -117,6 +123,7 @@ ember sync --reindex
 - Initial sync: ~3-7 files/second (including embedding generation)
 - Incremental sync: 9x+ faster (only changed files)
 - No-op sync: Instant (tree SHA comparison only)
+- Daemon startup: ~3-5s first time, then stays loaded for 15+ minutes
 
 ---
 
@@ -124,7 +131,7 @@ ember sync --reindex
 
 Search indexed code using hybrid search (BM25 + vector embeddings).
 
-**Works from any subdirectory** - Like git, you can run ember commands from anywhere within your repository.
+**Works from any subdirectory** - Like git, you can run ember commands from anywhere within your repository. Ember automatically syncs the index before searching if changes are detected.
 
 **Options:**
 - `[path]`: Optional path to search within (relative to current directory)
@@ -132,6 +139,7 @@ Search indexed code using hybrid search (BM25 + vector embeddings).
 - `--in <glob>`: Filter by path pattern (e.g., `*.py`, `src/**/*.ts`)
 - `--lang <code>`: Filter by language (e.g., `python`, `typescript`)
 - `--json`: Output results as JSON
+- `--no-sync`: Skip auto-sync (for maximum speed when you know index is current)
 
 **Examples:**
 ```bash
@@ -153,6 +161,9 @@ ember find "async functions" --lang typescript
 
 # JSON output for scripting
 ember find "API endpoint" --json > results.json
+
+# Skip auto-sync for speed
+ember find "query" --no-sync
 ```
 
 **Output:**
@@ -217,6 +228,59 @@ ember open 2
 
 ---
 
+### `ember status`
+
+Display the current state of the ember index and configuration.
+
+**Examples:**
+```bash
+# Check index status
+ember status
+
+# Example output:
+# ✓ Ember initialized at /Users/sam/project
+#
+# Index Status:
+#   Indexed files: 247
+#   Total chunks: 1,834
+#   Status: ✓ Up to date
+#
+# Configuration:
+#   Search results (topk): 20
+#   Chunk size: 120 lines
+#   Model: jina-embeddings-v2-base-code
+```
+
+**Works from any subdirectory** - Like all ember commands.
+
+---
+
+### `ember daemon start|stop|status|restart`
+
+Manage the embedding daemon (keeps model loaded in memory).
+
+**Commands:**
+- `ember daemon start`: Manually start the daemon
+- `ember daemon stop`: Stop the daemon
+- `ember daemon status`: Check daemon status
+- `ember daemon restart`: Restart the daemon
+
+**Examples:**
+```bash
+# Check if daemon is running
+ember daemon status
+
+# Stop daemon to free memory
+ember daemon stop
+
+# Restart daemon (useful after config changes)
+ember daemon restart
+```
+
+**Note:** The daemon starts automatically when needed (during `ember sync` or `ember find`) and shuts down after 15 minutes of inactivity (configurable in `.ember/config.toml`).
+
+---
+
 ### `ember export [--rev <ref>]`
 
 Export index to a portable bundle (not yet fully implemented).
@@ -236,44 +300,51 @@ Scan indexed chunks for potential secrets/credentials (not yet fully implemented
 Edit `.ember/config.toml` to customize indexing behavior:
 
 ```toml
+[model]
+mode = "daemon"          # "daemon" (fast) or "direct" (no background process)
+daemon_timeout = 900     # Seconds before daemon auto-shutdown (default: 15 min)
+
 [index]
 model = "local-default-code-embed"  # Embedding model
-chunk = "symbol"  # Chunking strategy: "symbol" or "lines"
-line_window = 120  # Lines per chunk (for line-based chunking)
-line_stride = 100  # Stride between chunks
-overlap_lines = 15  # Overlap for context preservation
+chunk = "symbol"         # Chunking strategy: "symbol" or "lines"
+line_window = 120        # Lines per chunk (for line-based chunking)
+line_stride = 100        # Stride between chunks
+overlap_lines = 15       # Overlap for context preservation
 include = ["**/*.py", "**/*.ts", "**/*.go"]  # File patterns to index
 ignore = [".git/", "node_modules/", "dist/", "build/"]  # Patterns to skip
 
 [search]
-topk = 20  # Default number of results
-rerank = false  # Enable reranking (not yet implemented)
-filters = []  # Default filters
+topk = 20                # Default number of results
+rerank = false           # Enable reranking (not yet implemented)
+filters = []             # Default filters
 
 [redaction]
-patterns = []  # Regex patterns for secret redaction
-max_file_mb = 5  # Skip files larger than this
+patterns = []            # Regex patterns for secret redaction
+max_file_mb = 5          # Skip files larger than this
 ```
 
-**Functional Settings (v0.2.0+):**
+**Functional Settings (v1.0.0):**
 
-The following configuration settings are now active and respected by Ember:
+The following configuration settings are active and respected by Ember:
 
+- **`model.mode`**: Daemon mode (`"daemon"`) or direct mode (`"direct"`)
+- **`model.daemon_timeout`**: Seconds before auto-shutdown (default: 900)
 - **`search.topk`**: Default number of results for `ember find` (can be overridden with `-k` flag)
 - **`index.line_window`**: Lines per chunk for line-based chunking
 - **`index.line_stride`**: Stride between chunks (overlap = window - stride)
 
 **Not Yet Implemented:**
-- `index.include` / `index.ignore` patterns (coming in v0.2.0)
+- `index.include` / `index.ignore` patterns (use `.gitignore` or `.emberignore` instead)
 - `index.chunk` strategy selection (currently always uses "symbol" with line fallback)
-- `search.rerank` (planned for v0.2.0)
-- `redaction.patterns` (planned for v0.2.0)
+- `index.model` selection (currently hardcoded to Jina v2 Code)
+- `search.rerank` (cross-encoder reranking)
+- `redaction.patterns` (secret redaction)
 
-**File Indexing (v0.1):**
+**File Indexing (v1.0.0):**
 - **Code files only**: Only source code files are indexed (see supported extensions below)
-- **Git tracking**: Only files tracked by git are candidates for indexing
-- `.gitignore`: Automatically respected (untracked files are skipped)
-- `.emberignore`: Optional, same format as .gitignore
+- **All working directory files**: Indexes tracked, staged, unstaged, and untracked files
+- **Respects .gitignore**: Files matching `.gitignore` patterns are automatically skipped
+- **Optional .emberignore**: Additional patterns in same format as `.gitignore`
 
 **Indexed file extensions:**
 `.py`, `.pyi`, `.js`, `.jsx`, `.ts`, `.tsx`, `.mjs`, `.cjs`, `.go`, `.rs`, `.java`, `.kt`, `.scala`, `.c`, `.cpp`, `.cc`, `.cxx`, `.h`, `.hpp`, `.hh`, `.hxx`, `.cs`, `.rb`, `.php`, `.swift`, `.sh`, `.bash`, `.zsh`, `.vue`, `.svelte`, `.sql`, `.proto`, `.graphql`
@@ -327,12 +398,13 @@ ember/
     embedders.py    # Embedding model interface
     search.py       # Search interfaces (FTS, vector)
     vcs.py          # Git interface
+    daemon.py       # Daemon lifecycle interface
   adapters/         # Infrastructure implementations
     sqlite/         # SQLite repositories
     fts/            # FTS5 full-text search
-    vss/            # Vector search (brute-force)
+    vss/            # sqlite-vec for fast vector search
     git_cmd/        # Git subprocess adapter
-    local_models/   # Jina Code embedder
+    local_models/   # Jina Code embedder + daemon
     parsers/        # Tree-sitter + line chunkers
   shared/           # Utilities (config I/O, logging)
   entrypoints/      # CLI entry point
@@ -347,7 +419,7 @@ ember/
 **Storage:**
 - SQLite database in `.ember/index.db`
 - FTS5 virtual table for BM25 text search
-- BLOB-based vector storage (simple, fast for <100k chunks)
+- [sqlite-vec](https://github.com/asg017/sqlite-vec) extension for fast vector similarity search
 - State tracking in `.ember/state.json`
 
 **Embedding Model:**
@@ -368,11 +440,13 @@ See [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for detailed benchmarks.
 |--------|------------------|--------------------|--------------------|
 | Initial index | 7s | 55s | ~9 min* |
 | Incremental sync | <2s | ~11s | ~2 min* |
-| Search (avg) | 180ms | 180ms | 200ms* |
+| Search (daemon) | 43ms | 43ms | ~50ms* |
+| Search (direct) | 806ms | 806ms | ~850ms* |
 | Database size | 4MB | 16MB | 160MB* |
 
 *Projected based on linear scaling
 
+**Daemon speedup:** 18.6x faster than direct mode (43ms vs 806ms average)
 **Incremental sync speedup:** 9x+ faster than full reindex
 
 ---
@@ -383,7 +457,7 @@ See [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for detailed benchmarks.
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/ember.git
+git clone https://github.com/sammcvicker/ember.git
 cd ember
 
 # Install dependencies
@@ -402,12 +476,12 @@ uv run pyright
 ### Project Structure
 
 - **`CLAUDE.md`**: Development continuity guide (start here for contributors)
+- **`MAINTAINER_GUIDE.md`**: Detailed operational procedures for releases, PRs, etc.
 - **`prd.md`**: Product requirements document
-- **`TODO.md`**: Task backlog
 - **`docs/`**: Documentation and decisions
-  - **`progress.md`**: Chronological implementation log
-  - **`decisions/`**: Architecture Decision Records (ADRs)
+  - **`ARCHITECTURE.md`**: Technical architecture guide
   - **`PERFORMANCE.md`**: Performance testing results
+  - **`decisions/`**: Architecture Decision Records (ADRs)
 - **`tests/`**: Unit, integration, and performance tests
 
 ### Running Tests
@@ -436,10 +510,10 @@ uv run pytest --cov=ember --cov-report=term-missing
 
 - **Architecture:** Clean Architecture layers strictly enforced
 - **Type hints:** All public functions fully typed
-- **Testing:** 116 tests (unit, integration, performance)
+- **Testing:** 257 tests (210 fast, 47 slow) - unit, integration, and performance
 - **Linting:** ruff (compliant)
 - **Type checking:** pyright (strict mode)
-- **Coverage:** 60%+ overall, 90%+ for critical paths
+- **Coverage:** 26%+ overall (focus on critical paths)
 
 ---
 
@@ -447,12 +521,13 @@ uv run pytest --cov=ember --cov-report=term-missing
 
 We welcome contributions! Please:
 
-1. Read **CLAUDE.md** for development workflow and standards
-2. Check **TODO.md** for planned features
-3. Review **docs/decisions/** for architectural context
-4. Follow existing code patterns (Clean Architecture, SOLID)
-5. Add tests for new functionality
-6. Update documentation (README, ADRs, progress.md)
+1. Read **CLAUDE.md** for development workflow and current state
+2. Check [GitHub Issues](https://github.com/sammcvicker/ember/issues) for planned features
+3. Review **MAINTAINER_GUIDE.md** for release procedures
+4. Review **docs/decisions/** for architectural context
+5. Follow existing code patterns (Clean Architecture, SOLID)
+6. Add tests for new functionality
+7. Update documentation (README, CHANGELOG, ADRs)
 
 ---
 
@@ -462,7 +537,7 @@ We welcome contributions! Please:
 A: Ember is a local search tool, not a code completion AI. It indexes *your* codebase for retrieval, while Copilot generates code based on broad training data.
 
 **Q: Can I use this with large monorepos?**
-A: Yes, but performance depends on size. Ember handles codebases with 1000-2000 files well. For larger repos, use `include`/`ignore` patterns to filter files.
+A: Yes, but performance depends on size. Ember handles codebases with 1000-2000 files well. Larger repos work but may have slower initial indexing.
 
 **Q: Does Ember send my code to the cloud?**
 A: No. Everything runs locally. The embedding model downloads once from HuggingFace and is cached.
@@ -477,32 +552,35 @@ A: Ember only indexes source code files with recognized code extensions (see Con
 A: Use `.gitignore` or `.emberignore` to exclude files. Config-based `ignore` patterns in `.ember/config.toml` are planned for a future release.
 
 **Q: Which config settings actually work?**
-A: As of v0.2.0, `search.topk`, `index.line_window`, and `index.line_stride` are functional. Other settings like `include`/`ignore` patterns and model selection are coming in future releases. See the Configuration section for details.
+A: As of v1.0.0, `model.mode`, `model.daemon_timeout`, `search.topk`, `index.line_window`, and `index.line_stride` are functional. Other settings like `include`/`ignore` patterns and model selection are coming in future releases. See the Configuration section for details.
+
+**Q: What is the daemon and why is it running?**
+A: The daemon is a background process that keeps the embedding model loaded in memory. This makes searches 18.6x faster (~40ms instead of ~800ms). It starts automatically when needed and shuts down after 15 minutes of inactivity. You can disable it by setting `mode = "direct"` in `.ember/config.toml`.
 
 ---
 
 ## Roadmap
 
-**v0.1 (MVP)** - Current
-- [x] Core commands: init, sync, find, cat, open
-- [x] Hybrid search (BM25 + vector)
+**v1.0.0 (Current)** - Released 2025-10-29 ✅
+- [x] Core commands: init, sync, find, cat, open, status
+- [x] Daemon-based model server (18.6x faster searches)
+- [x] Subdirectory support (works like git)
+- [x] Index untracked/unstaged files
+- [x] Hybrid search (BM25 + vector with sqlite-vec)
 - [x] Incremental indexing
 - [x] 9+ language support
+- [x] Auto-sync on search
 - [ ] Export/import bundles
 - [ ] Audit command for secrets
 
-**v0.2** - In Progress
-- [x] Configuration loading (search.topk, line chunking settings)
-- [ ] Include/ignore patterns from config
-- [ ] Cross-encoder reranking
-- [ ] Explain command (why a result matched)
-- [ ] Watch mode (auto-sync on file changes)
-
-**v0.3** - Future
+**Future** - See [GitHub Issues](https://github.com/sammcvicker/ember/issues)
+- Include/ignore patterns from config
+- Context flag on find command (`-C` for immediate context)
+- Stable hash IDs for parallel agent workflows
+- Cross-encoder reranking
+- Custom embedding models
 - HTTP server for AI agents
 - Multi-project support
-- Custom embedding models
-- Advanced filtering (tags, metadata)
 
 ---
 
@@ -518,7 +596,8 @@ Built with:
 - [tree-sitter](https://tree-sitter.github.io/) for code parsing
 - [Jina Embeddings v2 Code](https://huggingface.co/jinaai/jina-embeddings-v2-base-code) for embeddings
 - [SQLite FTS5](https://www.sqlite.org/fts5.html) for text search
+- [sqlite-vec](https://github.com/asg017/sqlite-vec) for vector similarity search
 - [click](https://click.palletsprojects.com/) for CLI
 - [sentence-transformers](https://www.sbert.net/) for embedding inference
 
-Developed by [Sam @ KamiwazaAI](https://github.com/yourusername)
+Developed by [Sam @ KamiwazaAI](https://github.com/sammcvicker)
