@@ -669,7 +669,7 @@ def find(
 
 
 @cli.command()
-@click.argument("index", type=int)
+@click.argument("identifier", type=str)
 @click.option(
     "--context",
     "-C",
@@ -679,11 +679,16 @@ def find(
 )
 @click.pass_context
 @handle_cli_errors("cat")
-def cat(ctx: click.Context, index: int, context: int) -> None:
-    """Display content of a search result by index.
+def cat(ctx: click.Context, identifier: str, context: int) -> None:
+    """Display content of a search result by index or chunk ID.
 
     Use after 'find' to view full chunk content.
     Can be run from any subdirectory within the repository.
+
+    IDENTIFIER can be:
+      - Numeric index (e.g., '1', '2') from recent search results
+      - Full chunk ID (e.g., 'blake3:a1b2c3d4...')
+      - Short hash prefix (e.g., 'a1b2c3d4') - minimum 8 characters
     """
     from ember.core.repo_utils import find_repo_root
 
@@ -693,17 +698,64 @@ def cat(ctx: click.Context, index: int, context: int) -> None:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
-    cache_path = ember_dir / ".last_search.json"
+    # Determine if identifier is numeric index or hash ID
+    is_numeric = identifier.isdigit()
 
-    # Load cached results
-    cache_data = load_cached_results(cache_path)
-    results = cache_data.get("results", [])
+    if is_numeric:
+        # Legacy behavior: numeric index from cached search results
+        cache_path = ember_dir / ".last_search.json"
+        cache_data = load_cached_results(cache_path)
+        results = cache_data.get("results", [])
+        result = validate_result_index(int(identifier), results)
+    else:
+        # New behavior: hash-based lookup
+        from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
 
-    # Validate and get the result
-    result = validate_result_index(index, results)
+        db_path = ember_dir / "index.db"
+        chunk_repo = SQLiteChunkRepository(db_path)
+
+        # Try to find chunk by ID prefix
+        matches = chunk_repo.find_by_id_prefix(identifier)
+
+        if len(matches) == 0:
+            click.echo(f"Error: No chunk found with ID prefix '{identifier}'", err=True)
+            sys.exit(1)
+        elif len(matches) > 1:
+            click.echo(f"Error: Ambiguous chunk ID prefix '{identifier}' matches {len(matches)} chunks:", err=True)
+            for chunk in matches[:5]:  # Show first 5 matches
+                click.echo(f"  {chunk.id}", err=True)
+            if len(matches) > 5:
+                click.echo(f"  ... and {len(matches) - 5} more", err=True)
+            click.echo("\nUse a longer prefix to uniquely identify the chunk", err=True)
+            sys.exit(1)
+
+        # Found exactly one match
+        chunk = matches[0]
+
+        # Convert chunk to result format (matching cached results structure)
+        result = {
+            "path": str(chunk.path),
+            "start_line": chunk.start_line,
+            "end_line": chunk.end_line,
+            "content": chunk.content,
+            "lang": chunk.lang,
+            "symbol": chunk.symbol,
+        }
 
     # Display header
-    format_result_header(result, index, show_symbol=True)
+    # Only pass index if we're using numeric identifier (for backward compatibility)
+    display_index = int(identifier) if is_numeric else None
+    if display_index:
+        format_result_header(result, display_index, show_symbol=True)
+    else:
+        # For hash-based lookup, show file path and symbol directly
+        file_path = result["path"]
+        symbol = result.get("symbol")
+        if symbol:
+            click.echo(f"{click.style(file_path, fg='cyan')} {click.style(f'[{symbol}]', fg='yellow')}")
+        else:
+            click.echo(click.style(file_path, fg='cyan'))
+
     click.echo(
         click.style(
             f"Lines {result['start_line']}-{result['end_line']} ({result['lang'] or 'text'})",
