@@ -64,6 +64,7 @@ class ResultPresenter:
         for result in results:
             output.append(
                 {
+                    "id": result.chunk.id,  # Stable hash ID for direct lookup
                     "rank": result.rank,
                     "score": result.score,
                     "path": str(result.chunk.path),

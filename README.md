@@ -174,23 +174,32 @@ Found 3 results:
 
 ---
 
-### `ember cat <index>`
+### `ember cat <identifier>`
 
-Display full content of a search result by index (from last `ember find`).
+Display full content of a search result by index or chunk ID.
 
 **Options:**
 - `-C, --context <n>`: Show N lines of surrounding context from source file
 
 **Examples:**
 ```bash
-# Show chunk content
+# Using numeric index (requires prior search)
 ember cat 1
-
-# Show chunk with 5 lines of context before/after
 ember cat 1 --context 5
+
+# Using chunk hash ID (stateless, no prior search needed)
+ember find "auth" --json | jq -r '.[0].id' | xargs ember cat
+
+# Using short hash prefix (like git)
+ember cat a1b2c3d4
 ```
 
-**Note:** Requires running `ember find` first. Results are cached in `.ember/.last_search.json`.
+**Identifier formats:**
+- **Numeric index** (e.g., `1`, `2`): References results from last `ember find` command
+- **Full chunk ID** (64 hex characters): Stateless lookup by complete hash
+- **Short hash prefix** (8+ characters): Like git SHAs, must be unambiguous
+
+**Note:** Numeric indexes require running `ember find` first. Hash IDs work without prior search.
 
 ---
 

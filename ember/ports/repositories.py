@@ -32,6 +32,19 @@ class ChunkRepository(Protocol):
         """
         ...
 
+    def find_by_id_prefix(self, prefix: str) -> list[Chunk]:
+        """Find chunks whose ID starts with the given prefix.
+
+        Supports short hash lookups (like git's short SHAs).
+
+        Args:
+            prefix: The chunk ID prefix to match.
+
+        Returns:
+            List of chunks whose ID starts with the prefix.
+        """
+        ...
+
     def find_by_content_hash(self, content_hash: str) -> list[Chunk]:
         """Find chunks with matching content hash.
 

@@ -428,6 +428,105 @@ class TestCatCommand:
         assert result.exit_code == 1
         assert "Error" in result.output
 
+    def test_cat_with_chunk_hash_id(self, runner: CliRunner, git_repo_isolated: Path, monkeypatch) -> None:
+        """Test that cat works with a chunk hash ID from JSON output."""
+        monkeypatch.chdir(git_repo_isolated)
+        # Init, sync, and search with JSON output
+        runner.invoke(cli, ["init"], catch_exceptions=False)
+        runner.invoke(cli, ["sync"], catch_exceptions=False)
+        search_result = runner.invoke(cli, ["find", "hello", "--json"], catch_exceptions=False)
+
+        # Verify search succeeded
+        assert search_result.exit_code == 0
+
+        # Parse JSON to get chunk ID
+        import json
+        results = json.loads(search_result.output)
+        if len(results) == 0:
+            pytest.skip("Search returned no results")
+
+        # Get the chunk ID from the first result (blake3 hexdigest, 64 hex chars)
+        chunk_id = results[0]["id"]
+        assert len(chunk_id) == 64  # blake3 hash is 64 hex characters
+        assert all(c in "0123456789abcdef" for c in chunk_id)  # Valid hex
+
+        # Cat using the full chunk ID
+        result = runner.invoke(cli, ["cat", chunk_id], catch_exceptions=False)
+
+        assert result.exit_code == 0, f"Cat with hash ID failed: {result.output}"
+        # Should show some content
+        assert len(result.output) > 0
+
+    def test_cat_with_short_hash(self, runner: CliRunner, git_repo_isolated: Path, monkeypatch) -> None:
+        """Test that cat works with a short hash prefix."""
+        monkeypatch.chdir(git_repo_isolated)
+        # Init, sync, and search with JSON output
+        runner.invoke(cli, ["init"], catch_exceptions=False)
+        runner.invoke(cli, ["sync"], catch_exceptions=False)
+        search_result = runner.invoke(cli, ["find", "hello", "--json"], catch_exceptions=False)
+
+        # Verify search succeeded
+        assert search_result.exit_code == 0
+
+        # Parse JSON to get chunk ID
+        import json
+        results = json.loads(search_result.output)
+        if len(results) == 0:
+            pytest.skip("Search returned no results")
+
+        # Get a short prefix from the first result's ID (e.g., first 16 chars)
+        chunk_id = results[0]["id"]
+        # Use 16 characters to ensure uniqueness
+        short_hash = chunk_id[:16]
+
+        # Cat using the short hash
+        result = runner.invoke(cli, ["cat", short_hash], catch_exceptions=False)
+
+        assert result.exit_code == 0, f"Cat with short hash failed: {result.output}"
+        # Should show some content
+        assert len(result.output) > 0
+
+    def test_cat_with_invalid_hash(self, runner: CliRunner, git_repo_isolated: Path, monkeypatch) -> None:
+        """Test that cat fails with a non-existent hash ID."""
+        monkeypatch.chdir(git_repo_isolated)
+        # Init and sync
+        runner.invoke(cli, ["init"], catch_exceptions=False)
+        runner.invoke(cli, ["sync"], catch_exceptions=False)
+
+        # Try to cat with a hash that doesn't exist (use valid hex format)
+        result = runner.invoke(cli, ["cat", "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"])
+
+        assert result.exit_code == 1
+        assert "Error" in result.output
+        assert "No chunk found" in result.output
+
+    def test_cat_hash_works_without_prior_search(self, runner: CliRunner, git_repo_isolated: Path, monkeypatch) -> None:
+        """Test that cat with hash ID works without running find first (stateless)."""
+        monkeypatch.chdir(git_repo_isolated)
+        # Init, sync, and search with JSON output to get a hash
+        runner.invoke(cli, ["init"], catch_exceptions=False)
+        runner.invoke(cli, ["sync"], catch_exceptions=False)
+        search_result = runner.invoke(cli, ["find", "hello", "--json"], catch_exceptions=False)
+
+        # Parse JSON to get chunk ID
+        import json
+        results = json.loads(search_result.output)
+        if len(results) == 0:
+            pytest.skip("Search returned no results")
+
+        chunk_id = results[0]["id"]
+
+        # Now delete the cached search results to simulate no prior search
+        cache_path = git_repo_isolated / ".ember" / ".last_search.json"
+        if cache_path.exists():
+            cache_path.unlink()
+
+        # Cat should still work with hash ID (stateless)
+        result = runner.invoke(cli, ["cat", chunk_id], catch_exceptions=False)
+
+        assert result.exit_code == 0, f"Cat with hash ID failed without cache: {result.output}"
+        assert len(result.output) > 0
+
 
 class TestOpenCommand:
     """Tests for 'ember open' command."""
