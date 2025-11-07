@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Updated README.md for v1.0.0 release** (#109)
+  - Updated test count badge from 116 to 271 tests
+  - Added comprehensive documentation for daemon-based model server and `ember daemon` commands
+  - Added documentation for `ember status` command
+  - Updated "Why Ember?" section to highlight 18.6x daemon speedup
+  - Updated Configuration section to reflect v1.0.0 features (daemon settings, untracked file indexing)
+  - Updated File Indexing section to document untracked/unstaged file support
+  - Updated Architecture section to mention sqlite-vec instead of BLOB-based storage
+  - Updated Performance section with daemon vs direct mode benchmarks
+  - Updated Roadmap to show v1.0.0 as released with all completed features
+  - Updated FAQ with daemon-related questions and v1.0.0 config settings
+  - Updated Quality Standards section with correct test count (271 tests)
+  - Added sqlite-vec to Credits section
+  - Fixed typo in "Zero dependencies" bullet point
+  - Fixed installation URL from "yourusername" to "sammcvicker"
+
 ### Added
 - **Stable hash-based chunk IDs for parallel agent workflows** (#107)
   - `ember find --json` now includes stable `id` field for each result
