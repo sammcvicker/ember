@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Add -C/--context flag to `ember find` command** (#108)
+  - Show surrounding lines of context inline with search results
+  - Works with both human-readable and JSON output formats
+  - Matches ripgrep's `-C` flag behavior for familiar UX
+  - Reduces round-trips by eliminating need for separate `ember cat` calls
+  - Improves agent workflow efficiency - get full context in single API call
+  - Context displayed with line numbers, dimmed for non-chunk lines
+  - JSON output includes structured `context` field with before/after/chunk sections
+  - Fully backward compatible - defaults to 0 (no context)
+  - Works with all existing flags: `--topk`, `--in`, `--lang`, `--json`
+
 ### Changed
 - **Updated README.md for v1.0.0 release** (#109)
   - Updated test count badge from 116 to 271 tests

@@ -537,6 +537,13 @@ def sync(
     is_flag=True,
     help="Skip auto-sync check before searching (faster but may return stale results).",
 )
+@click.option(
+    "--context",
+    "-C",
+    type=int,
+    default=0,
+    help="Number of surrounding lines to show for each result.",
+)
 @click.pass_context
 @handle_cli_errors("find")
 def find(
@@ -548,6 +555,7 @@ def find(
     path_filter: str | None,
     lang_filter: str | None,
     no_sync: bool,
+    context: int,
 ) -> None:
     """Search for code matching the query.
 
@@ -663,9 +671,9 @@ def find(
 
     # Display results
     if json_output:
-        click.echo(ResultPresenter.format_json_output(results))
+        click.echo(ResultPresenter.format_json_output(results, context=context, repo_root=repo_root))
     else:
-        ResultPresenter.format_human_output(results)
+        ResultPresenter.format_human_output(results, context=context, repo_root=repo_root)
 
 
 @cli.command()

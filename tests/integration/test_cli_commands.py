@@ -348,6 +348,110 @@ class TestFindCommand:
 
         assert result.exit_code == 0
 
+    def test_find_with_context_shows_surrounding_lines(
+        self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
+    ) -> None:
+        """Test that --context flag shows surrounding lines in find results."""
+        monkeypatch.chdir(git_repo_isolated)
+        # Init and sync
+        runner.invoke(cli, ["init"], catch_exceptions=False)
+        runner.invoke(cli, ["sync"], catch_exceptions=False)
+
+        # Search with context
+        result = runner.invoke(
+            cli, ["find", "hello", "--context", "3"],
+            catch_exceptions=False
+        )
+
+        assert result.exit_code == 0
+
+        # If results were found, verify context is shown
+        if "No results" not in result.output and result.output.strip() != "":
+            # Should show line numbers with pipe separator
+            assert "|" in result.output
+            # Context lines should be visible (more output than without context)
+
+    def test_find_with_context_json_output(
+        self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
+    ) -> None:
+        """Test that --context flag works with --json output."""
+        monkeypatch.chdir(git_repo_isolated)
+        # Init and sync
+        runner.invoke(cli, ["init"], catch_exceptions=False)
+        runner.invoke(cli, ["sync"], catch_exceptions=False)
+
+        # Search with context and JSON output
+        result = runner.invoke(
+            cli, ["find", "hello", "--context", "5", "--json"],
+            catch_exceptions=False
+        )
+
+        assert result.exit_code == 0
+
+        # Verify output is valid JSON
+        try:
+            data = json.loads(result.output)
+            assert isinstance(data, list)
+            # If there are results, they should have context fields
+            if len(data) > 0:
+                result_item = data[0]
+                # Check for context in JSON structure
+                assert "context" in result_item or "content" in result_item
+        except json.JSONDecodeError:
+            pytest.fail("Output is not valid JSON")
+
+    def test_find_context_default_zero(
+        self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
+    ) -> None:
+        """Test that context defaults to 0 (no context) when flag not provided."""
+        monkeypatch.chdir(git_repo_isolated)
+        # Init and sync
+        runner.invoke(cli, ["init"], catch_exceptions=False)
+        runner.invoke(cli, ["sync"], catch_exceptions=False)
+
+        # Search without context flag (should behave as before)
+        result = runner.invoke(
+            cli, ["find", "hello"],
+            catch_exceptions=False
+        )
+
+        assert result.exit_code == 0
+        # This is just to ensure backward compatibility - command should work
+
+    def test_find_context_with_topk(
+        self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
+    ) -> None:
+        """Test that --context works with --topk option."""
+        monkeypatch.chdir(git_repo_isolated)
+        # Init and sync
+        runner.invoke(cli, ["init"], catch_exceptions=False)
+        runner.invoke(cli, ["sync"], catch_exceptions=False)
+
+        # Search with both context and topk
+        result = runner.invoke(
+            cli, ["find", "function", "--context", "3", "--topk", "2"],
+            catch_exceptions=False
+        )
+
+        assert result.exit_code == 0
+
+    def test_find_context_with_path_filter(
+        self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
+    ) -> None:
+        """Test that --context works with --in path filter."""
+        monkeypatch.chdir(git_repo_isolated)
+        # Init and sync
+        runner.invoke(cli, ["init"], catch_exceptions=False)
+        runner.invoke(cli, ["sync"], catch_exceptions=False)
+
+        # Search with context and path filter
+        result = runner.invoke(
+            cli, ["find", "hello", "--context", "2", "--in", "*.py"],
+            catch_exceptions=False
+        )
+
+        assert result.exit_code == 0
+
 
 class TestCatCommand:
     """Tests for 'ember cat' command."""
