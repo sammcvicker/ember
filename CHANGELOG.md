@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2025-11-06
+
 ### Added
 - **Add -C/--context flag to `ember find` command** (#108)
   - Show surrounding lines of context inline with search results
@@ -18,6 +20,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - JSON output includes structured `context` field with before/after/chunk sections
   - Fully backward compatible - defaults to 0 (no context)
   - Works with all existing flags: `--topk`, `--in`, `--lang`, `--json`
+
+- **Stable hash-based chunk IDs for parallel agent workflows** (#107)
+  - `ember find --json` now includes stable `id` field for each result
+  - `ember cat` now accepts both numeric indexes (legacy) and chunk hash IDs
+  - Supports short hash prefixes (e.g., `ember cat a1b2c3d4`) like git SHAs
+  - Enables stateless, parallel chunk retrieval without .last_search.json dependency
+  - Hash-based lookups work without prior `ember find` execution
+  - Helpful error messages for ambiguous or non-existent hash prefixes
+  - Full backward compatibility maintained for numeric index workflows
 
 ### Changed
 - **Updated README.md for v1.0.0 release** (#109)
@@ -35,16 +46,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added sqlite-vec to Credits section
   - Fixed typo in "Zero dependencies" bullet point
   - Fixed installation URL from "yourusername" to "sammcvicker"
-
-### Added
-- **Stable hash-based chunk IDs for parallel agent workflows** (#107)
-  - `ember find --json` now includes stable `id` field for each result
-  - `ember cat` now accepts both numeric indexes (legacy) and chunk hash IDs
-  - Supports short hash prefixes (e.g., `ember cat a1b2c3d4`) like git SHAs
-  - Enables stateless, parallel chunk retrieval without .last_search.json dependency
-  - Hash-based lookups work without prior `ember find` execution
-  - Helpful error messages for ambiguous or non-existent hash prefixes
-  - Full backward compatibility maintained for numeric index workflows
 
 ## [1.0.0] - 2025-10-29
 

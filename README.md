@@ -130,6 +130,7 @@ Search indexed code using hybrid search (BM25 + vector embeddings).
 **Options:**
 - `[path]`: Optional path to search within (relative to current directory)
 - `-k, --topk <n>`: Number of results (default: 20)
+- `-C, --context <n>`: Show N lines of context around each result (default: 0)
 - `--in <glob>`: Filter by path pattern (e.g., `*.py`, `src/**/*.ts`)
 - `--lang <code>`: Filter by language (e.g., `python`, `typescript`)
 - `--json`: Output results as JSON
@@ -152,8 +153,14 @@ ember find "error handling" --in "*.py"
 # Filter by language
 ember find "async functions" --lang typescript
 
+# Show surrounding context (like ripgrep -C)
+ember find "authentication" -C 5
+
 # JSON output for scripting
 ember find "API endpoint" --json > results.json
+
+# Context in JSON output (great for agents)
+ember find "auth" -C 3 --json
 ```
 
 **Output:**
@@ -586,6 +593,10 @@ A: The daemon keeps the embedding model loaded in memory, making searches 18.6x 
 - [x] 271 comprehensive tests
 - [x] Clean architecture with strict layer separation
 
+**v1.1.0** (2025-11-06) ✅
+- Context flag for `ember find` (-C/--context)
+- Stable hash-based chunk IDs for parallel agent workflows
+
 **Future** (see [GitHub Issues](https://github.com/sammcvicker/ember))
 - Export/import bundles
 - Audit command for secrets
@@ -596,7 +607,6 @@ A: The daemon keeps the embedding model loaded in memory, making searches 18.6x 
 - Multi-project support
 - Custom embedding models
 - Advanced filtering (tags, metadata)
-- Context flag for `ember find` (-C/--context)
 
 ---
 
