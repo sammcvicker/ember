@@ -4,7 +4,7 @@
 
 Ember turns any codebase into a searchable knowledge base using hybrid search (BM25 + vector embeddings). Fast, deterministic, and completely localno servers, no MCP, no cloud dependencies.
 
-[![Tests](https://img.shields.io/badge/tests-116%20passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-271%20passing-brightgreen)]()
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)]()
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)]()
 
@@ -12,6 +12,7 @@ Ember turns any codebase into a searchable knowledge base using hybrid search (B
 
 ## Why Ember?
 
+- **Blazingly fast**: Daemon-based model server makes searches near-instant (18.6x faster than cold start)
 - **Fast local indexing**: Index your entire codebase in minutes, not hours
 - **Hybrid search**: Combines BM25 (keyword) + vector embeddings (semantic) for best results
 - **Incremental sync**: Only re-indexes changed files (9x+ speedup on typical workflows)
@@ -28,7 +29,7 @@ Ember turns any codebase into a searchable knowledge base using hybrid search (B
 
 ```bash
 # Using uv (recommended)
-git clone https://github.com/yourusername/ember.git
+git clone https://github.com/sammcvicker/ember.git
 cd ember
 uv sync
 uv run ember --version
@@ -129,6 +130,7 @@ Search indexed code using hybrid search (BM25 + vector embeddings).
 **Options:**
 - `[path]`: Optional path to search within (relative to current directory)
 - `-k, --topk <n>`: Number of results (default: 20)
+- `-C, --context <n>`: Show N lines of context around each result (default: 0)
 - `--in <glob>`: Filter by path pattern (e.g., `*.py`, `src/**/*.ts`)
 - `--lang <code>`: Filter by language (e.g., `python`, `typescript`)
 - `--json`: Output results as JSON
@@ -151,8 +153,14 @@ ember find "error handling" --in "*.py"
 # Filter by language
 ember find "async functions" --lang typescript
 
+# Show surrounding context (like ripgrep -C)
+ember find "authentication" -C 5
+
 # JSON output for scripting
 ember find "API endpoint" --json > results.json
+
+# Context in JSON output (great for agents)
+ember find "auth" -C 3 --json
 ```
 
 **Output:**
@@ -174,23 +182,32 @@ Found 3 results:
 
 ---
 
-### `ember cat <index>`
+### `ember cat <identifier>`
 
-Display full content of a search result by index (from last `ember find`).
+Display full content of a search result by index or chunk ID.
 
 **Options:**
 - `-C, --context <n>`: Show N lines of surrounding context from source file
 
 **Examples:**
 ```bash
-# Show chunk content
+# Using numeric index (requires prior search)
 ember cat 1
-
-# Show chunk with 5 lines of context before/after
 ember cat 1 --context 5
+
+# Using chunk hash ID (stateless, no prior search needed)
+ember find "auth" --json | jq -r '.[0].id' | xargs ember cat
+
+# Using short hash prefix (like git)
+ember cat a1b2c3d4
 ```
 
-**Note:** Requires running `ember find` first. Results are cached in `.ember/.last_search.json`.
+**Identifier formats:**
+- **Numeric index** (e.g., `1`, `2`): References results from last `ember find` command
+- **Full chunk ID** (64 hex characters): Stateless lookup by complete hash
+- **Short hash prefix** (8+ characters): Like git SHAs, must be unambiguous
+
+**Note:** Numeric indexes require running `ember find` first. Hash IDs work without prior search.
 
 ---
 
@@ -214,6 +231,75 @@ ember open 2
 - Sublime Text, Atom (file:line syntax)
 
 **Note:** Uses `$VISUAL` > `$EDITOR` > `vim` (fallback).
+
+---
+
+### `ember status`
+
+Display index status and configuration at a glance.
+
+**Example:**
+```bash
+ember status
+```
+
+**Output:**
+```
+✓ Ember initialized at /Users/sam/project
+
+Index Status:
+  Indexed files: 247
+  Total chunks: 1,834
+  Status: ✓ Up to date
+
+Configuration:
+  Search results (topk): 5
+  Chunk size: 512 tokens
+  Model: jina-embeddings-v2-base-code
+  Mode: daemon (auto-starts on first search)
+```
+
+**Features:**
+- Works from any subdirectory (like all ember commands)
+- Shows whether index needs syncing
+- Displays current configuration from `.ember/config.toml`
+
+---
+
+### `ember daemon`
+
+Manage the embedding model daemon for instant searches.
+
+The daemon keeps the embedding model loaded in memory, making searches **18.6x faster** (43ms avg vs 806ms cold start). It auto-starts transparently when needed and shuts down after 15 minutes of inactivity.
+
+**Commands:**
+```bash
+# Check daemon status
+ember daemon status
+
+# Manually start daemon
+ember daemon start
+
+# Stop daemon
+ember daemon stop
+
+# Restart daemon
+ember daemon restart
+```
+
+**Configuration** (`.ember/config.toml`):
+```toml
+[model]
+mode = "daemon"        # or "direct" to disable daemon
+daemon_timeout = 900   # auto-shutdown after 15 min (default)
+```
+
+**Why use the daemon?**
+- **First search after daemon starts:** ~1s (one-time model loading cost)
+- **Subsequent searches:** ~20ms (model already loaded)
+- **Direct mode (no daemon):** 800ms+ per search
+
+**Note:** Daemon auto-starts on first `ember find` or `ember sync` command. Manual management is optional.
 
 ---
 
@@ -255,25 +341,28 @@ patterns = []  # Regex patterns for secret redaction
 max_file_mb = 5  # Skip files larger than this
 ```
 
-**Functional Settings (v0.2.0+):**
+**Functional Settings (v1.0.0):**
 
 The following configuration settings are now active and respected by Ember:
 
 - **`search.topk`**: Default number of results for `ember find` (can be overridden with `-k` flag)
 - **`index.line_window`**: Lines per chunk for line-based chunking
 - **`index.line_stride`**: Stride between chunks (overlap = window - stride)
+- **`model.mode`**: Daemon mode (`daemon` or `direct`)—daemon provides 18.6x faster searches
+- **`model.daemon_timeout`**: Auto-shutdown timeout in seconds (default: 900 = 15 min)
 
 **Not Yet Implemented:**
-- `index.include` / `index.ignore` patterns (coming in v0.2.0)
+- `index.include` / `index.ignore` patterns (planned for future release)
 - `index.chunk` strategy selection (currently always uses "symbol" with line fallback)
-- `search.rerank` (planned for v0.2.0)
-- `redaction.patterns` (planned for v0.2.0)
+- `search.rerank` (planned for future release)
+- `redaction.patterns` (planned for future release)
 
-**File Indexing (v0.1):**
+**File Indexing (v1.0.0):**
 - **Code files only**: Only source code files are indexed (see supported extensions below)
-- **Git tracking**: Only files tracked by git are candidates for indexing
-- `.gitignore`: Automatically respected (untracked files are skipped)
-- `.emberignore`: Optional, same format as .gitignore
+- **All working directory files**: Indexes tracked, untracked, and unstaged files
+- **`.gitignore` respected**: Patterns in `.gitignore` are automatically honored (won't index `node_modules/`, `.venv/`, etc.)
+- **Search what you see**: Creating a new file? It's immediately searchable after auto-sync
+- **`.emberignore`**: Optional, same format as `.gitignore` for additional exclusions
 
 **Indexed file extensions:**
 `.py`, `.pyi`, `.js`, `.jsx`, `.ts`, `.tsx`, `.mjs`, `.cjs`, `.go`, `.rs`, `.java`, `.kt`, `.scala`, `.c`, `.cpp`, `.cc`, `.cxx`, `.h`, `.hpp`, `.hh`, `.hxx`, `.cs`, `.rb`, `.php`, `.swift`, `.sh`, `.bash`, `.zsh`, `.vue`, `.svelte`, `.sql`, `.proto`, `.graphql`
@@ -330,10 +419,11 @@ ember/
   adapters/         # Infrastructure implementations
     sqlite/         # SQLite repositories
     fts/            # FTS5 full-text search
-    vss/            # Vector search (brute-force)
+    vss/            # sqlite-vec vector search
     git_cmd/        # Git subprocess adapter
-    local_models/   # Jina Code embedder
+    local_models/   # Jina Code embedder (daemon + direct modes)
     parsers/        # Tree-sitter + line chunkers
+    daemon/         # Daemon lifecycle management
   shared/           # Utilities (config I/O, logging)
   entrypoints/      # CLI entry point
 ```
@@ -347,7 +437,7 @@ ember/
 **Storage:**
 - SQLite database in `.ember/index.db`
 - FTS5 virtual table for BM25 text search
-- BLOB-based vector storage (simple, fast for <100k chunks)
+- sqlite-vec for fast vector similarity search (optimized k-NN with cosine distance)
 - State tracking in `.ember/state.json`
 
 **Embedding Model:**
@@ -368,12 +458,17 @@ See [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for detailed benchmarks.
 |--------|------------------|--------------------|--------------------|
 | Initial index | 7s | 55s | ~9 min* |
 | Incremental sync | <2s | ~11s | ~2 min* |
-| Search (avg) | 180ms | 180ms | 200ms* |
+| Search (daemon mode) | 43ms | 43ms | ~50ms* |
+| Search (direct mode) | 806ms | 806ms | ~850ms* |
 | Database size | 4MB | 16MB | 160MB* |
 
 *Projected based on linear scaling
 
-**Incremental sync speedup:** 9x+ faster than full reindex
+**Key speedups:**
+- **Daemon mode:** 18.6x faster than direct mode (43ms vs 806ms average)
+- **Incremental sync:** 9x+ faster than full reindex
+- **First search after daemon starts:** ~1s (one-time model loading)
+- **Subsequent searches:** ~20ms (model already in memory)
 
 ---
 
@@ -436,7 +531,7 @@ uv run pytest --cov=ember --cov-report=term-missing
 
 - **Architecture:** Clean Architecture layers strictly enforced
 - **Type hints:** All public functions fully typed
-- **Testing:** 116 tests (unit, integration, performance)
+- **Testing:** 271 tests (unit, integration, performance, CLI)
 - **Linting:** ruff (compliant)
 - **Type checking:** pyright (strict mode)
 - **Coverage:** 60%+ overall, 90%+ for critical paths
@@ -477,28 +572,37 @@ A: Ember only indexes source code files with recognized code extensions (see Con
 A: Use `.gitignore` or `.emberignore` to exclude files. Config-based `ignore` patterns in `.ember/config.toml` are planned for a future release.
 
 **Q: Which config settings actually work?**
-A: As of v0.2.0, `search.topk`, `index.line_window`, and `index.line_stride` are functional. Other settings like `include`/`ignore` patterns and model selection are coming in future releases. See the Configuration section for details.
+A: As of v1.0.0, `search.topk`, `index.line_window`, `index.line_stride`, `model.mode`, and `model.daemon_timeout` are functional. Other settings like `include`/`ignore` patterns and model selection are coming in future releases. See the Configuration section for details.
+
+**Q: What's this daemon process and why is it running?**
+A: The daemon keeps the embedding model loaded in memory, making searches 18.6x faster (43ms vs 806ms). It auto-starts when needed and shuts down after 15 minutes of inactivity. You can disable it by setting `model.mode = "direct"` in `.ember/config.toml` or manage it manually with `ember daemon stop`.
 
 ---
 
 ## Roadmap
 
-**v0.1 (MVP)** - Current
-- [x] Core commands: init, sync, find, cat, open
-- [x] Hybrid search (BM25 + vector)
-- [x] Incremental indexing
-- [x] 9+ language support
-- [ ] Export/import bundles
-- [ ] Audit command for secrets
+**v1.0.0 "Be Like Water"** - Released (2025-10-29)
+- [x] Core commands: init, sync, find, cat, open, status, daemon
+- [x] Hybrid search (BM25 + vector with sqlite-vec)
+- [x] Incremental indexing (9x+ speedup)
+- [x] Daemon-based model server (18.6x faster searches)
+- [x] Subdirectory support (works like git)
+- [x] Index all working directory files (untracked, unstaged, tracked)
+- [x] Hash-based chunk IDs for stateless retrieval
+- [x] 9+ language support with tree-sitter
+- [x] 271 comprehensive tests
+- [x] Clean architecture with strict layer separation
 
-**v0.2** - In Progress
-- [x] Configuration loading (search.topk, line chunking settings)
-- [ ] Include/ignore patterns from config
-- [ ] Cross-encoder reranking
-- [ ] Explain command (why a result matched)
-- [ ] Watch mode (auto-sync on file changes)
+**v1.1.0** (2025-11-06) ✅
+- Context flag for `ember find` (-C/--context)
+- Stable hash-based chunk IDs for parallel agent workflows
 
-**v0.3** - Future
+**Future** (see [GitHub Issues](https://github.com/sammcvicker/ember))
+- Export/import bundles
+- Audit command for secrets
+- Include/ignore patterns from config
+- Cross-encoder reranking
+- Watch mode (auto-sync on file changes)
 - HTTP server for AI agents
 - Multi-project support
 - Custom embedding models
@@ -518,6 +622,7 @@ Built with:
 - [tree-sitter](https://tree-sitter.github.io/) for code parsing
 - [Jina Embeddings v2 Code](https://huggingface.co/jinaai/jina-embeddings-v2-base-code) for embeddings
 - [SQLite FTS5](https://www.sqlite.org/fts5.html) for text search
+- [sqlite-vec](https://github.com/asg017/sqlite-vec) for fast vector similarity search
 - [click](https://click.palletsprojects.com/) for CLI
 - [sentence-transformers](https://www.sbert.net/) for embedding inference
 
