@@ -267,7 +267,7 @@ def get_editor_command(editor: str, file_path: Path, line_num: int) -> list[str]
 
 
 @click.group()
-@click.version_option(version="0.2.0", prog_name="ember")
+@click.version_option(version="1.1.0", prog_name="ember")
 @click.option(
     "--verbose",
     "-v",
@@ -312,7 +312,7 @@ def init(ctx: click.Context, force: bool) -> None:
     repo_root = find_repo_root_for_init()
 
     # Create use case and execute
-    use_case = InitUseCase(version="0.2.0")
+    use_case = InitUseCase(version="1.1.0")
     request = InitRequest(repo_root=repo_root, force=force)
 
     try:
