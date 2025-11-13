@@ -109,6 +109,21 @@ class ModelConfig:
 
 
 @dataclass(frozen=True)
+class DisplayConfig:
+    """Configuration for output display and formatting.
+
+    Attributes:
+        syntax_highlighting: Enable syntax highlighting for code excerpts (default: True)
+        color_scheme: Color output mode - "auto" (default), "always", or "never"
+        theme: Syntax highlighting theme for Rich (default: "monokai")
+    """
+
+    syntax_highlighting: bool = True
+    color_scheme: Literal["auto", "always", "never"] = "auto"
+    theme: str = "monokai"
+
+
+@dataclass(frozen=True)
 class EmberConfig:
     """Complete ember configuration.
 
@@ -120,12 +135,14 @@ class EmberConfig:
         search: Search configuration
         redaction: Redaction configuration
         model: Model and daemon configuration
+        display: Display and formatting configuration
     """
 
     index: IndexConfig = field(default_factory=IndexConfig)
     search: SearchConfig = field(default_factory=SearchConfig)
     redaction: RedactionConfig = field(default_factory=RedactionConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
+    display: DisplayConfig = field(default_factory=DisplayConfig)
 
     @staticmethod
     def default() -> "EmberConfig":
@@ -135,4 +152,5 @@ class EmberConfig:
             search=SearchConfig(),
             redaction=RedactionConfig(),
             model=ModelConfig(),
+            display=DisplayConfig(),
         )

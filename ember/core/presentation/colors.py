@@ -4,6 +4,7 @@ Provides consistent color scheme across CLI commands, interactive search,
 and all output modes. Supports both click-style colors and prompt_toolkit styles.
 """
 
+from pathlib import Path
 from typing import Literal
 
 # Type aliases for color values
@@ -227,3 +228,74 @@ def highlight_symbol(text: str, symbol: str | None) -> str:
     # Add any remaining text
     parts.append(remaining)
     return "".join(parts)
+
+
+def render_syntax_highlighted(
+    code: str,
+    language: str | None = None,
+    file_path: Path | None = None,
+    start_line: int = 1,
+    theme: str = "monokai",
+) -> str:
+    """Render code with syntax highlighting using Rich.
+
+    Args:
+        code: Code content to highlight.
+        language: Language identifier (e.g., "python", "typescript"). If None, will try to infer from file_path.
+        file_path: Optional file path for language detection.
+        start_line: Starting line number for display.
+        theme: Rich syntax theme name (default: "monokai").
+
+    Returns:
+        Syntax-highlighted code as a string ready for terminal output.
+    """
+    from io import StringIO
+
+    from rich.console import Console
+    from rich.syntax import Syntax
+
+    # Infer lexer from file extension if language not provided
+    lexer = language
+    if not lexer and file_path:
+        # Map file extensions to lexer names
+        ext_to_lexer = {
+            ".py": "python",
+            ".js": "javascript",
+            ".ts": "typescript",
+            ".tsx": "typescript",
+            ".jsx": "javascript",
+            ".go": "go",
+            ".rs": "rust",
+            ".java": "java",
+            ".c": "c",
+            ".cpp": "cpp",
+            ".cc": "cpp",
+            ".cxx": "cpp",
+            ".cs": "csharp",
+            ".rb": "ruby",
+            ".sh": "bash",
+            ".yaml": "yaml",
+            ".yml": "yaml",
+            ".json": "json",
+            ".toml": "toml",
+            ".md": "markdown",
+            ".sql": "sql",
+        }
+        lexer = ext_to_lexer.get(file_path.suffix, "text")
+
+    # Create syntax highlighter
+    syntax = Syntax(
+        code,
+        lexer or "text",
+        theme=theme,
+        line_numbers=True,
+        start_line=start_line,
+        word_wrap=False,
+    )
+
+    # Render to string using StringIO
+    output = StringIO()
+    console = Console(file=output, force_terminal=True, width=120)
+    console.print(syntax)
+
+    return output.getvalue().rstrip()

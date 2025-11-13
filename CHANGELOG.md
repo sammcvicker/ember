@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Syntax highlighting infrastructure with Rich** (#116)
+  - Added `render_syntax_highlighted()` function for code highlighting using Rich library
+  - Supports 15+ languages (Python, TypeScript, JavaScript, Go, Rust, Java, C/C++, C#, Ruby, etc.)
+  - Automatic language detection from file extensions
+  - Added `DisplayConfig` to domain configuration for display preferences:
+    - `syntax_highlighting`: Enable/disable syntax highlighting (default: True)
+    - `color_scheme`: Color output mode - "auto", "always", or "never" (default: "auto")
+    - `theme`: Rich syntax theme (default: "monokai")
+  - Infrastructure ready for use in `ember cat` and context display
+
 ### Changed
 - **Centralized color scheme across all commands** (#116)
   - Created `ember/core/presentation/colors.py` with centralized color palette
