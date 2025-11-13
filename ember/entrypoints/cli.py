@@ -677,6 +677,181 @@ def find(
 
 
 @cli.command()
+@click.argument("initial_query", type=str, required=False, default="")
+@click.option(
+    "--path",
+    "path_filter",
+    type=str,
+    help="Limit search to directory path.",
+)
+@click.option(
+    "--in",
+    "file_pattern",
+    type=str,
+    help="Filter by glob pattern (e.g., '*.py').",
+)
+@click.option(
+    "--lang",
+    "lang_filter",
+    type=str,
+    help="Filter by language (e.g., python, typescript).",
+)
+@click.option(
+    "--topk",
+    "-k",
+    type=int,
+    default=None,
+    help="Max results to show (default: from config).",
+)
+@click.option(
+    "--no-preview",
+    is_flag=True,
+    help="Start with preview pane disabled.",
+)
+@click.option(
+    "--no-scores",
+    is_flag=True,
+    help="Hide relevance scores.",
+)
+@click.option(
+    "--no-sync",
+    "no_sync",
+    is_flag=True,
+    help="Skip auto-sync check before searching.",
+)
+@click.pass_context
+@handle_cli_errors("search")
+def search(
+    ctx: click.Context,
+    initial_query: str,
+    path_filter: str | None,
+    file_pattern: str | None,
+    lang_filter: str | None,
+    topk: int | None,
+    no_preview: bool,
+    no_scores: bool,
+    no_sync: bool,
+) -> None:
+    """Interactive semantic search interface.
+
+    Opens an fzf-style interactive search UI with real-time results,
+    keyboard navigation, preview pane, and direct file opening.
+
+    Can be run from any subdirectory within the repository.
+    """
+    import os
+    import subprocess
+
+    from ember.core.repo_utils import find_repo_root
+
+    try:
+        repo_root, ember_dir = find_repo_root()
+    except RuntimeError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+    db_path = ember_dir / "index.db"
+
+    # Load config
+    from ember.adapters.config.toml_config_provider import TomlConfigProvider
+
+    config_provider = TomlConfigProvider()
+    config = config_provider.load(ember_dir)
+
+    # Use config default for topk if not specified
+    if topk is None:
+        topk = config.search.topk
+
+    # Merge file_pattern with path_filter if needed
+    if file_pattern:
+        if path_filter:
+            click.echo(
+                "Warning: Both --path and --in specified. Using both filters.",
+                err=True,
+            )
+            # Combine filters (path_filter is directory, file_pattern is glob)
+            path_filter = f"{path_filter.rstrip('/')}/**/{file_pattern}"
+        else:
+            path_filter = f"**/{file_pattern}"
+
+    # Auto-sync unless disabled
+    if not no_sync:
+        check_and_auto_sync(
+            repo_root=repo_root,
+            db_path=db_path,
+            config=config,
+            quiet_mode=True,  # Always quiet for interactive mode
+            verbose=ctx.obj.get("verbose", False),
+        )
+
+    # Lazy imports
+    from ember.adapters.fts.sqlite_fts import SQLiteFTS
+    from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
+    from ember.adapters.tui.search_ui import InteractiveSearchUI
+    from ember.adapters.vss.sqlite_vec_adapter import SqliteVecAdapter
+    from ember.core.retrieval.search_usecase import SearchUseCase
+    from ember.domain.entities import Query
+
+    # Initialize search dependencies
+    text_search = SQLiteFTS(db_path)
+    vector_search = SqliteVecAdapter(db_path)
+    chunk_repo = SQLiteChunkRepository(db_path)
+    embedder = _create_embedder(config, show_progress=False)  # No progress for interactive
+
+    # Create search use case
+    search_usecase = SearchUseCase(
+        text_search=text_search,
+        vector_search=vector_search,
+        chunk_repo=chunk_repo,
+        embedder=embedder,
+    )
+
+    # Create search function wrapper
+    def search_fn(query: Query) -> list:
+        return search_usecase.search(query)
+
+    # Create and run interactive UI
+    ui = InteractiveSearchUI(
+        search_fn=search_fn,
+        initial_query=initial_query,
+        topk=topk,
+        path_filter=path_filter,
+        lang_filter=lang_filter,
+        show_scores=not no_scores,
+        show_preview=not no_preview,
+    )
+
+    selected_file, selected_line = ui.run()
+
+    # If user selected a file, open it
+    if selected_file and selected_line:
+        # Determine which editor to use
+        editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "vim"
+
+        # Build absolute file path
+        file_path = repo_root / selected_file
+
+        # Check if file exists
+        if not file_path.exists():
+            click.echo(f"Error: File not found: {selected_file}", err=True)
+            sys.exit(1)
+
+        # Build editor command
+        cmd = get_editor_command(editor, file_path, selected_line)
+
+        # Open in editor
+        try:
+            subprocess.run(cmd, check=True)
+        except subprocess.CalledProcessError as e:
+            click.echo(f"Error opening editor: {e}", err=True)
+            sys.exit(1)
+        except FileNotFoundError:
+            click.echo(f"Error: Editor '{editor}' not found", err=True)
+            click.echo("Set $EDITOR or $VISUAL environment variable", err=True)
+            sys.exit(1)
+
+
+@cli.command()
 @click.argument("identifier", type=str)
 @click.option(
     "--context",

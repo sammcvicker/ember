@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Interactive search interface with `ember search` command** (#114)
+  - fzf-style interactive search UI with real-time results as you type
+  - Keyboard navigation: arrow keys, ctrl-n/p, ctrl-d/u for page up/down
+  - Live preview pane showing code context (toggle with ctrl-v)
+  - Direct file opening in $EDITOR with Enter key
+  - Search mode switching (hybrid/bm25/vector) with ctrl-r
+  - Debounced search with 150ms delay for smooth typing experience
+  - Async search with cancellation support for instant feedback
+  - Supports all existing filters: --path, --in, --lang
+  - Auto-sync before search (disable with --no-sync)
+  - Built with prompt_toolkit for robust terminal UI
+
 ## [1.1.0] - 2025-11-06
 
 ### Added
