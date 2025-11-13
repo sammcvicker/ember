@@ -101,7 +101,7 @@ class InteractiveSearchUI:
 
         results_window = Window(
             content=FormattedTextControl(
-                get_text=self._get_results_text,
+                self._get_results_text,
                 focusable=False,
             ),
             wrap_lines=False,
@@ -109,7 +109,7 @@ class InteractiveSearchUI:
 
         preview_window = Window(
             content=FormattedTextControl(
-                get_text=self._get_preview_text,
+                self._get_preview_text,
                 focusable=False,
             ),
             wrap_lines=True,
@@ -117,7 +117,7 @@ class InteractiveSearchUI:
 
         status_window = Window(
             content=FormattedTextControl(
-                get_text=self._get_status_text,
+                self._get_status_text,
                 focusable=False,
             ),
             height=Dimension.exact(1),
@@ -221,7 +221,8 @@ class InteractiveSearchUI:
         def cycle_mode(event: KeyPressEvent) -> None:
             self.session.cycle_search_mode()
             # Trigger new search with new mode
-            asyncio.create_task(self._execute_search())
+            if event.app.loop:
+                event.app.loop.create_task(self._execute_search())
 
         # Exit
         @kb.add("escape")
@@ -244,7 +245,7 @@ class InteractiveSearchUI:
         if self.debounce_task and not self.debounce_task.done():
             self.debounce_task.cancel()
 
-        # Start new debounce task
+        # Start new debounce task - schedule it in the app's event loop
         async def debounced_search() -> None:
             try:
                 await asyncio.sleep(self.debounce_ms)
@@ -252,7 +253,11 @@ class InteractiveSearchUI:
             except asyncio.CancelledError:
                 pass
 
-        self.debounce_task = asyncio.create_task(debounced_search())
+        # Get the event loop from the app
+        if hasattr(self, 'app') and self.app:
+            loop = self.app.loop
+            if loop:
+                self.debounce_task = loop.create_task(debounced_search())
 
     async def _execute_search(self) -> None:
         """Execute search with current query."""
@@ -378,19 +383,28 @@ class InteractiveSearchUI:
 
         return parts
 
-    def run(self) -> tuple[Path | None, int | None]:
-        """Run the interactive search UI.
+    async def run_async(self) -> tuple[Path | None, int | None]:
+        """Run the interactive search UI asynchronously.
 
         Returns:
             Tuple of (selected_file, selected_line) or (None, None) if cancelled.
         """
         # Run initial search if query provided
         if self.session.query_text and len(self.session.query_text) >= self.min_query_length:
+            # Schedule initial search
             asyncio.create_task(self._execute_search())
 
         # Run application
-        self.app.run()
+        await self.app.run_async()
 
         if self.should_exit and self.selected_file:
             return (self.selected_file, self.selected_line)
         return (None, None)
+
+    def run(self) -> tuple[Path | None, int | None]:
+        """Run the interactive search UI.
+
+        Returns:
+            Tuple of (selected_file, selected_line) or (None, None) if cancelled.
+        """
+        return asyncio.run(self.run_async())
