@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Syntax highlighting for `ember cat` command** (#118)
+  - `ember cat` now displays code with syntax highlighting by default using Rich library
+  - Automatically detects language from file extension (.py, .ts, .js, .go, .rs, etc.)
+  - Respects `display.syntax_highlighting` config setting (can be disabled)
+  - Uses configured theme from `display.theme` (default: "monokai")
+  - Shows line numbers with formatted code display
+  - Graceful fallback to plain text if highlighting fails
+  - Works with both numeric indexes and chunk hash IDs
+  - Comprehensive test coverage (7 new tests)
+
 - **Syntax highlighting infrastructure with Rich** (#116)
   - Added `render_syntax_highlighted()` function for code highlighting using Rich library
   - Supports 15+ languages (Python, TypeScript, JavaScript, Go, Rust, Java, C/C++, C#, Ruby, etc.)
@@ -16,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `syntax_highlighting`: Enable/disable syntax highlighting (default: True)
     - `color_scheme`: Color output mode - "auto", "always", or "never" (default: "auto")
     - `theme`: Rich syntax theme (default: "monokai")
-  - Infrastructure ready for use in `ember cat` and context display
+  - Infrastructure ready for use in `ember find --context` and interactive search preview
 
 ### Changed
 - **Centralized color scheme across all commands** (#116)
