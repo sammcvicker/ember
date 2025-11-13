@@ -873,6 +873,8 @@ def cat(ctx: click.Context, identifier: str, context: int) -> None:
       - Full chunk ID (e.g., 'blake3:a1b2c3d4...')
       - Short hash prefix (e.g., 'a1b2c3d4') - minimum 8 characters
     """
+    from ember.adapters.config.toml_config_provider import TomlConfigProvider
+    from ember.core.presentation.colors import render_syntax_highlighted
     from ember.core.repo_utils import find_repo_root
 
     try:
@@ -880,6 +882,10 @@ def cat(ctx: click.Context, identifier: str, context: int) -> None:
     except RuntimeError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
+
+    # Load config to check syntax highlighting settings
+    config_provider = TomlConfigProvider()
+    config = config_provider.load(ember_dir)
 
     # Determine if identifier is numeric index or hash ID
     is_numeric = identifier.isdigit()
@@ -983,8 +989,24 @@ def cat(ctx: click.Context, identifier: str, context: int) -> None:
             )
             click.echo(content)
     else:
-        # Just display the chunk content
-        click.echo(content)
+        # Display the chunk content with syntax highlighting if enabled
+        if config.display.syntax_highlighting:
+            try:
+                highlighted = render_syntax_highlighted(
+                    code=content,
+                    file_path=Path(result["path"]),
+                    start_line=result["start_line"],
+                    theme=config.display.theme,
+                )
+                click.echo(highlighted)
+            except Exception as e:
+                # Fallback to plain text if highlighting fails
+                if ctx.obj.get("verbose", False):
+                    click.echo(f"Warning: Syntax highlighting failed: {e}", err=True)
+                click.echo(content)
+        else:
+            # Just display plain content
+            click.echo(content)
 
     click.echo()
 
