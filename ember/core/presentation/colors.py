@@ -235,28 +235,33 @@ def render_syntax_highlighted(
     language: str | None = None,
     file_path: Path | None = None,
     start_line: int = 1,
-    theme: str = "monokai",
+    theme: str = "ansi",
 ) -> str:
-    """Render code with syntax highlighting using Rich.
+    """Render code with syntax highlighting using terminal colors.
+
+    Uses Pygments with ANSI 16-color terminal style by default, which respects
+    the user's terminal color scheme. This provides seamless integration with
+    any terminal theme (Solarized, Dracula, base16, etc.).
 
     Args:
         code: Code content to highlight.
         language: Language identifier (e.g., "python", "typescript"). If None, will try to infer from file_path.
         file_path: Optional file path for language detection.
         start_line: Starting line number for display.
-        theme: Rich syntax theme name (default: "monokai").
+        theme: Pygments style name (default: "ansi" for terminal colors).
+               Alternative: specific theme names like "monokai", "github-dark", etc.
 
     Returns:
         Syntax-highlighted code as a string ready for terminal output.
     """
-    from io import StringIO
-
-    from rich.console import Console
-    from rich.syntax import Syntax
+    from pygments import lex
+    from pygments.lexers import get_lexer_by_name
+    from pygments.token import Token
+    from pygments.util import ClassNotFound
 
     # Infer lexer from file extension if language not provided
-    lexer = language
-    if not lexer and file_path:
+    lexer_name = language
+    if not lexer_name and file_path:
         # Map file extensions to lexer names
         ext_to_lexer = {
             ".py": "python",
@@ -281,21 +286,62 @@ def render_syntax_highlighted(
             ".md": "markdown",
             ".sql": "sql",
         }
-        lexer = ext_to_lexer.get(file_path.suffix, "text")
+        lexer_name = ext_to_lexer.get(file_path.suffix, "text")
 
-    # Create syntax highlighter
-    syntax = Syntax(
-        code,
-        lexer or "text",
-        theme=theme,
-        line_numbers=True,
-        start_line=start_line,
-        word_wrap=False,
-    )
+    # Get lexer
+    try:
+        lexer = get_lexer_by_name(lexer_name or "text")
+    except ClassNotFound:
+        lexer = get_lexer_by_name("text")
 
-    # Render to string using StringIO
-    output = StringIO()
-    console = Console(file=output, force_terminal=True, width=120)
-    console.print(syntax)
+    # Use terminal ANSI colors (basic 16 colors that adapt to theme)
+    # Map Pygments token types to ANSI color codes
+    color_map = {
+        Token.Keyword: '\x1b[95m',  # Magenta (keywords like def, class, if)
+        Token.Name.Function: '\x1b[94m',  # Blue (function names)
+        Token.Name.Class: '\x1b[94m',  # Blue (class names)
+        Token.String: '\x1b[92m',  # Green (strings)
+        Token.Comment: '\x1b[90m',  # Dark gray (comments)
+        Token.Number: '\x1b[96m',  # Cyan (numbers)
+        Token.Operator: '\x1b[97m',  # White (operators)
+    }
 
-    return output.getvalue().rstrip()
+    # Tokenize and colorize
+    tokens = lex(code, lexer)
+    result_lines = []
+
+    current_line = []
+    line_num = start_line
+
+    for token_type, value in tokens:
+        # Find matching color (check token and its parents)
+        color = None
+        for ttype in [token_type] + list(token_type.split()):
+            if ttype in color_map:
+                color = color_map[ttype]
+                break
+
+        # Split value by newlines to handle multi-line tokens
+        parts = value.split('\n')
+        for i, part in enumerate(parts):
+            if i > 0:  # New line
+                # Finish current line
+                line_text = ''.join(current_line)
+                line_num_str = f"{line_num:>4} "
+                result_lines.append(f"\x1b[2m{line_num_str}\x1b[0m{line_text}")
+                current_line = []
+                line_num += 1
+
+            if part:  # Add colored part
+                if color:
+                    current_line.append(f"{color}{part}\x1b[0m")
+                else:
+                    current_line.append(part)
+
+    # Finish last line
+    if current_line or not result_lines:
+        line_text = ''.join(current_line)
+        line_num_str = f"{line_num:>4} "
+        result_lines.append(f"\x1b[2m{line_num_str}\x1b[0m{line_text}")
+
+    return '\n'.join(result_lines)

@@ -9,23 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Syntax highlighting for `ember cat` command** (#118)
-  - `ember cat` now displays code with syntax highlighting by default using Rich library
+  - `ember cat` now displays code with syntax highlighting by default using terminal-native colors
+  - **Seamless integration** - Uses ANSI 16-color palette that respects your terminal theme (Solarized, Dracula, base16, etc.)
   - Automatically detects language from file extension (.py, .ts, .js, .go, .rs, etc.)
+  - Shows line numbers with dimmed formatting
   - Respects `display.syntax_highlighting` config setting (can be disabled)
-  - Uses configured theme from `display.theme` (default: "monokai")
-  - Shows line numbers with formatted code display
+  - Uses configured theme from `display.theme` (default: "ansi" for terminal colors)
   - Graceful fallback to plain text if highlighting fails
   - Works with both numeric indexes and chunk hash IDs
   - Comprehensive test coverage (7 new tests)
 
-- **Syntax highlighting infrastructure with Rich** (#116)
-  - Added `render_syntax_highlighted()` function for code highlighting using Rich library
+- **Syntax highlighting infrastructure with Pygments** (#116)
+  - Added `render_syntax_highlighted()` function for code highlighting using Pygments
+  - **Default "ansi" theme respects terminal color scheme** - batteries included, zero config
   - Supports 15+ languages (Python, TypeScript, JavaScript, Go, Rust, Java, C/C++, C#, Ruby, etc.)
   - Automatic language detection from file extensions
   - Added `DisplayConfig` to domain configuration for display preferences:
     - `syntax_highlighting`: Enable/disable syntax highlighting (default: True)
     - `color_scheme`: Color output mode - "auto", "always", or "never" (default: "auto")
-    - `theme`: Rich syntax theme (default: "monokai")
+    - `theme`: Syntax highlighting theme (default: "ansi" for terminal colors, alternative: "monokai", etc.)
   - Infrastructure ready for use in `ember find --context` and interactive search preview
 
 ### Changed

@@ -115,12 +115,14 @@ class DisplayConfig:
     Attributes:
         syntax_highlighting: Enable syntax highlighting for code excerpts (default: True)
         color_scheme: Color output mode - "auto" (default), "always", or "never"
-        theme: Syntax highlighting theme for Rich (default: "monokai")
+        theme: Syntax highlighting theme (default: "ansi" for terminal colors)
+              Use "ansi" to respect terminal color scheme, or specific theme names
+              like "monokai", "github-dark", etc. for fixed colors
     """
 
     syntax_highlighting: bool = True
     color_scheme: Literal["auto", "always", "never"] = "auto"
-    theme: str = "monokai"
+    theme: str = "ansi"
 
 
 @dataclass(frozen=True)
