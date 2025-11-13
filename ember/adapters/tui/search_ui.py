@@ -212,8 +212,8 @@ class InteractiveSearchUI:
         def open_file(event: KeyPressEvent) -> None:
             result = self.session.get_selected_result()
             if result:
-                self.selected_file = Path(result.path)
-                self.selected_line = result.start_line
+                self.selected_file = Path(result.chunk.path)
+                self.selected_line = result.chunk.start_line
                 self.should_exit = True
                 event.app.exit()
 
@@ -329,9 +329,10 @@ class InteractiveSearchUI:
             style = "class:selected" if idx == self.session.selected_index else ""
 
             # Format: path:lines (symbol) | score
-            path = result.path
-            line_range = f"{result.start_line}-{result.end_line}"
-            symbol = f" ({result.symbol})" if result.symbol else ""
+            chunk = result.chunk
+            path = chunk.path
+            line_range = f"{chunk.start_line}-{chunk.end_line}"
+            symbol = f" ({chunk.symbol})" if chunk.symbol else ""
 
             result_text = f"  {path}:{line_range}{symbol}"
 
@@ -356,9 +357,10 @@ class InteractiveSearchUI:
         lines: list[tuple[str, str]] = []
 
         # Add content with line numbers
-        content_lines = result.content.splitlines()
+        chunk = result.chunk
+        content_lines = chunk.content.splitlines()
         for i, line in enumerate(content_lines):
-            line_num = result.start_line + i
+            line_num = chunk.start_line + i
             lines.append(("", f"{line_num:5} │ {line}\n"))
 
         return lines
