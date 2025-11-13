@@ -813,6 +813,7 @@ def search(
     # Create and run interactive UI
     ui = InteractiveSearchUI(
         search_fn=search_fn,
+        config=config,
         initial_query=initial_query,
         topk=topk,
         path_filter=path_filter,
