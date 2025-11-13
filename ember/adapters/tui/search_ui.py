@@ -24,6 +24,7 @@ from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
 from prompt_toolkit.layout.layout import Layout
 from prompt_toolkit.styles import Style
 
+from ember.core.presentation.colors import EmberColors
 from ember.core.retrieval.interactive import InteractiveSearchSession
 from ember.domain.entities import Query, SearchResult
 
@@ -156,16 +157,8 @@ class InteractiveSearchUI:
             status_window,
         ])
 
-        # Style
-        style = Style.from_dict({
-            "separator": "fg:#888888",
-            "selected": "bg:#444444",
-            "dimmed": "fg:#888888",
-            "score": "fg:#888888",
-            "path": "fg:#00aaaa",
-            "symbol": "fg:#ffaa00",
-            "status": "bold",
-        })
+        # Style - use centralized color palette
+        style = Style.from_dict(EmberColors.get_prompt_toolkit_style())
 
         # Application
         self.app: Application[Any] = Application(

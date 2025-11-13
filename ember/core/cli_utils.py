@@ -13,8 +13,16 @@ from typing import TYPE_CHECKING, Any
 import click
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 
+from ember.core.presentation.colors import EmberColors, highlight_symbol
+
 if TYPE_CHECKING:
     from ember.ports.daemon import DaemonManager
+
+
+# Re-export highlight_symbol for backward compatibility
+__all__ = ["RichProgressCallback", "progress_context", "load_cached_results",
+           "validate_result_index", "highlight_symbol", "format_result_header",
+           "ensure_daemon_with_progress"]
 
 
 class RichProgressCallback:
@@ -142,35 +150,6 @@ def validate_result_index(index: int, results: list[dict[str, Any]]) -> dict[str
     return results[index - 1]
 
 
-def highlight_symbol(text: str, symbol: str | None) -> str:
-    """Highlight all occurrences of symbol in text.
-
-    Args:
-        text: Text to search for symbol.
-        symbol: Symbol to highlight (or None).
-
-    Returns:
-        Text with symbol highlighted in red bold.
-    """
-    if not symbol or symbol not in text:
-        return text
-
-    # Find and highlight all occurrences of the symbol
-    parts = []
-    remaining = text
-    while symbol in remaining:
-        idx = remaining.index(symbol)
-        # Add text before symbol
-        parts.append(remaining[:idx])
-        # Add highlighted symbol
-        parts.append(click.style(symbol, fg="red", bold=True))
-        # Continue with text after symbol
-        remaining = remaining[idx + len(symbol) :]
-    # Add any remaining text
-    parts.append(remaining)
-    return "".join(parts)
-
-
 def format_result_header(result: dict[str, Any], index: int, show_symbol: bool = True) -> None:
     """Print result header in consistent ripgrep-style format.
 
@@ -179,17 +158,17 @@ def format_result_header(result: dict[str, Any], index: int, show_symbol: bool =
         index: 1-based result index (rank).
         show_symbol: Whether to display symbol in header.
     """
-    # Filename in magenta bold
-    click.echo(click.style(str(result["path"]), fg="magenta", bold=True))
+    # Filename using centralized color
+    click.echo(EmberColors.click_path(str(result["path"])))
 
-    # Rank in green bold, line number dimmed
-    rank = click.style(f"[{index}]", fg="green", bold=True)
-    line_num = click.style(f"{result['start_line']}", dim=True)
+    # Rank and line number using centralized colors
+    rank = EmberColors.click_rank(f"[{index}]")
+    line_num = EmberColors.click_line_number(f"{result['start_line']}")
 
-    # Symbol in red bold (inline)
+    # Symbol using centralized color (inline)
     symbol_display = ""
     if show_symbol and result.get("symbol"):
-        symbol_display = " " + click.style(f"({result['symbol']})", fg="red", bold=True)
+        symbol_display = " " + EmberColors.click_symbol(f"({result['symbol']})")
 
     click.echo(f"{rank} {line_num}:{symbol_display}")
 

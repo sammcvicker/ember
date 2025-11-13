@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Syntax highlighting infrastructure with Rich** (#116)
+  - Added `render_syntax_highlighted()` function for code highlighting using Rich library
+  - Supports 15+ languages (Python, TypeScript, JavaScript, Go, Rust, Java, C/C++, C#, Ruby, etc.)
+  - Automatic language detection from file extensions
+  - Added `DisplayConfig` to domain configuration for display preferences:
+    - `syntax_highlighting`: Enable/disable syntax highlighting (default: True)
+    - `color_scheme`: Color output mode - "auto", "always", or "never" (default: "auto")
+    - `theme`: Rich syntax theme (default: "monokai")
+  - Infrastructure ready for use in `ember cat` and context display
+
+### Changed
+- **Centralized color scheme across all commands** (#116)
+  - Created `ember/core/presentation/colors.py` with centralized color palette
+  - All commands now use consistent colors: paths (magenta), symbols (red/orange), ranks (green), line numbers (dimmed)
+  - Updated `ResultPresenter`, `cli_utils`, and interactive search UI to use centralized colors
+  - Improved maintainability - colors defined once and reused everywhere
+  - No user-facing changes - internal refactoring for consistency
+
+### Added
 - **Interactive search interface with `ember search` command** (#114)
   - fzf-style interactive search UI with real-time results as you type
   - Keyboard navigation: arrow keys, ctrl-n/p, ctrl-d/u for page up/down
