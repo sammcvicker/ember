@@ -14,6 +14,7 @@ from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.key_binding import KeyBindings, KeyPressEvent
 from prompt_toolkit.layout import (
+    ConditionalContainer,
     Dimension,
     HSplit,
     VSplit,
@@ -136,15 +137,19 @@ class InteractiveSearchUI:
             ]),
             Window(height=Dimension.exact(1), char="─", style="class:separator"),
             results_window,
-            Window(
-                height=Dimension.exact(1),
-                char="─",
-                style="class:separator",
+            ConditionalContainer(
+                Window(
+                    height=Dimension.exact(1),
+                    char="─",
+                    style="class:separator",
+                ),
                 filter=preview_visible,
             ),
-            Window(
-                content=preview_window.content,
-                wrap_lines=True,
+            ConditionalContainer(
+                Window(
+                    content=preview_window.content,
+                    wrap_lines=True,
+                ),
                 filter=preview_visible,
             ),
             Window(height=Dimension.exact(1), char="─", style="class:separator"),
