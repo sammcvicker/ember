@@ -10,7 +10,7 @@ from typing import Any
 
 import click
 
-from ember.core.cli_utils import highlight_symbol
+from ember.core.presentation.colors import EmberColors, highlight_symbol
 
 
 class ResultPresenter:
@@ -112,8 +112,8 @@ class ResultPresenter:
 
         # Display grouped results
         for file_path, file_results in results_by_file.items():
-            # Print filename in magenta
-            click.echo(click.style(str(file_path), fg="magenta", bold=True))
+            # Print filename using centralized color
+            click.echo(EmberColors.click_path(str(file_path)))
 
             for result in file_results:
                 # If context requested, show context with line numbers
@@ -121,10 +121,9 @@ class ResultPresenter:
                     ResultPresenter._display_result_with_context(result, context, repo_root)
                 else:
                     # Original format: [rank] line_number: content
-                    # Rank in green (what users reference for cat/open)
-                    rank = click.style(f"[{result.rank}]", fg="green", bold=True)
-                    # Line number in dim gray (informational)
-                    line_num = click.style(f"{result.chunk.start_line}", dim=True)
+                    # Rank and line number using centralized colors
+                    rank = EmberColors.click_rank(f"[{result.rank}]")
+                    line_num = EmberColors.click_line_number(f"{result.chunk.start_line}")
 
                     # Get preview content (first line only for compact display)
                     preview = result.preview or result.format_preview(max_lines=1)
@@ -202,16 +201,14 @@ class ResultPresenter:
             context: Number of lines of context.
             repo_root: Repository root path.
         """
-        # Show rank
-        rank = click.style(f"[{result.rank}]", fg="green", bold=True)
+        # Show rank using centralized color
+        rank = EmberColors.click_rank(f"[{result.rank}]")
         click.echo(rank)
 
         file_path = repo_root / result.chunk.path
         if not file_path.exists():
             # Fall back to preview if file not found
-            click.echo(
-                click.style("Warning: File not found, showing preview only", fg="yellow"),
-            )
+            click.echo(EmberColors.click_warning("Warning: File not found, showing preview only"))
             preview = result.preview or result.format_preview(max_lines=5)
             click.echo(preview)
             return
@@ -232,11 +229,9 @@ class ResultPresenter:
                 if start_line <= line_num <= end_line:
                     click.echo(f"{line_num:5} | {line_content}")
                 else:
-                    click.echo(click.style(f"{line_num:5} | {line_content}", dim=True))
+                    click.echo(EmberColors.click_dimmed(f"{line_num:5} | {line_content}"))
         except Exception as e:
             # Fall back to preview if file read fails
-            click.echo(
-                click.style(f"Warning: Could not read file: {e}", fg="yellow"),
-            )
+            click.echo(EmberColors.click_warning(f"Warning: Could not read file: {e}"))
             preview = result.preview or result.format_preview(max_lines=5)
             click.echo(preview)

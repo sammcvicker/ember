@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Centralized color scheme across all commands** (#116)
+  - Created `ember/core/presentation/colors.py` with centralized color palette
+  - All commands now use consistent colors: paths (magenta), symbols (red/orange), ranks (green), line numbers (dimmed)
+  - Updated `ResultPresenter`, `cli_utils`, and interactive search UI to use centralized colors
+  - Improved maintainability - colors defined once and reused everywhere
+  - No user-facing changes - internal refactoring for consistency
+
 ### Added
 - **Interactive search interface with `ember search` command** (#114)
   - fzf-style interactive search UI with real-time results as you type
