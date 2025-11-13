@@ -365,11 +365,16 @@ class TestFindCommand:
 
         assert result.exit_code == 0
 
-        # If results were found, verify context is shown
+        # If results were found, verify context is shown with syntax highlighting
         if "No results" not in result.output and result.output.strip() != "":
-            # Should show line numbers with pipe separator
-            assert "|" in result.output
-            # Context lines should be visible (more output than without context)
+            # With syntax highlighting enabled by default, should have line numbers
+            # (format is "  1 code here" from render_syntax_highlighted)
+            # Without syntax highlighting, would have pipe separator ("|")
+            lines = [line for line in result.output.split('\n') if line.strip() and not line.startswith('[')]
+            has_line_numbers = any(line.strip() and line[0:5].strip().isdigit() for line in lines) if lines else False
+            has_pipe = "|" in result.output
+            # Should have either syntax highlighting or pipe format
+            assert has_line_numbers or has_pipe, "Expected either syntax highlighted line numbers or pipe separator"
 
     def test_find_with_context_json_output(
         self, runner: CliRunner, git_repo_isolated: Path, monkeypatch

@@ -10,7 +10,7 @@ from typing import Any
 
 import click
 
-from ember.core.presentation.colors import EmberColors, highlight_symbol
+from ember.core.presentation.colors import EmberColors, highlight_symbol, render_syntax_highlighted
 
 
 class ResultPresenter:
@@ -90,13 +90,14 @@ class ResultPresenter:
         return json.dumps(output, indent=2)
 
     @staticmethod
-    def format_human_output(results: list[Any], context: int = 0, repo_root: Path | None = None) -> None:
+    def format_human_output(results: list[Any], context: int = 0, repo_root: Path | None = None, config: Any | None = None) -> None:
         """Format and print results in human-readable ripgrep-style format.
 
         Args:
             results: List of SearchResult objects.
             context: Number of lines of context to show around each result (default: 0).
             repo_root: Repository root path for reading files (required if context > 0).
+            config: EmberConfig object for display settings (optional).
 
         Note:
             This method prints directly to stdout using click.echo.
@@ -118,7 +119,7 @@ class ResultPresenter:
             for result in file_results:
                 # If context requested, show context with line numbers
                 if context > 0 and repo_root is not None:
-                    ResultPresenter._display_result_with_context(result, context, repo_root)
+                    ResultPresenter._display_result_with_context(result, context, repo_root, config)
                 else:
                     # Original format: [rank] line_number: content
                     # Rank and line number using centralized colors
@@ -193,13 +194,14 @@ class ResultPresenter:
             return None
 
     @staticmethod
-    def _display_result_with_context(result: Any, context: int, repo_root: Path) -> None:
+    def _display_result_with_context(result: Any, context: int, repo_root: Path, config: Any | None = None) -> None:
         """Display a search result with surrounding context.
 
         Args:
             result: SearchResult object.
             context: Number of lines of context.
             repo_root: Repository root path.
+            config: EmberConfig object for display settings (optional).
         """
         # Show rank using centralized color
         rank = EmberColors.click_rank(f"[{result.rank}]")
@@ -222,14 +224,38 @@ class ResultPresenter:
             context_start = max(1, start_line - context)
             context_end = min(len(file_lines), end_line + context)
 
-            # Display with line numbers (similar to cat --context)
-            for line_num in range(context_start, context_end + 1):
-                line_content = file_lines[line_num - 1]  # Convert to 0-based
-                # Highlight the chunk lines, dim the context
-                if start_line <= line_num <= end_line:
-                    click.echo(f"{line_num:5} | {line_content}")
-                else:
-                    click.echo(EmberColors.click_dimmed(f"{line_num:5} | {line_content}"))
+            # Check if syntax highlighting is enabled
+            use_highlighting = False
+            theme = "ansi"
+            if config is not None and hasattr(config, "display"):
+                use_highlighting = config.display.syntax_highlighting
+                theme = config.display.theme
+
+            if use_highlighting:
+                # Collect all lines for syntax highlighting
+                all_lines = []
+                for line_num in range(context_start, context_end + 1):
+                    all_lines.append(file_lines[line_num - 1])
+
+                code_block = "\n".join(all_lines)
+
+                # Apply syntax highlighting
+                highlighted = render_syntax_highlighted(
+                    code=code_block,
+                    file_path=file_path,
+                    start_line=context_start,
+                    theme=theme,
+                )
+                click.echo(highlighted)
+            else:
+                # Fallback: Display with line numbers (similar to cat --context)
+                for line_num in range(context_start, context_end + 1):
+                    line_content = file_lines[line_num - 1]  # Convert to 0-based
+                    # Highlight the chunk lines, dim the context
+                    if start_line <= line_num <= end_line:
+                        click.echo(f"{line_num:5} | {line_content}")
+                    else:
+                        click.echo(EmberColors.click_dimmed(f"{line_num:5} | {line_content}"))
         except Exception as e:
             # Fall back to preview if file read fails
             click.echo(EmberColors.click_warning(f"Warning: Could not read file: {e}"))

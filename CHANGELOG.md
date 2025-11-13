@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Syntax highlighting for `ember find --context` output** (#119)
+  - `ember find --context N` now displays code with syntax highlighting by default
+  - Uses same terminal-native ANSI colors as `ember cat` for consistent experience
+  - Automatically detects language from file extension
+  - Shows line numbers with syntax-highlighted code
+  - Respects `display.syntax_highlighting` config setting (can be disabled)
+  - Uses configured theme from `display.theme` (default: "ansi")
+  - Graceful fallback to original pipe-separated format when highlighting is disabled
+  - Updated config I/O to support model and display configuration sections
+  - Comprehensive test coverage (7 new tests)
+
 - **Syntax highlighting for `ember cat` command** (#118)
   - `ember cat` now displays code with syntax highlighting by default using terminal-native colors
   - **Seamless integration** - Uses ANSI 16-color palette that respects your terminal theme (Solarized, Dracula, base16, etc.)

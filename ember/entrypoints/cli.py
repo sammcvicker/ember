@@ -673,7 +673,7 @@ def find(
     if json_output:
         click.echo(ResultPresenter.format_json_output(results, context=context, repo_root=repo_root))
     else:
-        ResultPresenter.format_human_output(results, context=context, repo_root=repo_root)
+        ResultPresenter.format_human_output(results, context=context, repo_root=repo_root, config=config)
 
 
 @cli.command()

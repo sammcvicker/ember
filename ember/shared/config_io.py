@@ -9,7 +9,14 @@ from typing import Any
 
 import tomli_w
 
-from ember.domain.config import EmberConfig, IndexConfig, RedactionConfig, SearchConfig
+from ember.domain.config import (
+    DisplayConfig,
+    EmberConfig,
+    IndexConfig,
+    ModelConfig,
+    RedactionConfig,
+    SearchConfig,
+)
 
 
 def load_config(path: Path) -> EmberConfig:
@@ -38,11 +45,15 @@ def load_config(path: Path) -> EmberConfig:
     index_data = data.get("index", {})
     search_data = data.get("search", {})
     redaction_data = data.get("redaction", {})
+    model_data = data.get("model", {})
+    display_data = data.get("display", {})
 
     return EmberConfig(
         index=IndexConfig(**index_data),
         search=SearchConfig(**search_data),
         redaction=RedactionConfig(**redaction_data),
+        model=ModelConfig(**model_data),
+        display=DisplayConfig(**display_data),
     )
 
 
@@ -72,6 +83,16 @@ def save_config(config: EmberConfig, path: Path) -> None:
         "redaction": {
             "patterns": config.redaction.patterns,
             "max_file_mb": config.redaction.max_file_mb,
+        },
+        "model": {
+            "mode": config.model.mode,
+            "daemon_timeout": config.model.daemon_timeout,
+            "daemon_startup_timeout": config.model.daemon_startup_timeout,
+        },
+        "display": {
+            "syntax_highlighting": config.display.syntax_highlighting,
+            "color_scheme": config.display.color_scheme,
+            "theme": config.display.theme,
         },
     }
 
