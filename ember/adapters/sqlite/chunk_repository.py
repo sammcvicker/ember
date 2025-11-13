@@ -135,6 +135,53 @@ class SQLiteChunkRepository:
                 rev=row[11],
         )
 
+    def find_by_id_prefix(self, prefix: str) -> list[Chunk]:
+        """Find chunks whose ID starts with the given prefix.
+
+        Supports short hash lookups (like git's short SHAs).
+
+        Args:
+            prefix: The chunk ID prefix to match.
+
+        Returns:
+            List of chunks whose ID starts with the prefix.
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        # Use LIKE with prefix pattern for efficient prefix search
+        # The index on chunk_id will make this reasonably fast
+        cursor.execute(
+                """
+                SELECT chunk_id, project_id, path, lang, symbol, start_line, end_line,
+                       content, content_hash, file_hash, tree_sha, rev
+                FROM chunks
+                WHERE chunk_id LIKE ? || '%'
+                """,
+                (prefix,)
+        )
+
+        rows = cursor.fetchall()
+        chunks = []
+        for row in rows:
+            chunk = Chunk(
+                id=row[0],  # chunk_id from database
+                project_id=row[1],
+                path=Path(row[2]),
+                lang=row[3],
+                symbol=row[4],
+                start_line=row[5],
+                end_line=row[6],
+                content=row[7],
+                content_hash=row[8],
+                file_hash=row[9],
+                tree_sha=row[10],
+                rev=row[11],
+            )
+            chunks.append(chunk)
+
+        return chunks
+
     def find_by_content_hash(self, content_hash: str) -> list[Chunk]:
         """Find chunks with matching content hash.
 

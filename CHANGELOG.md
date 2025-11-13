@@ -7,25 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-- **Updated README.md for v1.0.0 accuracy** (#109)
-  - Fixed test count badge (116 → 257 tests)
-  - Added version 1.0.0 badge
-  - Updated "Why Ember?" section to highlight instant search with daemon (18.6x faster)
-  - Added subdirectory support and untracked file indexing to feature list
-  - Updated Quick Start to mention daemon and `ember status` command
-  - Fixed `ember sync` documentation to mention untracked files are indexed
-  - Added `ember status` command documentation
-  - Added `ember daemon` command documentation
-  - Updated Configuration section to reflect v1.0.0 functional settings
-  - Updated File Indexing section to mention untracked files are now indexed
+## [1.1.0] - 2025-11-06
+
+### Added
+- **Add -C/--context flag to `ember find` command** (#108)
+  - Show surrounding lines of context inline with search results
+  - Works with both human-readable and JSON output formats
+  - Matches ripgrep's `-C` flag behavior for familiar UX
+  - Reduces round-trips by eliminating need for separate `ember cat` calls
+  - Improves agent workflow efficiency - get full context in single API call
+  - Context displayed with line numbers, dimmed for non-chunk lines
+  - JSON output includes structured `context` field with before/after/chunk sections
+  - Fully backward compatible - defaults to 0 (no context)
+  - Works with all existing flags: `--topk`, `--in`, `--lang`, `--json`
+
+- **Stable hash-based chunk IDs for parallel agent workflows** (#107)
+  - `ember find --json` now includes stable `id` field for each result
+  - `ember cat` now accepts both numeric indexes (legacy) and chunk hash IDs
+  - Supports short hash prefixes (e.g., `ember cat a1b2c3d4`) like git SHAs
+  - Enables stateless, parallel chunk retrieval without .last_search.json dependency
+  - Hash-based lookups work without prior `ember find` execution
+  - Helpful error messages for ambiguous or non-existent hash prefixes
+  - Full backward compatibility maintained for numeric index workflows
+
+### Changed
+- **Updated README.md for v1.0.0 release** (#109)
+  - Updated test count badge from 116 to 271 tests
+  - Added comprehensive documentation for daemon-based model server and `ember daemon` commands
+  - Added documentation for `ember status` command
+  - Updated "Why Ember?" section to highlight 18.6x daemon speedup
+  - Updated Configuration section to reflect v1.0.0 features (daemon settings, untracked file indexing)
+  - Updated File Indexing section to document untracked/unstaged file support
   - Updated Architecture section to mention sqlite-vec instead of BLOB-based storage
-  - Added daemon.py port to architecture diagram
-  - Updated Performance section with daemon vs direct mode comparison
-  - Updated Quality Standards to show 257 tests (210 fast, 47 slow)
-  - Updated FAQ to mention daemon and v1.0.0 config status
-  - Replaced outdated roadmap with current v1.0.0 release status and GitHub Issues link
-  - Fixed version mismatch: `ember --version` now correctly reports 1.0.0
+  - Updated Performance section with daemon vs direct mode benchmarks
+  - Updated Roadmap to show v1.0.0 as released with all completed features
+  - Updated FAQ with daemon-related questions and v1.0.0 config settings
+  - Updated Quality Standards section with correct test count (271 tests)
+  - Added sqlite-vec to Credits section
+  - Fixed typo in "Zero dependencies" bullet point
+  - Fixed installation URL from "yourusername" to "sammcvicker"
 
 ## [1.0.0] - 2025-10-29
 
