@@ -6,54 +6,50 @@
 
 ## 📍 CURRENT STATE
 
-**Status:** Post-v0.2.0 release, working towards v1.0.0
+**Status:** v1.1.0 in develop, working towards v1.3.0
 **Branch:** `develop` (for ongoing work)
-**Last Release:** v0.2.0 (2025-10-20)
-**Active Milestone:** 1.0.0
-**Theme:** "Be like water" - Remove all friction, make ember feel invisible and natural
+**Last Release:** v1.1.0
+**Active Milestone:** 1.3.0
+**Theme:** Stability and polish - Fix interactive search bugs, improve reliability
 
 **What's Working:**
 - Core indexing and search functionality ✅
+- Interactive search TUI (`ember search`) ✅
+- Syntax highlighting (cat, find, search) ✅
 - Auto-sync on search (zero-friction workflow) ✅
 - Functional config system (.ember/config.toml) ✅
 - sqlite-vec for fast vector search (100x speedup) ✅
 - Batch embedding optimization (2-6x faster indexing) ✅
 - Fast test suite (<10s) ✅
 - Clean, refactored CLI (29% complexity reduction) ✅
-- 125 automated tests passing ✅
+- 251+ automated tests passing ✅
 - Clean architecture with ports/adapters ✅
 
-**Current Focus:** Removing friction for 1.0.0 - make ember instant, effortless, and complete
+**Current Focus:** Bug fixes and stability for interactive search and indexing
 
 ---
 
-## 🎯 NEXT MILESTONE: v1.0.0 "Be Like Water"
+## 🎯 NEXT MILESTONE: v1.3.0 "Stability & Polish"
 
-See [GitHub milestone](https://github.com/sammcvicker/ember/milestone/4) for all issues.
+See [GitHub milestone](https://github.com/sammcvicker/ember/milestone/6) for all issues.
 
-**Philosophy:** Remove every snag. Make ember feel instant, effortless, and natural - like water flowing through a streambed.
+**Philosophy:** Fix bugs in interactive search, improve reliability and error handling.
 
-**Critical Path (High Priority):**
-1. **#46** - Reduce model initialization time (2+ seconds → instant) ⚡ `[performance]`
-   - *Biggest friction point - investigate daemon architecture*
-2. **#43** - Support subdirectories and path-scoped search 📁 `[enhancement]`
-   - *Work from anywhere, like git*
-3. **#47** - Index untracked/unstaged files 📝 `[enhancement]`
-   - *Search what you see, not what's committed*
+**Issues (All High Priority):**
+1. **#124** - Suppress logging during interactive search 🐛 `[bug, dx, tui]`
+   - *Logging corrupts TUI display - suppress stderr output during search*
+2. **#125** - Fix missing chunks during search retrieval 🐛 `[bug, indexing, search]`
+   - *Investigate and fix root cause of missing chunks warnings*
+3. **#126** - Improve daemon startup error reporting 🐛 `[bug, dx, tui, daemon]`
+   - *Better error handling when daemon fails in interactive mode*
 
-**Polish & Visibility (Medium Priority):**
-4. **#44** - Fix progress bar jumping 🎨 `[dx, performance]`
-   - *Quick visual win - stable progress display*
-5. **#45** - Add `ember status` command 📊 `[dx, enhancement]`
-   - *Observability: show index state and config*
+**Total:** 3 issues, bug fixes
+**Outcome:** Stable, reliable interactive search experience
 
-**Total:** 5 issues, ~25-38 hours effort
-**Outcome:** A tool that feels invisible - fast, complete, and friction-free
-
-**Completed in v0.2.0:**
-- All 11 milestone issues closed ✅
-- All 7 tech debt issues from audit closed ✅
-- Zero open issues at release (clean slate!) ✅
+**Recently Completed:**
+- **v1.2.0** - Syntax highlighting polish (5 issues) ✅
+- **v1.1.0** - Interactive search feature ✅
+- **v1.0.0** - Core features complete (8 issues) ✅
 
 ---
 
@@ -196,5 +192,5 @@ See `docs/decisions/` for full ADRs:
 
 ---
 
-**Last Updated:** 2025-10-21 (v1.0.0 milestone planned - "be like water")
+**Last Updated:** 2025-11-17 (v1.3.0 milestone - stability & polish)
 **Format Version:** 2.0 (Simplified)
