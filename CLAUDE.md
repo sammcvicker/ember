@@ -33,7 +33,7 @@
 
 See [GitHub milestone](https://github.com/sammcvicker/ember/milestone/6) for all issues.
 
-**Philosophy:** Fix bugs in interactive search, improve reliability and error handling.
+**Philosophy:** Fix bugs in interactive search and output formatting, improve reliability and UX.
 
 **Issues (All High Priority):**
 1. **#124** - Suppress logging during interactive search 🐛 `[bug, dx, tui]`
@@ -42,9 +42,11 @@ See [GitHub milestone](https://github.com/sammcvicker/ember/milestone/6) for all
    - *Investigate and fix root cause of missing chunks warnings*
 3. **#126** - Improve daemon startup error reporting 🐛 `[bug, dx, tui, daemon]`
    - *Better error handling when daemon fails in interactive mode*
+4. **#129** - Fix `ember find -C` output format 🐛 `[bug, dx, enhancement]`
+   - *Context flag shows entire chunks instead of compact ripgrep-style output*
 
-**Total:** 3 issues, bug fixes
-**Outcome:** Stable, reliable interactive search experience
+**Total:** 4 issues, bug fixes and UX improvements
+**Outcome:** Stable, reliable, and usable interactive search and find commands
 
 **Recently Completed:**
 - **v1.2.0** - Syntax highlighting polish (5 issues) ✅
