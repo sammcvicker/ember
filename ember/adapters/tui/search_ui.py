@@ -12,6 +12,7 @@ from typing import Any
 from prompt_toolkit import Application
 from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.filters import Condition
+from prompt_toolkit.formatted_text import ANSI, to_formatted_text
 from prompt_toolkit.key_binding import KeyBindings, KeyPressEvent
 from prompt_toolkit.layout import (
     ConditionalContainer,
@@ -24,8 +25,9 @@ from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
 from prompt_toolkit.layout.layout import Layout
 from prompt_toolkit.styles import Style
 
-from ember.core.presentation.colors import EmberColors
+from ember.core.presentation.colors import EmberColors, render_syntax_highlighted
 from ember.core.retrieval.interactive import InteractiveSearchSession
+from ember.domain.config import EmberConfig
 from ember.domain.entities import Query, SearchResult
 
 
@@ -35,6 +37,7 @@ class InteractiveSearchUI:
     def __init__(
         self,
         search_fn: Callable[[Query], list[SearchResult]],
+        config: EmberConfig,
         initial_query: str = "",
         topk: int = 20,
         path_filter: str | None = None,
@@ -48,6 +51,7 @@ class InteractiveSearchUI:
 
         Args:
             search_fn: Function to execute searches.
+            config: Ember configuration (for display settings).
             initial_query: Initial search query.
             topk: Maximum number of results to show.
             path_filter: Optional path glob filter.
@@ -58,6 +62,7 @@ class InteractiveSearchUI:
             debounce_ms: Debounce delay in milliseconds.
         """
         self.search_fn = search_fn
+        self.config = config
         self.topk = topk
         self.path_filter = path_filter
         self.lang_filter = lang_filter
@@ -338,7 +343,7 @@ class InteractiveSearchUI:
         return lines
 
     def _get_preview_text(self) -> list[tuple[str, str]]:
-        """Get formatted preview text.
+        """Get formatted preview text with optional syntax highlighting.
 
         Returns:
             List of (style, text) tuples for formatted text.
@@ -347,10 +352,29 @@ class InteractiveSearchUI:
         if not result:
             return [("", "")]
 
-        lines: list[tuple[str, str]] = []
-
-        # Add content with line numbers
         chunk = result.chunk
+
+        # Apply syntax highlighting if enabled in config
+        if self.config.display.syntax_highlighting:
+            try:
+                # Use render_syntax_highlighted to get ANSI-formatted code
+                highlighted = render_syntax_highlighted(
+                    code=chunk.content,
+                    file_path=Path(chunk.path),
+                    start_line=chunk.start_line,
+                    theme=self.config.display.theme,
+                )
+                # Convert ANSI escape codes to prompt_toolkit formatted text
+                # ANSI class wraps the ANSI string, then to_formatted_text converts it
+                # to a list of (style, text) tuples that prompt_toolkit can render
+                ansi_obj = ANSI(highlighted)
+                return to_formatted_text(ansi_obj)
+            except Exception:
+                # Fall back to plain text if highlighting fails
+                pass
+
+        # Plain text fallback (no highlighting or on error)
+        lines: list[tuple[str, str]] = []
         content_lines = chunk.content.splitlines()
         for i, line in enumerate(content_lines):
             line_num = chunk.start_line + i

@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Syntax highlighting for interactive search preview pane** (#120)
+  - `ember search` preview pane (ctrl-v) now displays code with syntax highlighting by default
+  - Uses terminal-native ANSI colors consistent with `ember cat` and `ember find --context`
+  - Automatically detects language from file extension
+  - Respects `display.syntax_highlighting` config setting (can be disabled)
+  - Uses configured theme from `display.theme` (default: "ansi")
+  - Graceful fallback to plain text if highlighting fails
+  - Preview pane scrolling still works correctly with highlighted code
+  - Comprehensive test coverage (5 new unit tests)
+
 - **Syntax highlighting for `ember find --context` output** (#119)
   - `ember find --context N` now displays code with syntax highlighting by default
   - Uses same terminal-native ANSI colors as `ember cat` for consistent experience
