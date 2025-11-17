@@ -292,3 +292,85 @@ class TestFindContextSyntaxHighlighting:
             # Context content should be plain text (no ANSI escape codes)
             context_content = str(data[0]["context"])
             assert "\x1b[" not in context_content
+
+    def test_find_context_multiple_results_same_file_properly_separated(
+        self, runner: CliRunner, python_repo: Path, monkeypatch
+    ) -> None:
+        """Test that multiple results from same file have proper spacing with --context."""
+        monkeypatch.chdir(python_repo)
+
+        # Create a file with multiple functions that will match the same query
+        multi_file = python_repo / "multi.py"
+        multi_file.write_text('''def process_data(data):
+    """Process the input data."""
+    result = transform(data)
+    return result
+
+
+def process_request(request):
+    """Process the HTTP request."""
+    response = handle(request)
+    return response
+
+
+def process_events(events):
+    """Process the event queue."""
+    for event in events:
+        dispatch(event)
+''')
+
+        # Commit the file
+        import subprocess
+        subprocess.run(["git", "add", "."], cwd=python_repo, check=True, capture_output=True, timeout=5)
+        subprocess.run(
+            ["git", "commit", "-m", "Add multi.py"],
+            cwd=python_repo,
+            check=True,
+            capture_output=True,
+            timeout=5,
+        )
+
+        # Init, sync, and find with context
+        runner.invoke(cli, ["init"], catch_exceptions=False)
+        runner.invoke(cli, ["sync"], catch_exceptions=False)
+        result = runner.invoke(cli, ["find", "process", "--context", "2"], catch_exceptions=False)
+
+        assert result.exit_code == 0
+
+        # Split output into lines and clean up
+        lines = result.output.split('\n')
+
+        # Find the file path line (multi.py)
+        file_path_idx = None
+        for i, line in enumerate(lines):
+            if 'multi.py' in line:
+                file_path_idx = i
+                break
+
+        assert file_path_idx is not None, f"File path not found in output: {result.output}"
+
+        # Check that there's a blank line after the file path
+        # (before the first rank marker [1])
+        rank_indices = [i for i, line in enumerate(lines) if line.strip().startswith('[') and ']' in line]
+        assert len(rank_indices) >= 2, f"Expected at least 2 results. Output: {result.output}"
+
+        # There should be blank lines separating the results
+        # The output structure should be:
+        # multi.py
+        # [blank line or directly to rank]
+        # [1]
+        # <code>
+        # [blank line]
+        # [2]
+        # <code>
+
+        # Count blank lines between first and second rank
+        if len(rank_indices) >= 2:
+            first_rank_idx = rank_indices[0]
+            second_rank_idx = rank_indices[1]
+            blank_between = sum(1 for i in range(first_rank_idx + 1, second_rank_idx)
+                               if not lines[i].strip())
+            # Should have at least one blank line between results
+            assert blank_between >= 1, \
+                f"Expected blank line between results. Lines {first_rank_idx}-{second_rank_idx}: " \
+                f"{lines[first_rank_idx:second_rank_idx + 1]}"
