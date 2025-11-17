@@ -4,6 +4,7 @@ Implements an fzf-style interactive search interface using prompt_toolkit.
 """
 
 import asyncio
+import logging
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -428,7 +429,18 @@ class InteractiveSearchUI:
     def run(self) -> tuple[Path | None, int | None]:
         """Run the interactive search UI.
 
+        Suppresses all logging output during TUI execution to prevent display
+        corruption, then restores original logging state after exit.
+
         Returns:
             Tuple of (selected_file, selected_line) or (None, None) if cancelled.
         """
-        return asyncio.run(self.run_async())
+        # Disable all logging during TUI to prevent corrupting the display
+        # prompt_toolkit runs in full-screen mode, so any stderr output
+        # (including logging) will corrupt the UI
+        logging.disable(logging.CRITICAL)
+        try:
+            return asyncio.run(self.run_async())
+        finally:
+            # Restore logging to original state
+            logging.disable(logging.NOTSET)

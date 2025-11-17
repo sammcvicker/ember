@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Suppressed logging during interactive search** (#124)
+  - All logging output is now disabled during `ember search` interactive TUI mode
+  - Prevents terminal corruption from stderr output (warnings, info messages)
+  - Logging is automatically restored after the TUI exits
+  - Handles daemon startup messages, missing chunk warnings, and other log output
+  - Comprehensive test coverage (5 new unit tests)
+
 - **Improved spacing in `ember find --context` output** (#123)
   - Multiple results from the same file now have blank lines between them for better readability
   - Results are visually separated making it easier to distinguish individual matches
