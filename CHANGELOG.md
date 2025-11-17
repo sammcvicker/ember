@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Improved spacing in `ember find --context` output** (#123)
+  - Multiple results from the same file now have blank lines between them for better readability
+  - Results are visually separated making it easier to distinguish individual matches
+  - Test coverage added to verify proper spacing behavior
+
 ### Added
 - **Syntax highlighting for interactive search preview pane** (#120)
   - `ember search` preview pane (ctrl-v) now displays code with syntax highlighting by default

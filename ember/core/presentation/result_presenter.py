@@ -116,7 +116,11 @@ class ResultPresenter:
             # Print filename using centralized color
             click.echo(EmberColors.click_path(str(file_path)))
 
-            for result in file_results:
+            for i, result in enumerate(file_results):
+                # Add blank line between results when using --context for readability
+                if context > 0 and i > 0:
+                    click.echo()
+
                 # If context requested, show context with line numbers
                 if context > 0 and repo_root is not None:
                     ResultPresenter._display_result_with_context(result, context, repo_root, config)
