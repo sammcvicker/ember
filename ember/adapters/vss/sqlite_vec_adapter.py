@@ -11,8 +11,6 @@ from pathlib import Path
 
 import sqlite_vec
 
-from ember.domain.entities import Chunk
-
 
 class SqliteVecAdapter:
     """Vector search adapter using sqlite-vec extension.
@@ -218,17 +216,16 @@ class SqliteVecAdapter:
             # Query vec0 table for nearest neighbors
             # sqlite-vec returns distance, we need to convert to similarity
             # Add path filtering if specified
+            # Join with chunks table to get the stored chunk_id
             if path_filter:
                 cursor.execute(
                     """
                     SELECT
-                        m.project_id,
-                        m.path,
-                        m.start_line,
-                        m.end_line,
+                        c.chunk_id,
                         v.distance
                     FROM vec_chunks v
                     JOIN vec_chunk_mapping m ON v.rowid = m.vec_rowid
+                    JOIN chunks c ON m.chunk_db_id = c.id
                     WHERE v.embedding MATCH ?
                       AND k = ?
                       AND m.path GLOB ?
@@ -241,13 +238,11 @@ class SqliteVecAdapter:
                 cursor.execute(
                     """
                     SELECT
-                        m.project_id,
-                        m.path,
-                        m.start_line,
-                        m.end_line,
+                        c.chunk_id,
                         v.distance
                     FROM vec_chunks v
                     JOIN vec_chunk_mapping m ON v.rowid = m.vec_rowid
+                    JOIN chunks c ON m.chunk_db_id = c.id
                     WHERE v.embedding MATCH ?
                       AND k = ?
                     ORDER BY v.distance
@@ -260,14 +255,9 @@ class SqliteVecAdapter:
             results = []
 
             for row in rows:
-                project_id = row[0]
-                path = Path(row[1])
-                start_line = row[2]
-                end_line = row[3]
-                distance = row[4]
-
-                # Compute chunk_id
-                chunk_id = Chunk.compute_id(project_id, path, start_line, end_line)
+                # Use the stored chunk_id from database instead of computing it
+                chunk_id = row[0]
+                distance = row[1]
 
                 # Convert distance to similarity
                 # For cosine distance: similarity = 1 - distance

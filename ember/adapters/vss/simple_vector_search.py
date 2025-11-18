@@ -8,8 +8,6 @@ import sqlite3
 import struct
 from pathlib import Path
 
-from ember.domain.entities import Chunk
-
 
 class SimpleVectorSearch:
     """Simple brute-force vector search using cosine similarity.
@@ -100,14 +98,11 @@ class SimpleVectorSearch:
         try:
             cursor = conn.cursor()
 
-            # Load all vectors with their chunk metadata
+            # Load all vectors with their stored chunk_id
             cursor.execute(
                 """
                 SELECT
-                    c.project_id,
-                    c.path,
-                    c.start_line,
-                    c.end_line,
+                    c.chunk_id,
                     v.embedding,
                     v.dim
                 FROM vectors v
@@ -119,22 +114,16 @@ class SimpleVectorSearch:
             results = []
 
             for row in rows:
-                # Decode chunk metadata
-                project_id = row[0]
-                path = Path(row[1])
-                start_line = row[2]
-                end_line = row[3]
-                embedding_blob = row[4]
-                dim = row[5]
+                # Use the stored chunk_id from database instead of computing it
+                chunk_id = row[0]
+                embedding_blob = row[1]
+                dim = row[2]
 
                 # Decode vector
                 chunk_vector = self._decode_vector(embedding_blob, dim)
 
                 # Compute cosine similarity
                 similarity = self._cosine_similarity(vector, chunk_vector)
-
-                # Compute chunk_id
-                chunk_id = Chunk.compute_id(project_id, path, start_line, end_line)
 
                 results.append((chunk_id, similarity))
 

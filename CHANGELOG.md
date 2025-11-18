@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Fixed missing chunks during search retrieval** (#125)
+  - Search adapters now return the actual `chunk_id` stored in the database instead of computing it on-the-fly
+  - Prevents "Missing chunks during retrieval" warnings caused by ID mismatches
+  - Improves search reliability and data integrity
+  - Updated FTS, sqlite-vec, and simple vector search adapters
+  - Added regression tests to prevent future occurrences
+
 - **Suppressed logging during interactive search** (#124)
   - All logging output is now disabled during `ember search` interactive TUI mode
   - Prevents terminal corruption from stderr output (warnings, info messages)
