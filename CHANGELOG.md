@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Improved daemon startup error reporting in interactive mode** (#126)
+  - Daemon now starts and verifies health BEFORE entering interactive search TUI
+  - Startup failures are caught early and display clean error messages
+  - Prevents TUI corruption from daemon errors during initialization
+  - Error messages show detailed information including exit code, stderr, and log file location
+  - Added test coverage for daemon startup failure scenarios
+
 - **Fixed missing chunks during search retrieval** (#125)
   - Search adapters now return the actual `chunk_id` stored in the database instead of computing it on-the-fly
   - Prevents "Missing chunks during retrieval" warnings caused by ID mismatches
