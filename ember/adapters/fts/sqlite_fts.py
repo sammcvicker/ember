@@ -3,8 +3,6 @@
 import sqlite3
 from pathlib import Path
 
-from ember.domain.entities import Chunk
-
 
 class SQLiteFTS:
     """SQLite FTS5 implementation of TextSearch for BM25-style full-text search.
@@ -72,7 +70,7 @@ class SQLiteFTS:
         conn = self._get_connection()
         cursor = conn.cursor()
 
-        # Query FTS5 table and join with chunks to get chunk metadata
+        # Query FTS5 table and join with chunks to get chunk_id and score
         # FTS5's rank is negative (closer to 0 = better), so we negate it
         # to get a positive score where higher = more relevant
         # Add path filtering if specified
@@ -80,10 +78,7 @@ class SQLiteFTS:
             cursor.execute(
                 """
                 SELECT
-                    c.project_id,
-                    c.path,
-                    c.start_line,
-                    c.end_line,
+                    c.chunk_id,
                     -rank AS score
                 FROM chunk_text
                 JOIN chunks c ON chunk_text.rowid = c.id
@@ -98,10 +93,7 @@ class SQLiteFTS:
             cursor.execute(
                 """
                 SELECT
-                    c.project_id,
-                    c.path,
-                    c.start_line,
-                    c.end_line,
+                    c.chunk_id,
                     -rank AS score
                 FROM chunk_text
                 JOIN chunks c ON chunk_text.rowid = c.id
@@ -116,14 +108,10 @@ class SQLiteFTS:
         results = []
 
         for row in rows:
-            # Compute chunk_id from the fields
-            project_id = row[0]
-            path = Path(row[1])
-            start_line = row[2]
-            end_line = row[3]
-            score = row[4]
+            # Use the stored chunk_id from database instead of computing it
+            chunk_id = row[0]
+            score = row[1]
 
-            chunk_id = Chunk.compute_id(project_id, path, start_line, end_line)
             results.append((chunk_id, score))
 
         return results
