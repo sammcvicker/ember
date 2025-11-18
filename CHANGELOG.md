@@ -7,7 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Added syntax highlighting to `ember find` (non-context mode)**
+  - `ember find` now applies syntax highlighting by default, matching `ember find --context` behavior
+  - Shows compact 3-line preview with syntax highlighting (keeps distinction from `ember cat`)
+  - Uses terminal-native ANSI colors consistent with other commands
+  - Automatically detects language from file extension
+  - Respects `display.syntax_highlighting` config setting (can be disabled)
+  - Uses configured theme from `display.theme` (default: "ansi")
+  - Graceful fallback to plain text if file not readable or highlighting fails
+
 ### Fixed
+- **Removed ellipses (`...`) from `ember find` output**
+  - Preview no longer shows `...` at the end of truncated chunks
+  - Consistent behavior between context and non-context modes
+
 - **Fixed `ember find -C/--context` output format to match ripgrep-style** (#129)
   - Context output now uses compact ripgrep-style format: `[rank] line_num:content`
   - Shows only N lines before and after the match line (not the entire chunk)
