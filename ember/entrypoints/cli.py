@@ -63,6 +63,9 @@ def _create_embedder(config, show_progress: bool = True):
 
     Returns:
         Embedder instance (daemon client or direct)
+
+    Raises:
+        RuntimeError: If daemon fails to start
     """
     if config.model.mode == "daemon":
         # Use daemon mode (default)
@@ -70,14 +73,23 @@ def _create_embedder(config, show_progress: bool = True):
         from ember.adapters.daemon.lifecycle import DaemonLifecycle
         from ember.core.cli_utils import ensure_daemon_with_progress
 
-        # Pre-start daemon with progress feedback
-        if show_progress:
-            daemon_manager = DaemonLifecycle(idle_timeout=config.model.daemon_timeout)
-            ensure_daemon_with_progress(daemon_manager, quiet=False)
+        # ALWAYS pre-start daemon before returning client
+        # This ensures errors are caught before TUI initialization (#126)
+        daemon_manager = DaemonLifecycle(idle_timeout=config.model.daemon_timeout)
+
+        # If daemon is already running, nothing to do
+        if not daemon_manager.is_running():
+            # Use progress UI if requested, otherwise start silently
+            if show_progress:
+                ensure_daemon_with_progress(daemon_manager, quiet=False)
+            else:
+                # Start daemon without progress UI
+                # Let RuntimeError propagate to show clean error before TUI starts
+                daemon_manager.start(foreground=False)
 
         return DaemonEmbedderClient(
             fallback=True,
-            auto_start=not show_progress,  # Only auto-start if we didn't pre-start
+            auto_start=False,  # Daemon already started above
             daemon_timeout=config.model.daemon_timeout,
         )
     else:

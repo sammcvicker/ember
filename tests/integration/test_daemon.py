@@ -563,6 +563,40 @@ class TestEndToEnd:
         # Should return False when daemon not running
         assert not is_daemon_running(temp_socket_path)
 
+    def test_daemon_startup_failure_raises_before_client_embed(
+        self, temp_socket_path, temp_pid_file, temp_log_file
+    ):
+        """Test that daemon startup failures raise RuntimeError during start().
+
+        This ensures that failures are caught early (before TUI initialization)
+        when _create_embedder() calls daemon_manager.start() in interactive search mode.
+        Related to issue #126.
+        """
+        lifecycle = DaemonLifecycle(
+            socket_path=temp_socket_path,
+            pid_file=temp_pid_file,
+            log_file=temp_log_file,
+        )
+
+        # Mock subprocess.Popen to simulate immediate daemon failure
+        mock_process = MagicMock()
+        mock_process.pid = 12345
+        mock_process.poll.return_value = 1  # Exit code 1 (failure)
+        mock_process.stderr.read.return_value = b"Model loading failed: corrupted file"
+
+        with patch("subprocess.Popen", return_value=mock_process):
+            # start() should raise RuntimeError immediately
+            with pytest.raises(RuntimeError) as exc_info:
+                lifecycle.start(foreground=False)
+
+            # Verify error message contains useful info
+            error_msg = str(exc_info.value)
+            assert "exit code: 1" in error_msg
+            assert "Model loading failed" in error_msg
+
+            # PID file should NOT have been created (failure was instant)
+            assert not temp_pid_file.exists()
+
 
 # Slow tests can be run with: pytest -m slow
 # Or skipped with: pytest -m "not slow"
