@@ -199,18 +199,18 @@ class ResultPresenter:
 
     @staticmethod
     def _display_result_with_context(result: Any, context: int, repo_root: Path, config: Any | None = None) -> None:
-        """Display a search result with surrounding context.
+        """Display a search result with surrounding context in compact ripgrep-style format.
 
         Args:
             result: SearchResult object.
-            context: Number of lines of context.
+            context: Number of lines of context around the match start line.
             repo_root: Repository root path.
             config: EmberConfig object for display settings (optional).
-        """
-        # Show rank using centralized color
-        rank = EmberColors.click_rank(f"[{result.rank}]")
-        click.echo(rank)
 
+        Note:
+            Shows N lines before and after the match START LINE (not the entire chunk),
+            maintaining the compact [rank] line_num: content format.
+        """
         file_path = repo_root / result.chunk.path
         if not file_path.exists():
             # Fall back to preview if file not found
@@ -221,12 +221,11 @@ class ResultPresenter:
 
         try:
             file_lines = file_path.read_text(errors="replace").splitlines()
-            start_line = result.chunk.start_line
-            end_line = result.chunk.end_line
+            match_line = result.chunk.start_line  # The primary match line
 
-            # Calculate context range (1-based line numbers)
-            context_start = max(1, start_line - context)
-            context_end = min(len(file_lines), end_line + context)
+            # Calculate context range around the MATCH LINE (not entire chunk)
+            context_start = max(1, match_line - context)
+            context_end = min(len(file_lines), match_line + context)
 
             # Check if syntax highlighting is enabled
             use_highlighting = False
@@ -236,30 +235,43 @@ class ResultPresenter:
                 theme = config.display.theme
 
             if use_highlighting:
-                # Collect all lines for syntax highlighting
+                # With syntax highlighting: show all context lines with highlighting
                 all_lines = []
                 for line_num in range(context_start, context_end + 1):
                     all_lines.append(file_lines[line_num - 1])
 
                 code_block = "\n".join(all_lines)
 
-                # Apply syntax highlighting
+                # Apply syntax highlighting with line numbers starting at context_start
                 highlighted = render_syntax_highlighted(
                     code=code_block,
                     file_path=file_path,
                     start_line=context_start,
                     theme=theme,
                 )
+
+                # Add rank indicator before the highlighted output
+                rank = EmberColors.click_rank(f"[{result.rank}]")
+                click.echo(rank)
                 click.echo(highlighted)
             else:
-                # Fallback: Display with line numbers (similar to cat --context)
+                # Compact ripgrep-style format without syntax highlighting
+                rank = EmberColors.click_rank(f"[{result.rank}]")
+
                 for line_num in range(context_start, context_end + 1):
                     line_content = file_lines[line_num - 1]  # Convert to 0-based
-                    # Highlight the chunk lines, dim the context
-                    if start_line <= line_num <= end_line:
-                        click.echo(f"{line_num:5} | {line_content}")
+
+                    if line_num == match_line:
+                        # Match line: show rank and line number with colon
+                        line_num_str = EmberColors.click_line_number(str(line_num))
+                        # Apply symbol highlighting if present
+                        highlighted_content = highlight_symbol(line_content, result.chunk.symbol)
+                        click.echo(f"{rank} {line_num_str}:{highlighted_content}")
                     else:
-                        click.echo(EmberColors.click_dimmed(f"{line_num:5} | {line_content}"))
+                        # Context line: dimmed, with line number and colon, indented
+                        line_num_str = EmberColors.click_line_number(str(line_num))
+                        dimmed_content = EmberColors.click_dimmed(line_content)
+                        click.echo(f"    {line_num_str}:{dimmed_content}")
         except Exception as e:
             # Fall back to preview if file read fails
             click.echo(EmberColors.click_warning(f"Warning: Could not read file: {e}"))

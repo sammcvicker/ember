@@ -124,9 +124,14 @@ class TestFindContextSyntaxHighlighting:
         result = runner.invoke(cli, ["find", "calculate", "--context", "3"], catch_exceptions=False)
 
         assert result.exit_code == 0
-        # Without syntax highlighting, should use old format with | separator
-        # and dimmed context lines
-        assert "|" in result.output, f"Expected pipe separator in output. Output: {result.output}"
+        # Without syntax highlighting, should use compact ripgrep-style format
+        # with colon separator and dimmed context lines
+        # Expected format: [rank] line_num:content for match
+        #                      line_num:content for context (dimmed)
+        assert ":" in result.output, f"Expected colon separator in output. Output: {result.output}"
+        # Should have rank indicator [1], [2], etc.
+        assert "[1]" in result.output or "[2]" in result.output, \
+            f"Expected rank indicator in output. Output: {result.output}"
 
     def test_find_context_uses_configured_theme(
         self, runner: CliRunner, python_repo: Path, monkeypatch

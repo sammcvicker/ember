@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Fixed `ember find -C/--context` output format to match ripgrep-style** (#129)
+  - Context output now uses compact ripgrep-style format: `[rank] line_num:content`
+  - Shows only N lines before and after the match line (not the entire chunk)
+  - Context lines are dimmed and indented for visual distinction
+  - Rank indicator appears only on the match line (not on context lines)
+  - Maintains consistency with non-context output format
+  - Significantly improves readability for large code chunks
+  - Works with both syntax highlighting enabled and disabled
+  - Updated integration tests to verify new format
+
 - **Improved daemon startup error reporting in interactive mode** (#126)
   - Daemon now starts and verifies health BEFORE entering interactive search TUI
   - Startup failures are caught early and display clean error messages
