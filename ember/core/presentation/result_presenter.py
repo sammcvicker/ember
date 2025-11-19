@@ -125,23 +125,79 @@ class ResultPresenter:
                 if context > 0 and repo_root is not None:
                     ResultPresenter._display_result_with_context(result, context, repo_root, config)
                 else:
-                    # Original format: [rank] line_number: content
-                    # Rank and line number using centralized colors
+                    # Compact format: [rank] line_number: content
+                    # Show first 2-3 lines as preview with syntax highlighting
                     rank = EmberColors.click_rank(f"[{result.rank}]")
                     line_num = EmberColors.click_line_number(f"{result.chunk.start_line}")
 
-                    # Get preview content (first line only for compact display)
-                    preview = result.preview or result.format_preview(max_lines=1)
-                    content_lines = preview.split("\n")
+                    # Check if syntax highlighting is enabled
+                    use_highlighting = False
+                    theme = "ansi"
+                    if config is not None and hasattr(config, "display"):
+                        use_highlighting = config.display.syntax_highlighting
+                        theme = config.display.theme
 
-                    # First line with rank and line number
-                    if content_lines:
-                        first_line = highlight_symbol(content_lines[0], result.chunk.symbol)
-                        click.echo(f"{rank} {line_num}:{first_line}")
+                    # Maximum preview lines (compact display)
+                    max_preview_lines = 3
 
-                        # Additional preview lines (indented, no line number)
-                        for line in content_lines[1:]:
-                            if line.strip():  # Skip empty lines
+                    # Try to read file for syntax highlighting
+                    if use_highlighting and repo_root is not None:
+                        file_path = repo_root / result.chunk.path
+                        if file_path.exists():
+                            try:
+                                # Read just the first few lines of the chunk for preview
+                                file_lines = file_path.read_text(errors="replace").splitlines()
+                                start_line = result.chunk.start_line
+                                end_line = result.chunk.end_line
+
+                                # Get preview lines (first N lines of chunk)
+                                preview_lines = []
+                                for line_num_iter in range(start_line, min(start_line + max_preview_lines, end_line + 1, len(file_lines) + 1)):
+                                    if line_num_iter - 1 < len(file_lines):
+                                        preview_lines.append(file_lines[line_num_iter - 1])
+
+                                if preview_lines:
+                                    code_block = "\n".join(preview_lines)
+
+                                    # Apply syntax highlighting to preview
+                                    highlighted = render_syntax_highlighted(
+                                        code=code_block,
+                                        file_path=file_path,
+                                        start_line=start_line,
+                                        theme=theme,
+                                    )
+
+                                    # Show rank and line number with first line
+                                    highlighted_lines = highlighted.splitlines() if highlighted else code_block.splitlines()
+                                    if highlighted_lines:
+                                        click.echo(f"{rank} {line_num}:{highlighted_lines[0]}")
+
+                                        # Show remaining preview lines (indented)
+                                        for line in highlighted_lines[1:]:
+                                            click.echo(f"    {line}")
+
+                                    # Success - skip fallback
+                                    use_highlighting = True
+                                else:
+                                    use_highlighting = False
+
+                            except Exception:
+                                # Fall back to preview without syntax highlighting
+                                use_highlighting = False
+
+                    # Fallback: use preview without syntax highlighting
+                    if not use_highlighting:
+                        # Get preview content (first N lines, no ellipses)
+                        content_lines = result.chunk.content.split("\n")
+                        preview_lines = content_lines[:max_preview_lines]
+
+                        # First line with rank and line number
+                        if preview_lines:
+                            first_line = highlight_symbol(preview_lines[0], result.chunk.symbol)
+                            click.echo(f"{rank} {line_num}:{first_line}")
+
+                            # Additional preview lines (indented, no ellipses)
+                            for line in preview_lines[1:]:
                                 highlighted_line = highlight_symbol(line, result.chunk.symbol)
                                 click.echo(f"    {highlighted_line}")
 
