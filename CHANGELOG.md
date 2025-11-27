@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Context manager support for all repository classes** (#138)
+  - All SQLite repository classes now implement the context manager protocol (`__enter__`/`__exit__`)
+  - Enables proper resource cleanup with `with` statement: `with SQLiteChunkRepository(db_path) as repo: ...`
+  - Connection is automatically closed when exiting the context
+  - Supports gradual migration to context-managed resource handling
+  - Prevents database connection leaks in long-running processes
+  - Affected classes: `SQLiteChunkRepository`, `SQLiteFileRepository`, `SQLiteVectorRepository`, `SQLiteMetaRepository`, `SQLiteFTS`, `SqliteVecAdapter`
+  - Added comprehensive unit tests for context manager behavior
+
+### Added
 - **Added syntax highlighting to `ember find` (non-context mode)**
   - `ember find` now applies syntax highlighting by default, matching `ember find --context` behavior
   - Shows compact 3-line preview with syntax highlighting (keeps distinction from `ember cat`)
