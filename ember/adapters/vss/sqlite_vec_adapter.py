@@ -34,6 +34,24 @@ class SqliteVecAdapter:
         self.vector_dim = vector_dim
         self._ensure_vec_table()
 
+    def close(self) -> None:
+        """Close the adapter.
+
+        This is a no-op for SqliteVecAdapter since it creates a fresh
+        connection for each operation. Provided for API consistency with
+        other repository classes.
+        """
+        pass
+
+    def __enter__(self) -> "SqliteVecAdapter":
+        """Enter context manager."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
+        """Exit context manager."""
+        self.close()
+        return False
+
     def _get_connection(self) -> sqlite3.Connection:
         """Get a database connection with sqlite-vec extension loaded.
 

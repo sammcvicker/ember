@@ -39,6 +39,15 @@ class SQLiteFTS:
             self._conn.close()
             self._conn = None
 
+    def __enter__(self) -> "SQLiteFTS":
+        """Enter context manager."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
+        """Exit context manager, closing the database connection."""
+        self.close()
+        return False
+
     def add(self, chunk_id: str, text: str, metadata: dict[str, str]) -> None:
         """Add a document to the text search index.
 

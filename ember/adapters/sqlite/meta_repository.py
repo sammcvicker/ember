@@ -34,6 +34,15 @@ class SQLiteMetaRepository:
             self._conn.close()
             self._conn = None
 
+    def __enter__(self) -> "SQLiteMetaRepository":
+        """Enter context manager."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
+        """Exit context manager, closing the database connection."""
+        self.close()
+        return False
+
     def get(self, key: str) -> str | None:
         """Get a metadata value by key.
 

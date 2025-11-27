@@ -43,6 +43,15 @@ class SQLiteChunkRepository:
             self._conn.close()
             self._conn = None
 
+    def __enter__(self) -> "SQLiteChunkRepository":
+        """Enter context manager."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
+        """Exit context manager, closing the database connection."""
+        self.close()
+        return False
+
     def add(self, chunk: Chunk) -> None:
         """Add or update a chunk in the repository.
 

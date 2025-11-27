@@ -1,0 +1,203 @@
+"""Unit tests for repository context manager protocol.
+
+Tests that all repository classes properly implement the context manager protocol
+for resource cleanup (closes database connections on exit).
+"""
+
+from pathlib import Path
+
+from ember.adapters.fts.sqlite_fts import SQLiteFTS
+from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
+from ember.adapters.sqlite.file_repository import SQLiteFileRepository
+from ember.adapters.sqlite.meta_repository import SQLiteMetaRepository
+from ember.adapters.sqlite.vector_repository import SQLiteVectorRepository
+from ember.adapters.vss.sqlite_vec_adapter import SqliteVecAdapter
+
+
+class TestChunkRepositoryContextManager:
+    """Tests for SQLiteChunkRepository context manager protocol."""
+
+    def test_context_manager_returns_self(self, db_path: Path):
+        """Test that __enter__ returns the repository instance."""
+        repo = SQLiteChunkRepository(db_path)
+        with repo as ctx:
+            assert ctx is repo
+
+    def test_context_manager_closes_connection(self, db_path: Path):
+        """Test that __exit__ closes the database connection."""
+        repo = SQLiteChunkRepository(db_path)
+        with repo:
+            # Access connection to ensure it's created
+            _ = repo._get_connection()
+            assert repo._conn is not None
+
+        # After exiting context, connection should be closed
+        assert repo._conn is None
+
+    def test_context_manager_closes_on_exception(self, db_path: Path):
+        """Test that connection is closed even when exception occurs."""
+        repo = SQLiteChunkRepository(db_path)
+        try:
+            with repo:
+                _ = repo._get_connection()
+                raise ValueError("Test exception")
+        except ValueError:
+            pass
+
+        # Connection should still be closed
+        assert repo._conn is None
+
+    def test_close_method_idempotent(self, db_path: Path):
+        """Test that close() can be called multiple times safely."""
+        repo = SQLiteChunkRepository(db_path)
+        repo._get_connection()
+        repo.close()
+        repo.close()  # Should not raise
+        assert repo._conn is None
+
+
+class TestFileRepositoryContextManager:
+    """Tests for SQLiteFileRepository context manager protocol."""
+
+    def test_context_manager_returns_self(self, db_path: Path):
+        """Test that __enter__ returns the repository instance."""
+        repo = SQLiteFileRepository(db_path)
+        with repo as ctx:
+            assert ctx is repo
+
+    def test_context_manager_closes_connection(self, db_path: Path):
+        """Test that __exit__ closes the database connection."""
+        repo = SQLiteFileRepository(db_path)
+        with repo:
+            _ = repo._get_connection()
+            assert repo._conn is not None
+
+        assert repo._conn is None
+
+    def test_context_manager_closes_on_exception(self, db_path: Path):
+        """Test that connection is closed even when exception occurs."""
+        repo = SQLiteFileRepository(db_path)
+        try:
+            with repo:
+                _ = repo._get_connection()
+                raise ValueError("Test exception")
+        except ValueError:
+            pass
+
+        assert repo._conn is None
+
+
+class TestVectorRepositoryContextManager:
+    """Tests for SQLiteVectorRepository context manager protocol."""
+
+    def test_context_manager_returns_self(self, db_path: Path):
+        """Test that __enter__ returns the repository instance."""
+        repo = SQLiteVectorRepository(db_path)
+        with repo as ctx:
+            assert ctx is repo
+
+    def test_context_manager_closes_connection(self, db_path: Path):
+        """Test that __exit__ closes the database connection."""
+        repo = SQLiteVectorRepository(db_path)
+        with repo:
+            _ = repo._get_connection()
+            assert repo._conn is not None
+
+        assert repo._conn is None
+
+    def test_context_manager_closes_on_exception(self, db_path: Path):
+        """Test that connection is closed even when exception occurs."""
+        repo = SQLiteVectorRepository(db_path)
+        try:
+            with repo:
+                _ = repo._get_connection()
+                raise ValueError("Test exception")
+        except ValueError:
+            pass
+
+        assert repo._conn is None
+
+
+class TestMetaRepositoryContextManager:
+    """Tests for SQLiteMetaRepository context manager protocol."""
+
+    def test_context_manager_returns_self(self, db_path: Path):
+        """Test that __enter__ returns the repository instance."""
+        repo = SQLiteMetaRepository(db_path)
+        with repo as ctx:
+            assert ctx is repo
+
+    def test_context_manager_closes_connection(self, db_path: Path):
+        """Test that __exit__ closes the database connection."""
+        repo = SQLiteMetaRepository(db_path)
+        with repo:
+            _ = repo._get_connection()
+            assert repo._conn is not None
+
+        assert repo._conn is None
+
+    def test_context_manager_closes_on_exception(self, db_path: Path):
+        """Test that connection is closed even when exception occurs."""
+        repo = SQLiteMetaRepository(db_path)
+        try:
+            with repo:
+                _ = repo._get_connection()
+                raise ValueError("Test exception")
+        except ValueError:
+            pass
+
+        assert repo._conn is None
+
+
+class TestSqliteFtsContextManager:
+    """Tests for SQLiteFTS context manager protocol."""
+
+    def test_context_manager_returns_self(self, db_path: Path):
+        """Test that __enter__ returns the adapter instance."""
+        adapter = SQLiteFTS(db_path)
+        with adapter as ctx:
+            assert ctx is adapter
+
+    def test_context_manager_closes_connection(self, db_path: Path):
+        """Test that __exit__ closes the database connection."""
+        adapter = SQLiteFTS(db_path)
+        with adapter:
+            _ = adapter._get_connection()
+            assert adapter._conn is not None
+
+        assert adapter._conn is None
+
+    def test_context_manager_closes_on_exception(self, db_path: Path):
+        """Test that connection is closed even when exception occurs."""
+        adapter = SQLiteFTS(db_path)
+        try:
+            with adapter:
+                _ = adapter._get_connection()
+                raise ValueError("Test exception")
+        except ValueError:
+            pass
+
+        assert adapter._conn is None
+
+
+class TestSqliteVecAdapterContextManager:
+    """Tests for SqliteVecAdapter context manager protocol."""
+
+    def test_context_manager_returns_self(self, db_path: Path):
+        """Test that __enter__ returns the adapter instance."""
+        adapter = SqliteVecAdapter(db_path)
+        with adapter as ctx:
+            assert ctx is adapter
+
+    def test_close_is_noop(self, db_path: Path):
+        """Test that close() is a no-op (this adapter manages connections per-operation)."""
+        adapter = SqliteVecAdapter(db_path)
+        # close() should not raise and should be idempotent
+        adapter.close()
+        adapter.close()
+
+    def test_context_manager_works(self, db_path: Path):
+        """Test that context manager works even though close is no-op."""
+        with SqliteVecAdapter(db_path) as adapter:
+            # Just verify we can use it in a with statement
+            assert adapter is not None
