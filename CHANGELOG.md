@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **GitAdapter now raises exception on index restoration failure** (#140)
+  - `get_worktree_tree_sha()` now raises `RuntimeError` if git index restoration fails
+  - Previously, restoration failures were silently logged as warnings
+  - Error message includes recovery guidance: suggests running `git status` and `git reset`
+  - Prevents silent repository corruption that could cause data loss
+  - Added comprehensive tests for restoration failure scenarios
+
 ### Added
 - **Context manager support for all repository classes** (#138)
   - All SQLite repository classes now implement the context manager protocol (`__enter__`/`__exit__`)

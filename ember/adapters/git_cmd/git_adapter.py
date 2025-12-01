@@ -173,20 +173,35 @@ class GitAdapter:
         finally:
             # ALWAYS restore index to previous state, even if exception occurred
             # This prevents leaving the repository in a modified state
+            # CRITICAL: If restoration fails, raise exception to alert user about potential corruption
+            restoration_error: Exception | None = None
+
             if index_tree:
                 try:
                     self._run_git(["read-tree", index_tree])
-                except subprocess.CalledProcessError:
-                    # Log but don't raise - original error is more important
-                    logger.warning(
-                        "Failed to restore index state after computing worktree tree SHA"
+                except subprocess.CalledProcessError as e:
+                    logger.error(
+                        f"CRITICAL: Failed to restore git index state: {e}. "
+                        "Repository may be in an inconsistent state."
                     )
+                    restoration_error = e
             else:
                 # If there was no index, reset it
                 try:
                     self._run_git(["reset"], check=False)
-                except subprocess.CalledProcessError:
-                    logger.warning("Failed to reset index after computing worktree tree SHA")
+                except subprocess.CalledProcessError as e:
+                    logger.error(
+                        f"CRITICAL: Failed to reset git index: {e}. "
+                        "Repository may be in an inconsistent state."
+                    )
+                    restoration_error = e
+
+            if restoration_error:
+                raise RuntimeError(
+                    "Git index restoration failed! Repository may be in an inconsistent state. "
+                    "Please run 'git status' to verify index integrity and consider running "
+                    "'git reset' to restore a clean state."
+                ) from restoration_error
 
     def diff_files(
         self,
