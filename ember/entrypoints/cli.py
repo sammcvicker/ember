@@ -421,7 +421,7 @@ def _format_sync_results(response) -> None:
     sync_type = "incremental" if response.is_incremental else "full"
 
     if response.files_indexed == 0 and response.chunks_deleted == 0:
-        click.echo("✓ No changes detected (full scan)")
+        click.echo(f"✓ No changes detected ({sync_type} scan completed)")
     else:
         click.echo(f"✓ Indexed {response.files_indexed} files ({sync_type} sync)")
 
