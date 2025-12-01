@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Add logging when TOML config parsing fails** (#145)
+  - Config parsing failures now log a warning with the error details
+  - Missing config file (expected) does not log a warning
+  - Invalid TOML syntax logs a clear message to help users debug config issues
+  - Graceful fallback to defaults still works, but users are now informed
+
 - **Improve "No changes detected" feedback clarity** (#143)
   - Sync feedback now correctly distinguishes between full and incremental scans
   - Previously always showed "(full scan)" even for incremental scans

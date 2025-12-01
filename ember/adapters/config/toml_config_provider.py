@@ -3,10 +3,13 @@
 Loads configuration from .ember/config.toml with graceful fallback to defaults.
 """
 
+import logging
 from pathlib import Path
 
 from ember.domain.config import EmberConfig
 from ember.shared.config_io import load_config
+
+logger = logging.getLogger(__name__)
 
 
 class TomlConfigProvider:
@@ -36,7 +39,9 @@ class TomlConfigProvider:
         # Try to load config, fall back to defaults on error
         try:
             return load_config(config_path)
-        except (FileNotFoundError, ValueError):
-            # Log warning but don't fail - use defaults
-            # In the future, we could use a logger here
+        except (FileNotFoundError, ValueError) as e:
+            logger.warning(
+                "Failed to parse config.toml: %s. Using default configuration.",
+                e,
+            )
             return EmberConfig.default()
