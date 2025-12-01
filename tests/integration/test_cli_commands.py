@@ -457,6 +457,49 @@ class TestFindCommand:
 
         assert result.exit_code == 0
 
+    def test_find_path_and_in_filter_mutually_exclusive(
+        self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
+    ) -> None:
+        """Test that PATH argument and --in filter are mutually exclusive."""
+        monkeypatch.chdir(git_repo_isolated)
+        # Init
+        runner.invoke(cli, ["init"], catch_exceptions=False)
+        runner.invoke(cli, ["sync"], catch_exceptions=False)
+
+        # Try to use both PATH argument and --in filter
+        result = runner.invoke(
+            cli, ["find", "hello", "src/", "--in", "*.py"],
+            catch_exceptions=False
+        )
+
+        # Should fail with error about mutually exclusive options
+        assert result.exit_code == 1
+        assert "mutually exclusive" in result.output.lower() or "cannot use both" in result.output.lower()
+
+
+class TestSearchCommand:
+    """Tests for 'ember search' command filter handling."""
+
+    def test_search_path_and_in_filter_mutually_exclusive(
+        self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
+    ) -> None:
+        """Test that --path and --in flags are mutually exclusive."""
+        monkeypatch.chdir(git_repo_isolated)
+        # Init
+        runner.invoke(cli, ["init"], catch_exceptions=False)
+        runner.invoke(cli, ["sync"], catch_exceptions=False)
+
+        # Try to use both --path and --in flags
+        # Note: search command is interactive, so we just test it exits with error
+        result = runner.invoke(
+            cli, ["search", "--path", "src/", "--in", "*.py"],
+            catch_exceptions=False
+        )
+
+        # Should fail with error about mutually exclusive options
+        assert result.exit_code == 1
+        assert "mutually exclusive" in result.output.lower() or "cannot use both" in result.output.lower()
+
 
 class TestCatCommand:
     """Tests for 'ember cat' command."""
