@@ -473,6 +473,31 @@ class TestDaemonLifecycle:
             # PID file should have been cleaned up
             assert not temp_pid_file.exists()
 
+    def test_start_instant_failure_closes_stderr(
+        self, temp_socket_path, temp_pid_file, temp_log_file
+    ):
+        """Test that stderr is closed when daemon fails immediately (issue #139)."""
+        lifecycle = DaemonLifecycle(
+            socket_path=temp_socket_path,
+            pid_file=temp_pid_file,
+            log_file=temp_log_file,
+        )
+
+        # Create mock process that exits immediately with error
+        mock_process = MagicMock()
+        mock_process.pid = 12345
+        mock_process.poll.return_value = 1  # Exit code 1 (failure)
+        mock_stderr = MagicMock()
+        mock_stderr.read.return_value = b"Model loading failed"
+        mock_process.stderr = mock_stderr
+
+        with patch("subprocess.Popen", return_value=mock_process):
+            with pytest.raises(RuntimeError):
+                lifecycle.start(foreground=False)
+
+            # stderr should have been closed in the finally block
+            mock_stderr.close.assert_called_once()
+
 
 class TestEndToEnd:
     """End-to-end integration tests.
