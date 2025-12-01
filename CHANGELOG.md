@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Refactored IndexingUseCase._get_files_to_index for reduced complexity** (#136)
+  - Reduced cyclomatic complexity from C15 to A4 (main method)
+  - Extracted `_determine_files_to_sync()` for git state handling (B6)
+  - Extracted `_filter_code_files()` for extension filtering (A3)
+  - Extracted `_apply_path_filters()` for glob pattern matching (A5)
+  - Each extracted method has single responsibility and is independently testable
+  - Added 18 unit tests covering all edge cases
+  - No functional changes - pure refactoring for maintainability
+
 - **Refactored ResultPresenter for reduced complexity** (#135)
   - Reduced `format_human_output` cyclomatic complexity from C19 to under threshold
   - Extracted display settings, file reading, result grouping, and rendering logic into focused methods

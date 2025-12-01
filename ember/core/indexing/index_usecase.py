@@ -503,51 +503,98 @@ class IndexingUseCase:
         Returns:
             Tuple of (list of absolute file paths to index, is_incremental flag).
         """
-        # Check if we can do incremental indexing
+        # Determine which files need syncing based on git state
+        sync_result = self._determine_files_to_sync(tree_sha, force_reindex)
+        if sync_result is None:
+            return ([], False)  # No changes since last sync
+
+        relative_files, is_incremental = sync_result
+
+        # Convert to absolute paths
+        files = [repo_root / f for f in relative_files]
+
+        # Filter to only include code files (skip docs, data, binary files)
+        files = self._filter_code_files(files)
+
+        # Apply path filters if provided
+        if path_filters:
+            files = self._apply_path_filters(files, path_filters, repo_root)
+
+        return (files, is_incremental)
+
+    def _determine_files_to_sync(
+        self,
+        tree_sha: str,
+        force_reindex: bool,
+    ) -> tuple[list[str], bool] | None:
+        """Determine which files need to be synced based on git state.
+
+        Args:
+            tree_sha: Current tree SHA.
+            force_reindex: Whether to force a full reindex.
+
+        Returns:
+            Tuple of (relative file paths, is_incremental) or None if no changes.
+        """
         last_tree_sha = self.meta_repo.get("last_tree_sha")
 
         if force_reindex or last_tree_sha is None:
             # Full reindex: get all tracked files
-            relative_files = self.vcs.list_tracked_files()
-            files = [repo_root / f for f in relative_files]
-            is_incremental = False
-        elif last_tree_sha == tree_sha:
-            # No changes since last sync - skip indexing
-            return ([], False)
-        else:
-            # Incremental sync: only get changed files
-            changes = self.vcs.diff_files(from_sha=last_tree_sha, to_sha=tree_sha)
+            return (self.vcs.list_tracked_files(), False)
 
-            # Get added and modified files (deletions handled separately)
-            relative_files = [
-                path for status, path in changes if status in ("added", "modified", "renamed")
-            ]
-            files = [repo_root / f for f in relative_files]
-            is_incremental = True
+        if last_tree_sha == tree_sha:
+            # No changes since last sync
+            return None
 
-        # Filter to only include code files (skip docs, data, binary files)
-        files = [f for f in files if self._is_code_file(f)]
+        # Incremental sync: only get changed files
+        changes = self.vcs.diff_files(from_sha=last_tree_sha, to_sha=tree_sha)
 
-        # Apply path filters if provided
-        if path_filters:
-            # Use glob pattern matching for flexible filtering
-            filtered = []
-            for f in files:
-                # Convert to relative path for pattern matching
-                try:
-                    rel_path = f.relative_to(repo_root)
-                except ValueError:
-                    # File is not relative to repo_root, skip it
-                    continue
+        # Get added and modified files (deletions handled separately)
+        relative_files = [
+            path for status, path in changes if status in ("added", "modified", "renamed")
+        ]
+        return (relative_files, True)
 
-                # Check if file matches any of the glob patterns
-                for pattern in path_filters:
-                    if rel_path.match(pattern):
-                        filtered.append(f)
-                        break
-            files = filtered
+    def _filter_code_files(self, files: list[Path]) -> list[Path]:
+        """Filter list to only include code files.
 
-        return (files, is_incremental)
+        Args:
+            files: List of file paths.
+
+        Returns:
+            Filtered list containing only code files.
+        """
+        return [f for f in files if self._is_code_file(f)]
+
+    def _apply_path_filters(
+        self,
+        files: list[Path],
+        path_filters: list[str],
+        repo_root: Path,
+    ) -> list[Path]:
+        """Apply glob pattern filters to file list.
+
+        Args:
+            files: List of absolute file paths.
+            path_filters: Glob patterns to match against.
+            repo_root: Repository root for computing relative paths.
+
+        Returns:
+            Filtered list of files matching at least one pattern.
+        """
+        filtered = []
+        for f in files:
+            try:
+                rel_path = f.relative_to(repo_root)
+            except ValueError:
+                # File is not relative to repo_root, skip it
+                continue
+
+            for pattern in path_filters:
+                if rel_path.match(pattern):
+                    filtered.append(f)
+                    break
+        return filtered
 
     def _handle_deletions(
         self,
