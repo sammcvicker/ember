@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Comprehensive unit tests for ResultPresenter class** (#149)
+  - Increased test coverage from 76% to 100%
+  - Added 11 new tests covering edge cases, error handling, and all code paths
+  - Tests for `_get_context` method with file boundary handling
+  - Tests for syntax highlighting paths in preview and context rendering
+  - Tests for error handling when files are missing or unreadable
+  - Fast tests using mocks (< 0.2s total for 28 tests)
+
 ### Improved
 - **Optimized ChunkRepository.delete() by removing redundant get() call** (#148)
   - Deletes chunks directly using indexed chunk_id column instead of fetching full chunk first
