@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Improved
+- **SqliteVecAdapter now caches database connections for better search performance** (#147)
+  - Connection is reused across operations instead of creating new ones per call
+  - sqlite-vec extension loaded once instead of per operation
+  - Reduces overhead for high-frequency search operations
+  - Now follows same connection management pattern as other repository classes
+
 - **Missing chunks warning now includes recovery guidance** (#146)
   - Warning message now suggests running `ember sync --force` to rebuild the index
   - Directs users to report an issue if the problem persists

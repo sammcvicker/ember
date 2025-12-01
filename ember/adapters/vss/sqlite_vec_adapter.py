@@ -32,16 +32,14 @@ class SqliteVecAdapter:
         """
         self.db_path = db_path
         self.vector_dim = vector_dim
+        self._conn: sqlite3.Connection | None = None
         self._ensure_vec_table()
 
     def close(self) -> None:
-        """Close the adapter.
-
-        This is a no-op for SqliteVecAdapter since it creates a fresh
-        connection for each operation. Provided for API consistency with
-        other repository classes.
-        """
-        pass
+        """Close the database connection if open."""
+        if self._conn is not None:
+            self._conn.close()
+            self._conn = None
 
     def __enter__(self) -> "SqliteVecAdapter":
         """Enter context manager."""
@@ -55,14 +53,18 @@ class SqliteVecAdapter:
     def _get_connection(self) -> sqlite3.Connection:
         """Get a database connection with sqlite-vec extension loaded.
 
+        Reuses an existing connection if available, otherwise creates a new one.
+        The sqlite-vec extension is loaded only once when the connection is created.
+
         Returns:
             SQLite connection object with vec extension enabled.
         """
-        conn = sqlite3.connect(self.db_path)
-        conn.enable_load_extension(True)
-        sqlite_vec.load(conn)
-        conn.enable_load_extension(False)
-        return conn
+        if self._conn is None:
+            self._conn = sqlite3.connect(self.db_path)
+            self._conn.enable_load_extension(True)
+            sqlite_vec.load(self._conn)
+            self._conn.enable_load_extension(False)
+        return self._conn
 
     def _ensure_vec_table(self) -> None:
         """Ensure the vec0 virtual table exists and is populated.
@@ -73,37 +75,33 @@ class SqliteVecAdapter:
         Also syncs vectors from the vectors table on first use.
         """
         conn = self._get_connection()
-        try:
-            cursor = conn.cursor()
+        cursor = conn.cursor()
 
-            # Create vec0 virtual table for vector similarity search
-            # Using cosine distance metric (best for normalized embeddings like Jina)
-            cursor.execute(f"""
-                CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks USING vec0(
-                    embedding float[{self.vector_dim}] distance_metric=cosine
-                )
-            """)
+        # Create vec0 virtual table for vector similarity search
+        # Using cosine distance metric (best for normalized embeddings like Jina)
+        cursor.execute(f"""
+            CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks USING vec0(
+                embedding float[{self.vector_dim}] distance_metric=cosine
+            )
+        """)
 
-            # Create mapping table to link vec0 rowids to chunk metadata
-            # vec0 uses integer rowids, but we need to map back to our chunk identifiers
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS vec_chunk_mapping (
-                    vec_rowid INTEGER PRIMARY KEY,
-                    project_id TEXT NOT NULL,
-                    path TEXT NOT NULL,
-                    start_line INTEGER NOT NULL,
-                    end_line INTEGER NOT NULL,
-                    chunk_db_id INTEGER NOT NULL UNIQUE
-                )
-            """)
+        # Create mapping table to link vec0 rowids to chunk metadata
+        # vec0 uses integer rowids, but we need to map back to our chunk identifiers
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS vec_chunk_mapping (
+                vec_rowid INTEGER PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                path TEXT NOT NULL,
+                start_line INTEGER NOT NULL,
+                end_line INTEGER NOT NULL,
+                chunk_db_id INTEGER NOT NULL UNIQUE
+            )
+        """)
 
-            conn.commit()
+        conn.commit()
 
-            # Sync vectors from vectors table if vec_chunks is empty
-            self._sync_vectors()
-
-        finally:
-            conn.close()
+        # Sync vectors from vectors table if vec_chunks is empty
+        self._sync_vectors()
 
     def _sync_vectors(self) -> None:
         """Sync vectors from the vectors table to vec_chunks.
@@ -113,68 +111,64 @@ class SqliteVecAdapter:
         be picked up on the next sync.
         """
         conn = self._get_connection()
-        try:
-            cursor = conn.cursor()
+        cursor = conn.cursor()
 
-            # Get all chunk_db_ids that are already in vec_chunks
-            cursor.execute("SELECT chunk_db_id FROM vec_chunk_mapping")
-            existing_ids = {row[0] for row in cursor.fetchall()}
+        # Get all chunk_db_ids that are already in vec_chunks
+        cursor.execute("SELECT chunk_db_id FROM vec_chunk_mapping")
+        existing_ids = {row[0] for row in cursor.fetchall()}
 
-            # Get all vectors from the vectors table that aren't yet in vec_chunks
-            cursor.execute("""
-                SELECT
-                    v.chunk_id,
-                    v.embedding,
-                    v.dim,
-                    c.project_id,
-                    c.path,
-                    c.start_line,
-                    c.end_line
-                FROM vectors v
-                JOIN chunks c ON v.chunk_id = c.id
-            """)
+        # Get all vectors from the vectors table that aren't yet in vec_chunks
+        cursor.execute("""
+            SELECT
+                v.chunk_id,
+                v.embedding,
+                v.dim,
+                c.project_id,
+                c.path,
+                c.start_line,
+                c.end_line
+            FROM vectors v
+            JOIN chunks c ON v.chunk_id = c.id
+        """)
 
-            rows = cursor.fetchall()
-            vectors_to_add = []
+        rows = cursor.fetchall()
+        vectors_to_add = []
 
-            for row in rows:
-                chunk_db_id = row[0]
-                if chunk_db_id in existing_ids:
-                    continue  # Already synced
+        for row in rows:
+            chunk_db_id = row[0]
+            if chunk_db_id in existing_ids:
+                continue  # Already synced
 
-                embedding_blob = row[1]
-                dim = row[2]
-                project_id = row[3]
-                path = row[4]
-                start_line = row[5]
-                end_line = row[6]
+            embedding_blob = row[1]
+            dim = row[2]
+            project_id = row[3]
+            path = row[4]
+            start_line = row[5]
+            end_line = row[6]
 
-                # Decode vector from BLOB (stored as float32)
-                vector = list(struct.unpack(f"{dim}f", embedding_blob))
+            # Decode vector from BLOB (stored as float32)
+            vector = list(struct.unpack(f"{dim}f", embedding_blob))
 
-                vectors_to_add.append((vector, project_id, path, start_line, end_line, chunk_db_id))
+            vectors_to_add.append((vector, project_id, path, start_line, end_line, chunk_db_id))
 
-            # Batch insert new vectors
-            for vector, project_id, path, start_line, end_line, chunk_db_id in vectors_to_add:
-                # Insert into vec_chunks (serialize to float32 for sqlite-vec)
-                serialized_vector = sqlite_vec.serialize_float32(vector)
-                cursor.execute("INSERT INTO vec_chunks(embedding) VALUES (?)", (serialized_vector,))
-                vec_rowid = cursor.lastrowid
+        # Batch insert new vectors
+        for vector, project_id, path, start_line, end_line, chunk_db_id in vectors_to_add:
+            # Insert into vec_chunks (serialize to float32 for sqlite-vec)
+            serialized_vector = sqlite_vec.serialize_float32(vector)
+            cursor.execute("INSERT INTO vec_chunks(embedding) VALUES (?)", (serialized_vector,))
+            vec_rowid = cursor.lastrowid
 
-                # Insert mapping
-                cursor.execute(
-                    """
-                    INSERT INTO vec_chunk_mapping(vec_rowid, project_id, path, start_line, end_line, chunk_db_id)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                    (vec_rowid, project_id, path, start_line, end_line, chunk_db_id),
-                )
+            # Insert mapping
+            cursor.execute(
+                """
+                INSERT INTO vec_chunk_mapping(vec_rowid, project_id, path, start_line, end_line, chunk_db_id)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """,
+                (vec_rowid, project_id, path, start_line, end_line, chunk_db_id),
+            )
 
-            if vectors_to_add:
-                conn.commit()
-
-        finally:
-            conn.close()
+        if vectors_to_add:
+            conn.commit()
 
     def _encode_vector(self, vector: list[float]) -> bytes:
         """Encode a vector to binary format for sqlite-vec.
@@ -225,66 +219,62 @@ class SqliteVecAdapter:
         self._sync_vectors()
 
         conn = self._get_connection()
-        try:
-            cursor = conn.cursor()
+        cursor = conn.cursor()
 
-            # Serialize query vector for sqlite-vec
-            serialized_vector = sqlite_vec.serialize_float32(vector)
+        # Serialize query vector for sqlite-vec
+        serialized_vector = sqlite_vec.serialize_float32(vector)
 
-            # Query vec0 table for nearest neighbors
-            # sqlite-vec returns distance, we need to convert to similarity
-            # Add path filtering if specified
-            # Join with chunks table to get the stored chunk_id
-            if path_filter:
-                cursor.execute(
-                    """
-                    SELECT
-                        c.chunk_id,
-                        v.distance
-                    FROM vec_chunks v
-                    JOIN vec_chunk_mapping m ON v.rowid = m.vec_rowid
-                    JOIN chunks c ON m.chunk_db_id = c.id
-                    WHERE v.embedding MATCH ?
-                      AND k = ?
-                      AND m.path GLOB ?
-                    ORDER BY v.distance
-                    LIMIT ?
-                    """,
-                    (serialized_vector, topk, path_filter, topk),
-                )
-            else:
-                cursor.execute(
-                    """
-                    SELECT
-                        c.chunk_id,
-                        v.distance
-                    FROM vec_chunks v
-                    JOIN vec_chunk_mapping m ON v.rowid = m.vec_rowid
-                    JOIN chunks c ON m.chunk_db_id = c.id
-                    WHERE v.embedding MATCH ?
-                      AND k = ?
-                    ORDER BY v.distance
-                    LIMIT ?
-                    """,
-                    (serialized_vector, topk, topk),
-                )
+        # Query vec0 table for nearest neighbors
+        # sqlite-vec returns distance, we need to convert to similarity
+        # Add path filtering if specified
+        # Join with chunks table to get the stored chunk_id
+        if path_filter:
+            cursor.execute(
+                """
+                SELECT
+                    c.chunk_id,
+                    v.distance
+                FROM vec_chunks v
+                JOIN vec_chunk_mapping m ON v.rowid = m.vec_rowid
+                JOIN chunks c ON m.chunk_db_id = c.id
+                WHERE v.embedding MATCH ?
+                  AND k = ?
+                  AND m.path GLOB ?
+                ORDER BY v.distance
+                LIMIT ?
+                """,
+                (serialized_vector, topk, path_filter, topk),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT
+                    c.chunk_id,
+                    v.distance
+                FROM vec_chunks v
+                JOIN vec_chunk_mapping m ON v.rowid = m.vec_rowid
+                JOIN chunks c ON m.chunk_db_id = c.id
+                WHERE v.embedding MATCH ?
+                  AND k = ?
+                ORDER BY v.distance
+                LIMIT ?
+                """,
+                (serialized_vector, topk, topk),
+            )
 
-            rows = cursor.fetchall()
-            results = []
+        rows = cursor.fetchall()
+        results = []
 
-            for row in rows:
-                # Use the stored chunk_id from database instead of computing it
-                chunk_id = row[0]
-                distance = row[1]
+        for row in rows:
+            # Use the stored chunk_id from database instead of computing it
+            chunk_id = row[0]
+            distance = row[1]
 
-                # Convert distance to similarity
-                # For cosine distance: similarity = 1 - distance
-                # This makes it compatible with the existing API where higher = more similar
-                similarity = 1.0 - distance
+            # Convert distance to similarity
+            # For cosine distance: similarity = 1 - distance
+            # This makes it compatible with the existing API where higher = more similar
+            similarity = 1.0 - distance
 
-                results.append((chunk_id, similarity))
+            results.append((chunk_id, similarity))
 
-            return results
-
-        finally:
-            conn.close()
+        return results

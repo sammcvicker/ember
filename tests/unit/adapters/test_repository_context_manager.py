@@ -189,15 +189,44 @@ class TestSqliteVecAdapterContextManager:
         with adapter as ctx:
             assert ctx is adapter
 
-    def test_close_is_noop(self, db_path: Path):
-        """Test that close() is a no-op (this adapter manages connections per-operation)."""
+    def test_context_manager_closes_connection(self, db_path: Path):
+        """Test that __exit__ closes the database connection."""
         adapter = SqliteVecAdapter(db_path)
-        # close() should not raise and should be idempotent
-        adapter.close()
-        adapter.close()
+        with adapter:
+            # Access connection to ensure it's created
+            _ = adapter._get_connection()
+            assert adapter._conn is not None
 
-    def test_context_manager_works(self, db_path: Path):
-        """Test that context manager works even though close is no-op."""
-        with SqliteVecAdapter(db_path) as adapter:
-            # Just verify we can use it in a with statement
-            assert adapter is not None
+        # After exiting context, connection should be closed
+        assert adapter._conn is None
+
+    def test_context_manager_closes_on_exception(self, db_path: Path):
+        """Test that connection is closed even when exception occurs."""
+        adapter = SqliteVecAdapter(db_path)
+        try:
+            with adapter:
+                _ = adapter._get_connection()
+                raise ValueError("Test exception")
+        except ValueError:
+            pass
+
+        # Connection should still be closed
+        assert adapter._conn is None
+
+    def test_close_method_idempotent(self, db_path: Path):
+        """Test that close() can be called multiple times safely."""
+        adapter = SqliteVecAdapter(db_path)
+        adapter._get_connection()
+        adapter.close()
+        adapter.close()  # Should not raise
+        assert adapter._conn is None
+
+    def test_connection_reuse(self, db_path: Path):
+        """Test that connections are reused across multiple operations."""
+        adapter = SqliteVecAdapter(db_path)
+        conn1 = adapter._get_connection()
+        conn2 = adapter._get_connection()
+
+        # Should be the same connection object
+        assert conn1 is conn2
+        adapter.close()
