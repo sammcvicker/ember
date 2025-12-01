@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Improve "No changes detected" feedback clarity** (#143)
+  - Sync feedback now correctly distinguishes between full and incremental scans
+  - Previously always showed "(full scan)" even for incremental scans
+  - Now shows "(full scan completed)" or "(incremental scan completed)" as appropriate
+  - Helps users understand what type of scan was performed
+
 ### Changed
 - **Refactored render_syntax_highlighted for reduced complexity and maintainability** (#137)
   - Extracted `AnsiCodes` class with named constants for ANSI escape sequences (replaces magic strings)
