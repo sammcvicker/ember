@@ -209,3 +209,51 @@ def test_find_by_id_prefix_returns_complete_chunk_data(
     assert found_chunk.file_hash == sample_chunk.file_hash
     assert found_chunk.tree_sha == sample_chunk.tree_sha
     assert found_chunk.rev == sample_chunk.rev
+
+
+def test_delete_existing_chunk(chunk_repo: SQLiteChunkRepository, sample_chunk: Chunk):
+    """Test deleting an existing chunk by ID."""
+    # Add chunk to repository
+    chunk_repo.add(sample_chunk)
+
+    # Verify chunk exists
+    assert chunk_repo.get(sample_chunk.id) is not None
+
+    # Delete chunk
+    chunk_repo.delete(sample_chunk.id)
+
+    # Verify chunk is deleted
+    assert chunk_repo.get(sample_chunk.id) is None
+
+
+def test_delete_nonexistent_chunk(chunk_repo: SQLiteChunkRepository):
+    """Test that deleting a non-existent chunk doesn't raise an error."""
+    # Delete non-existent chunk (should not raise)
+    chunk_repo.delete("nonexistent_chunk_id_that_does_not_exist")
+
+    # Verify still no error and database is fine
+    assert chunk_repo.count_chunks() == 0
+
+
+def test_delete_does_not_affect_other_chunks(
+    chunk_repo: SQLiteChunkRepository,
+    sample_chunk: Chunk,
+    another_chunk: Chunk,
+):
+    """Test that deleting one chunk doesn't affect other chunks."""
+    # Add both chunks
+    chunk_repo.add(sample_chunk)
+    chunk_repo.add(another_chunk)
+
+    # Verify both exist
+    assert chunk_repo.count_chunks() == 2
+
+    # Delete first chunk
+    chunk_repo.delete(sample_chunk.id)
+
+    # Verify first chunk is deleted
+    assert chunk_repo.get(sample_chunk.id) is None
+
+    # Verify second chunk still exists
+    assert chunk_repo.get(another_chunk.id) is not None
+    assert chunk_repo.count_chunks() == 1
