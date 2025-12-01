@@ -480,3 +480,107 @@ def test_get_worktree_tree_sha_ignores_gitignored_files(
     # Tree SHA should NOT change because file is ignored
     tree_with_ignored = git_adapter.get_worktree_tree_sha()
     assert tree_with_ignored == clean_tree
+
+
+def test_get_worktree_tree_sha_raises_on_index_restoration_failure(
+    git_adapter: GitAdapter, git_repo: Path, monkeypatch
+):
+    """Test that get_worktree_tree_sha raises exception when index restoration fails.
+
+    This ensures users are notified about potential repository corruption rather
+    than silently leaving the index in an inconsistent state.
+    """
+    original_run_git = git_adapter._run_git
+    call_count = {"count": 0}
+
+    def mock_run_git(args, check=True, capture_output=True):
+        call_count["count"] += 1
+        # Let add and write-tree succeed, then fail on read-tree (restoration)
+        if args[0] == "read-tree":
+            raise subprocess.CalledProcessError(1, ["git", "read-tree"], stderr=b"simulated failure")
+        return original_run_git(args, check=check, capture_output=capture_output)
+
+    monkeypatch.setattr(git_adapter, "_run_git", mock_run_git)
+
+    # Should raise RuntimeError about restoration failure
+    with pytest.raises(RuntimeError, match="index restoration failed"):
+        git_adapter.get_worktree_tree_sha()
+
+
+def test_get_worktree_tree_sha_raises_on_reset_failure_in_empty_repo(
+    tmp_path: Path, monkeypatch
+):
+    """Test that get_worktree_tree_sha raises exception when reset fails for empty-index case.
+
+    When there's no index tree (e.g., fresh repo), restoration uses 'git reset'.
+    If that fails, we should raise an exception.
+    """
+    repo = tmp_path / "fresh_repo"
+    repo.mkdir()
+
+    # Initialize git repo with one commit but empty index tree scenario
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, timeout=5)
+    subprocess.run(
+        ["git", "config", "user.name", "Test User"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        timeout=5,
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        timeout=5,
+    )
+    # Create initial commit
+    (repo / "file.txt").write_text("content\n")
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True, timeout=5)
+    subprocess.run(
+        ["git", "commit", "-m", "Initial"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        timeout=5,
+    )
+
+    adapter = GitAdapter(repo)
+    original_run_git = adapter._run_git
+    first_write_tree = {"done": False}
+
+    def mock_run_git(args, check=True, capture_output=True):
+        # Make the first write-tree fail so index_tree is None
+        if args[0] == "write-tree" and not first_write_tree["done"]:
+            first_write_tree["done"] = True
+            raise subprocess.CalledProcessError(1, ["git", "write-tree"], stderr=b"")
+        # Then fail on reset (restoration)
+        if args[0] == "reset":
+            raise subprocess.CalledProcessError(1, ["git", "reset"], stderr=b"simulated reset failure")
+        return original_run_git(args, check=check, capture_output=capture_output)
+
+    monkeypatch.setattr(adapter, "_run_git", mock_run_git)
+
+    with pytest.raises(RuntimeError, match="index restoration failed"):
+        adapter.get_worktree_tree_sha()
+
+
+def test_get_worktree_tree_sha_error_message_includes_recovery_guidance(
+    git_adapter: GitAdapter, git_repo: Path, monkeypatch
+):
+    """Test that restoration failure error message includes helpful recovery guidance."""
+    original_run_git = git_adapter._run_git
+
+    def mock_run_git(args, check=True, capture_output=True):
+        if args[0] == "read-tree":
+            raise subprocess.CalledProcessError(1, ["git", "read-tree"], stderr=b"simulated failure")
+        return original_run_git(args, check=check, capture_output=capture_output)
+
+    monkeypatch.setattr(git_adapter, "_run_git", mock_run_git)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        git_adapter.get_worktree_tree_sha()
+
+    error_msg = str(exc_info.value).lower()
+    # Should mention git status for verification
+    assert "git status" in error_msg
