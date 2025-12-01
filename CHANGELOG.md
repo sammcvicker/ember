@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Refactored render_syntax_highlighted for reduced complexity and maintainability** (#137)
+  - Extracted `AnsiCodes` class with named constants for ANSI escape sequences (replaces magic strings)
+  - Extracted `EXTENSION_TO_LEXER` mapping as module-level constant for file extension detection
+  - Extracted `_get_lexer()` helper for Pygments lexer selection with fallback handling
+  - Extracted `_get_token_color_map()` for configurable token-to-color mapping
+  - Extracted `_find_token_color()` for token hierarchy lookup
+  - Extracted `_colorize_text()` for ANSI color application
+  - Extracted `_format_line_number()` for consistent line number formatting
+  - Main function reduced from 92 lines to 32 lines with clear single responsibility
+  - Added 23 unit tests covering all aspects of syntax highlighting
+  - No functional changes - pure refactoring for maintainability and future extensibility
+
 - **Refactored IndexingUseCase._get_files_to_index for reduced complexity** (#136)
   - Reduced cyclomatic complexity from C15 to A4 (main method)
   - Extracted `_determine_files_to_sync()` for git state handling (B6)
