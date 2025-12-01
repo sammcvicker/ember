@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Make path filters mutually exclusive in find and search commands** (#142)
+  - `ember find` PATH argument and `--in` filter are now mutually exclusive
+  - `ember search` `--path` and `--in` flags are now mutually exclusive
+  - Clear error message explains which options conflict and how to use them correctly
+  - Prevents silent data loss where one filter was previously ignored
+  - Consistent behavior between find and search commands
+  - Updated help text to document the mutual exclusivity
+  - Added integration tests for filter combination behavior
+
 - **Consistent header formatting for `ember cat` command** (#141)
   - Both numeric index and hash-based lookups now use identical header formatting
   - Previously, numeric lookups showed `[rank] line: (symbol)` while hash lookups showed `path [symbol]`

@@ -535,7 +535,7 @@ def sync(
     "--in",
     "path_filter",
     type=str,
-    help="Filter results by path glob (e.g., 'src/**/*.py').",
+    help="Filter results by path glob (e.g., '*.py'). Cannot be used with PATH argument.",
 )
 @click.option(
     "--lang",
@@ -603,18 +603,17 @@ def find(
             click.echo(f"Error: Path '{path}' is not within repository", err=True)
             sys.exit(1)
 
-        # Create glob pattern for this path subtree
-        path_scope_filter = f"{path_rel_to_repo}/**" if path_rel_to_repo != Path(".") else "*/**"
-
-        # Merge with existing path_filter if present
+        # Check for mutually exclusive filter options
         if path_filter:
-            # Both filters specified - this is a conflict, prefer path argument
             click.echo(
-                f"Warning: Both path argument '{path}' and --in filter '{path_filter}' specified. "
-                f"Using path argument only.",
+                f"Error: Cannot use both PATH argument ('{path}') and --in filter ('{path_filter}').\n"
+                f"Use PATH to search a directory subtree, OR --in for glob patterns, but not both.",
                 err=True,
             )
-        path_filter = path_scope_filter
+            sys.exit(1)
+
+        # Create glob pattern for this path subtree
+        path_filter = f"{path_rel_to_repo}/**" if path_rel_to_repo != Path(".") else "*/**"
 
     # Load config
     from ember.adapters.config.toml_config_provider import TomlConfigProvider
@@ -694,13 +693,13 @@ def find(
     "--path",
     "path_filter",
     type=str,
-    help="Limit search to directory path.",
+    help="Limit search to directory path. Cannot be used with --in.",
 )
 @click.option(
     "--in",
     "file_pattern",
     type=str,
-    help="Filter by glob pattern (e.g., '*.py').",
+    help="Filter by glob pattern (e.g., '*.py'). Cannot be used with --path.",
 )
 @click.option(
     "--lang",
@@ -774,17 +773,18 @@ def search(
     if topk is None:
         topk = config.search.topk
 
-    # Merge file_pattern with path_filter if needed
+    # Check for mutually exclusive filter options
+    if path_filter and file_pattern:
+        click.echo(
+            f"Error: Cannot use both --path ('{path_filter}') and --in ('{file_pattern}').\n"
+            f"Use --path to search a directory, OR --in for glob patterns, but not both.",
+            err=True,
+        )
+        sys.exit(1)
+
+    # Convert file_pattern to path_filter format
     if file_pattern:
-        if path_filter:
-            click.echo(
-                "Warning: Both --path and --in specified. Using both filters.",
-                err=True,
-            )
-            # Combine filters (path_filter is directory, file_pattern is glob)
-            path_filter = f"{path_filter.rstrip('/')}/**/{file_pattern}"
-        else:
-            path_filter = f"**/{file_pattern}"
+        path_filter = f"**/{file_pattern}"
 
     # Auto-sync unless disabled
     if not no_sync:
