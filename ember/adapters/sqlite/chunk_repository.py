@@ -242,27 +242,18 @@ class SQLiteChunkRepository:
     def delete(self, chunk_id: str) -> None:
         """Delete a chunk by ID.
 
-        Since we don't store chunk_id directly, we need to find it first then delete.
+        Deletes directly using the indexed chunk_id column for efficiency.
 
         Args:
             chunk_id: The chunk identifier to delete.
         """
-        # First find the chunk to get its DB row id
-        chunk = self.get(chunk_id)
-        if chunk is None:
-            return  # Already deleted or doesn't exist
-
         conn = self._get_connection()
         cursor = conn.cursor()
-        path_str = str(chunk.path)
 
-        # Delete by unique constraint fields
+        # Delete directly by chunk_id (which is indexed)
         cursor.execute(
-                """
-                DELETE FROM chunks
-                WHERE tree_sha = ? AND path = ? AND start_line = ? AND end_line = ?
-                """,
-                (chunk.tree_sha, path_str, chunk.start_line, chunk.end_line),
+            "DELETE FROM chunks WHERE chunk_id = ?",
+            (chunk_id,),
         )
         conn.commit()
 

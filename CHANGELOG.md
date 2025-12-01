@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Improved
+- **Optimized ChunkRepository.delete() by removing redundant get() call** (#148)
+  - Deletes chunks directly using indexed chunk_id column instead of fetching full chunk first
+  - Eliminates unnecessary database query and deserialization of chunk content
+  - Improves performance for bulk deletions during file re-indexing
+  - Added 3 unit tests for delete behavior
+
 - **SqliteVecAdapter now caches database connections for better search performance** (#147)
   - Connection is reused across operations instead of creating new ones per call
   - sqlite-vec extension loaded once instead of per operation
