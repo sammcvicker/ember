@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Consistent header formatting for `ember cat` command** (#141)
+  - Both numeric index and hash-based lookups now use identical header formatting
+  - Previously, numeric lookups showed `[rank] line: (symbol)` while hash lookups showed `path [symbol]`
+  - Now both use: line 1 shows path, line 2 shows `[rank] line: (symbol)` or `line: (symbol)`
+  - Uses centralized EmberColors for consistent styling (magenta paths, green ranks, red symbols)
+  - Added integration test to verify header format consistency
+
 - **GitAdapter now raises exception on index restoration failure** (#140)
   - `get_worktree_tree_sha()` now raises `RuntimeError` if git index restoration fails
   - Previously, restoration failures were silently logged as warnings

@@ -150,19 +150,20 @@ def validate_result_index(index: int, results: list[dict[str, Any]]) -> dict[str
     return results[index - 1]
 
 
-def format_result_header(result: dict[str, Any], index: int, show_symbol: bool = True) -> None:
+def format_result_header(
+    result: dict[str, Any], index: int | None = None, show_symbol: bool = True
+) -> None:
     """Print result header in consistent ripgrep-style format.
 
     Args:
         result: Result dictionary with path, start_line, symbol fields.
-        index: 1-based result index (rank).
+        index: Optional 1-based result index (rank). If None, rank is not shown.
         show_symbol: Whether to display symbol in header.
     """
     # Filename using centralized color
     click.echo(EmberColors.click_path(str(result["path"])))
 
-    # Rank and line number using centralized colors
-    rank = EmberColors.click_rank(f"[{index}]")
+    # Build second line: optional rank, line number, optional symbol
     line_num = EmberColors.click_line_number(f"{result['start_line']}")
 
     # Symbol using centralized color (inline)
@@ -170,7 +171,13 @@ def format_result_header(result: dict[str, Any], index: int, show_symbol: bool =
     if show_symbol and result.get("symbol"):
         symbol_display = " " + EmberColors.click_symbol(f"({result['symbol']})")
 
-    click.echo(f"{rank} {line_num}:{symbol_display}")
+    if index is not None:
+        # Show rank when index is provided
+        rank = EmberColors.click_rank(f"[{index}]")
+        click.echo(f"{rank} {line_num}:{symbol_display}")
+    else:
+        # No rank for hash-based lookups
+        click.echo(f"{line_num}:{symbol_display}")
 
 
 def ensure_daemon_with_progress(
