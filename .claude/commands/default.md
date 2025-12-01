@@ -13,11 +13,11 @@ Execute the following steps autonomously, only asking for user confirmation at m
 ### 1. Pick Next Issue
 
 ```bash
-# Find the next open issue in the current milestone (sequential order)
-gh issue list --milestone "1.0.0" --state open --json number,title,labels --limit 20
+# List open issues
+gh issue list --state open --json number,title,labels --limit 20
 ```
 
-- Select the lowest numbered open issue (we work sequentially)
+- Prefer bugs over enhancements, then lowest numbered issue
 - If unclear which issue to work on, ask the user
 
 ### 2. Start Issue
