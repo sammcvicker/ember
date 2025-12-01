@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Improved
+- **Missing chunks warning now includes recovery guidance** (#146)
+  - Warning message now suggests running `ember sync --force` to rebuild the index
+  - Directs users to report an issue if the problem persists
+  - Helps users resolve index corruption or stale data issues
+
 ### Fixed
 - **Add logging when TOML config parsing fails** (#145)
   - Config parsing failures now log a warning with the error details
