@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Refactored ResultPresenter for reduced complexity** (#135)
+  - Reduced `format_human_output` cyclomatic complexity from C19 to under threshold
+  - Extracted display settings, file reading, result grouping, and rendering logic into focused methods
+  - File reading logic now uses single `_read_file_lines()` method (was duplicated in 3 places)
+  - Each extracted method has single responsibility and is independently testable
+  - Added comprehensive unit tests for all extracted methods (17 new tests)
+  - No functional changes - pure refactoring for maintainability
+
 ### Fixed
 - **Add logging for chunking failures during indexing** (#144)
   - Chunking failures now log a warning with the file path and error message
