@@ -5,11 +5,60 @@ and all output modes. Supports both click-style colors and prompt_toolkit styles
 """
 
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from pygments.lexer import Lexer
+    from pygments.token import _TokenType
 
 # Type aliases for color values
 ClickColor = Literal["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"]
 HexColor = str  # Hex color code like "#00aaaa"
+
+
+class AnsiCodes:
+    """ANSI escape codes for terminal coloring.
+
+    Provides named constants for ANSI escape sequences instead of magic strings.
+    Uses standard 16-color palette that adapts to terminal themes.
+    """
+
+    RESET = "\x1b[0m"
+    DIM = "\x1b[2m"
+
+    # Foreground colors (90-97 are bright variants)
+    DARK_GRAY = "\x1b[90m"
+    GREEN = "\x1b[92m"
+    BLUE = "\x1b[94m"
+    MAGENTA = "\x1b[95m"
+    CYAN = "\x1b[96m"
+    WHITE = "\x1b[97m"
+
+
+# File extension to Pygments lexer name mapping
+EXTENSION_TO_LEXER: dict[str, str] = {
+    ".py": "python",
+    ".js": "javascript",
+    ".ts": "typescript",
+    ".tsx": "typescript",
+    ".jsx": "javascript",
+    ".go": "go",
+    ".rs": "rust",
+    ".java": "java",
+    ".c": "c",
+    ".cpp": "cpp",
+    ".cc": "cpp",
+    ".cxx": "cpp",
+    ".cs": "csharp",
+    ".rb": "ruby",
+    ".sh": "bash",
+    ".yaml": "yaml",
+    ".yml": "yaml",
+    ".json": "json",
+    ".toml": "toml",
+    ".md": "markdown",
+    ".sql": "sql",
+}
 
 
 class EmberColors:
@@ -230,6 +279,96 @@ def highlight_symbol(text: str, symbol: str | None) -> str:
     return "".join(parts)
 
 
+def _get_lexer(language: str | None, file_path: Path | None) -> "Lexer":
+    """Get the appropriate Pygments lexer for the given language or file.
+
+    Args:
+        language: Language identifier (e.g., "python", "typescript").
+        file_path: File path for extension-based language detection.
+
+    Returns:
+        A Pygments lexer instance. Falls back to text lexer if language unknown.
+    """
+    from pygments.lexers import get_lexer_by_name
+    from pygments.util import ClassNotFound
+
+    lexer_name = language
+    if not lexer_name and file_path:
+        lexer_name = EXTENSION_TO_LEXER.get(file_path.suffix, "text")
+
+    try:
+        return get_lexer_by_name(lexer_name or "text")
+    except ClassNotFound:
+        return get_lexer_by_name("text")
+
+
+def _get_token_color_map() -> dict["_TokenType", str]:
+    """Get the mapping from Pygments token types to ANSI color codes.
+
+    Returns:
+        Dictionary mapping token types to ANSI escape codes.
+    """
+    from pygments.token import Token
+
+    return {
+        Token.Keyword: AnsiCodes.MAGENTA,
+        Token.Name.Function: AnsiCodes.BLUE,
+        Token.Name.Class: AnsiCodes.BLUE,
+        Token.String: AnsiCodes.GREEN,
+        Token.Comment: AnsiCodes.DARK_GRAY,
+        Token.Number: AnsiCodes.CYAN,
+        Token.Operator: AnsiCodes.WHITE,
+    }
+
+
+def _find_token_color(
+    token_type: "_TokenType", color_map: dict["_TokenType", str]
+) -> str | None:
+    """Find the color for a token, checking parent token types.
+
+    Pygments tokens form a hierarchy (e.g., Token.Keyword.Namespace).
+    This function checks the token and its parent types to find a matching color.
+
+    Args:
+        token_type: The Pygments token type to look up.
+        color_map: Mapping from token types to ANSI color codes.
+
+    Returns:
+        The ANSI color code for the token, or None if no match found.
+    """
+    for ttype in [token_type] + list(token_type.split()):
+        if ttype in color_map:
+            return color_map[ttype]
+    return None
+
+
+def _colorize_text(text: str, color: str | None) -> str:
+    """Apply ANSI color to text if a color is provided.
+
+    Args:
+        text: The text to colorize.
+        color: ANSI color code, or None for no coloring.
+
+    Returns:
+        Colorized text with reset code, or original text if no color.
+    """
+    if color and text:
+        return f"{color}{text}{AnsiCodes.RESET}"
+    return text
+
+
+def _format_line_number(line_num: int) -> str:
+    """Format a line number with dimming for display.
+
+    Args:
+        line_num: The line number to format.
+
+    Returns:
+        Formatted line number string (right-aligned, 4 chars, dimmed).
+    """
+    return f"{AnsiCodes.DIM}{line_num:>4} {AnsiCodes.RESET}"
+
+
 def render_syntax_highlighted(
     code: str,
     language: str | None = None,
@@ -245,103 +384,45 @@ def render_syntax_highlighted(
 
     Args:
         code: Code content to highlight.
-        language: Language identifier (e.g., "python", "typescript"). If None, will try to infer from file_path.
+        language: Language identifier (e.g., "python", "typescript").
+            If None, will try to infer from file_path.
         file_path: Optional file path for language detection.
         start_line: Starting line number for display.
         theme: Pygments style name (default: "ansi" for terminal colors).
-               Alternative: specific theme names like "monokai", "github-dark", etc.
+            Alternative: specific theme names like "monokai", "github-dark", etc.
 
     Returns:
         Syntax-highlighted code as a string ready for terminal output.
     """
     from pygments import lex
-    from pygments.lexers import get_lexer_by_name
-    from pygments.token import Token
-    from pygments.util import ClassNotFound
 
-    # Infer lexer from file extension if language not provided
-    lexer_name = language
-    if not lexer_name and file_path:
-        # Map file extensions to lexer names
-        ext_to_lexer = {
-            ".py": "python",
-            ".js": "javascript",
-            ".ts": "typescript",
-            ".tsx": "typescript",
-            ".jsx": "javascript",
-            ".go": "go",
-            ".rs": "rust",
-            ".java": "java",
-            ".c": "c",
-            ".cpp": "cpp",
-            ".cc": "cpp",
-            ".cxx": "cpp",
-            ".cs": "csharp",
-            ".rb": "ruby",
-            ".sh": "bash",
-            ".yaml": "yaml",
-            ".yml": "yaml",
-            ".json": "json",
-            ".toml": "toml",
-            ".md": "markdown",
-            ".sql": "sql",
-        }
-        lexer_name = ext_to_lexer.get(file_path.suffix, "text")
-
-    # Get lexer
-    try:
-        lexer = get_lexer_by_name(lexer_name or "text")
-    except ClassNotFound:
-        lexer = get_lexer_by_name("text")
-
-    # Use terminal ANSI colors (basic 16 colors that adapt to theme)
-    # Map Pygments token types to ANSI color codes
-    color_map = {
-        Token.Keyword: '\x1b[95m',  # Magenta (keywords like def, class, if)
-        Token.Name.Function: '\x1b[94m',  # Blue (function names)
-        Token.Name.Class: '\x1b[94m',  # Blue (class names)
-        Token.String: '\x1b[92m',  # Green (strings)
-        Token.Comment: '\x1b[90m',  # Dark gray (comments)
-        Token.Number: '\x1b[96m',  # Cyan (numbers)
-        Token.Operator: '\x1b[97m',  # White (operators)
-    }
-
-    # Tokenize and colorize
+    lexer = _get_lexer(language, file_path)
+    color_map = _get_token_color_map()
     tokens = lex(code, lexer)
-    result_lines = []
 
-    current_line = []
+    result_lines: list[str] = []
+    current_line: list[str] = []
     line_num = start_line
 
     for token_type, value in tokens:
-        # Find matching color (check token and its parents)
-        color = None
-        for ttype in [token_type] + list(token_type.split()):
-            if ttype in color_map:
-                color = color_map[ttype]
-                break
+        color = _find_token_color(token_type, color_map)
 
-        # Split value by newlines to handle multi-line tokens
-        parts = value.split('\n')
+        # Handle tokens that span multiple lines by splitting on newlines
+        parts = value.split("\n")
         for i, part in enumerate(parts):
-            if i > 0:  # New line
-                # Finish current line
-                line_text = ''.join(current_line)
-                line_num_str = f"{line_num:>4} "
-                result_lines.append(f"\x1b[2m{line_num_str}\x1b[0m{line_text}")
+            if i > 0:
+                # Complete the current line and start a new one
+                line_text = "".join(current_line)
+                result_lines.append(f"{_format_line_number(line_num)}{line_text}")
                 current_line = []
                 line_num += 1
 
-            if part:  # Add colored part
-                if color:
-                    current_line.append(f"{color}{part}\x1b[0m")
-                else:
-                    current_line.append(part)
+            if part:
+                current_line.append(_colorize_text(part, color))
 
-    # Finish last line
+    # Output the final line (always output at least one line)
     if current_line or not result_lines:
-        line_text = ''.join(current_line)
-        line_num_str = f"{line_num:>4} "
-        result_lines.append(f"\x1b[2m{line_num_str}\x1b[0m{line_text}")
+        line_text = "".join(current_line)
+        result_lines.append(f"{_format_line_number(line_num)}{line_text}")
 
-    return '\n'.join(result_lines)
+    return "\n".join(result_lines)
