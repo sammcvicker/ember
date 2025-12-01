@@ -944,19 +944,10 @@ def cat(ctx: click.Context, identifier: str, context: int) -> None:
             "symbol": chunk.symbol,
         }
 
-    # Display header
-    # Only pass index if we're using numeric identifier (for backward compatibility)
+    # Display header using consistent formatting for both lookup methods
+    # Pass index only for numeric lookups (shows rank), None for hash lookups (no rank)
     display_index = int(identifier) if is_numeric else None
-    if display_index:
-        format_result_header(result, display_index, show_symbol=True)
-    else:
-        # For hash-based lookup, show file path and symbol directly
-        file_path = result["path"]
-        symbol = result.get("symbol")
-        if symbol:
-            click.echo(f"{click.style(file_path, fg='cyan')} {click.style(f'[{symbol}]', fg='yellow')}")
-        else:
-            click.echo(click.style(file_path, fg='cyan'))
+    format_result_header(result, display_index, show_symbol=True)
 
     click.echo(
         click.style(

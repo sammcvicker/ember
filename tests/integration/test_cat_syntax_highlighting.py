@@ -290,6 +290,73 @@ class TestCatSyntaxHighlighting:
         has_line_numbers = any(line.strip() and line[0:5].strip().isdigit() for line in lines)
         assert has_line_numbers
 
+    def test_cat_header_format_consistent_between_numeric_and_hash(
+        self, runner: CliRunner, python_repo: Path, monkeypatch
+    ) -> None:
+        """Test that cat produces consistent header format for both numeric and hash lookups.
+
+        Issue #141: Headers should use consistent formatting regardless of lookup method.
+        Both should have:
+        - Line 1: file path (no symbol on this line)
+        - Line 2: metadata including symbol in parentheses
+        - Line 3: Line range info
+        """
+        monkeypatch.chdir(python_repo)
+
+        # Init, sync, and search to get both numeric and hash identifiers
+        runner.invoke(cli, ["init"], catch_exceptions=False)
+        runner.invoke(cli, ["sync"], catch_exceptions=False)
+        search_result = runner.invoke(cli, ["find", "calculate", "--json"], catch_exceptions=False)
+
+        assert search_result.exit_code == 0
+        results = json.loads(search_result.output)
+        if len(results) == 0:
+            pytest.skip("Search returned no results")
+
+        chunk_id = results[0]["id"]
+
+        # Cat using numeric index
+        numeric_result = runner.invoke(cli, ["cat", "1"], catch_exceptions=False)
+        assert numeric_result.exit_code == 0
+
+        # Cat using hash ID
+        hash_result = runner.invoke(cli, ["cat", chunk_id], catch_exceptions=False)
+        assert hash_result.exit_code == 0
+
+        # Parse the header lines from both outputs
+        numeric_lines = numeric_result.output.strip().split("\n")
+        hash_lines = hash_result.output.strip().split("\n")
+
+        # First line should be ONLY the path (no symbol)
+        # Strip ANSI codes for comparison
+        import re
+        ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+
+        numeric_line1_clean = ansi_escape.sub('', numeric_lines[0]).strip()
+        hash_line1_clean = ansi_escape.sub('', hash_lines[0]).strip()
+
+        # Path should not contain symbol in brackets on line 1
+        assert numeric_line1_clean == "example.py", \
+            f"Numeric line 1 should be just path, got: '{numeric_line1_clean}'"
+        assert hash_line1_clean == "example.py", \
+            f"Hash line 1 should be just path, got: '{hash_line1_clean}'"
+
+        # Second line should contain symbol in parentheses for both
+        numeric_line2_clean = ansi_escape.sub('', numeric_lines[1]).strip()
+        hash_line2_clean = ansi_escape.sub('', hash_lines[1]).strip()
+
+        assert "(calculate_sum)" in numeric_line2_clean, \
+            f"Expected symbol in parentheses on numeric line 2: '{numeric_line2_clean}'"
+        assert "(calculate_sum)" in hash_line2_clean, \
+            f"Expected symbol in parentheses on hash line 2: '{hash_line2_clean}'"
+
+        # Third line should have consistent format (Lines X-Y)
+        numeric_line3_clean = ansi_escape.sub('', numeric_lines[2]).strip()
+        hash_line3_clean = ansi_escape.sub('', hash_lines[2]).strip()
+
+        assert numeric_line3_clean == hash_line3_clean, \
+            f"Line 3 format should match. Numeric: '{numeric_line3_clean}', Hash: '{hash_line3_clean}'"
+
     def test_cat_graceful_fallback_for_unknown_language(
         self, runner: CliRunner, tmp_path: Path, monkeypatch
     ) -> None:
