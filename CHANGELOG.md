@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Add logging for chunking failures during indexing** (#144)
+  - Chunking failures now log a warning with the file path and error message
+  - `IndexResponse` now includes `files_failed` count for tracking chunking failures
+  - Summary log includes failed file count when failures occur
+  - Helps users identify which files are failing and why
+  - Preserves existing chunks on failure to avoid data loss
+
 - **Make path filters mutually exclusive in find and search commands** (#142)
   - `ember find` PATH argument and `--in` filter are now mutually exclusive
   - `ember search` `--path` and `--in` flags are now mutually exclusive

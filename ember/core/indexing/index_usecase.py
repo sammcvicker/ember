@@ -112,6 +112,7 @@ class IndexResponse:
         chunks_deleted: Number of chunks deleted (from removed files).
         vectors_stored: Number of vectors stored.
         tree_sha: Git tree SHA that was indexed.
+        files_failed: Number of files that failed to chunk.
         is_incremental: Whether this was an incremental sync (vs full reindex).
         success: Whether indexing succeeded.
         error: Error message if indexing failed.
@@ -123,6 +124,7 @@ class IndexResponse:
     chunks_deleted: int
     vectors_stored: int
     tree_sha: str
+    files_failed: int = 0
     is_incremental: bool = False
     success: bool = True
     error: str | None = None
@@ -246,12 +248,14 @@ class IndexingUseCase:
             progress: Optional progress callback.
 
         Returns:
-            Dict with counts: files_indexed, chunks_created, chunks_updated, vectors_stored.
+            Dict with counts: files_indexed, chunks_created, chunks_updated,
+            vectors_stored, files_failed.
         """
         files_indexed = 0
         chunks_created = 0
         chunks_updated = 0
         vectors_stored = 0
+        files_failed = 0
 
         # Report progress start
         if progress and files_to_index:
@@ -274,6 +278,7 @@ class IndexingUseCase:
             chunks_created += result["chunks_created"]
             chunks_updated += result["chunks_updated"]
             vectors_stored += result["vectors_stored"]
+            files_failed += result["failed"]
 
         # Report completion
         if progress and files_to_index:
@@ -284,6 +289,7 @@ class IndexingUseCase:
             "chunks_created": chunks_created,
             "chunks_updated": chunks_updated,
             "vectors_stored": vectors_stored,
+            "files_failed": files_failed,
         }
 
     def _update_metadata(self, tree_sha: str, sync_mode: str) -> None:
@@ -306,6 +312,7 @@ class IndexingUseCase:
         vectors_stored: int,
         tree_sha: str,
         is_incremental: bool,
+        files_failed: int = 0,
     ) -> IndexResponse:
         """Create a success response with indexing statistics.
 
@@ -317,15 +324,19 @@ class IndexingUseCase:
             vectors_stored: Number of vectors stored.
             tree_sha: Git tree SHA that was indexed.
             is_incremental: Whether this was an incremental sync.
+            files_failed: Number of files that failed to chunk.
 
         Returns:
             IndexResponse with success=True and all statistics.
         """
-        logger.info(
+        log_msg = (
             f"Indexing complete: {files_indexed} files, "
             f"{chunks_created} chunks created, {chunks_updated} updated, "
             f"{chunks_deleted} deleted, {vectors_stored} vectors stored"
         )
+        if files_failed > 0:
+            log_msg += f", {files_failed} failed"
+        logger.info(log_msg)
 
         return IndexResponse(
             files_indexed=files_indexed,
@@ -334,6 +345,7 @@ class IndexingUseCase:
             chunks_deleted=chunks_deleted,
             vectors_stored=vectors_stored,
             tree_sha=tree_sha,
+            files_failed=files_failed,
             is_incremental=is_incremental,
             success=True,
             error=None,
@@ -408,6 +420,7 @@ class IndexingUseCase:
                 vectors_stored=stats["vectors_stored"],
                 tree_sha=tree_sha,
                 is_incremental=is_incremental,
+                files_failed=stats["files_failed"],
             )
 
         except (KeyboardInterrupt, SystemExit):
@@ -615,8 +628,13 @@ class IndexingUseCase:
         chunk_response = self.chunk_usecase.execute(chunk_request)
 
         if not chunk_response.success:
+            # Log warning with file path and error for debugging
+            logger.warning(
+                f"Failed to chunk {rel_path}: {chunk_response.error}. "
+                f"Preserving existing chunks to avoid data loss."
+            )
             # Skip files that fail to chunk - preserve existing chunks to avoid data loss
-            return {"chunks_created": 0, "chunks_updated": 0, "vectors_stored": 0}
+            return {"chunks_created": 0, "chunks_updated": 0, "vectors_stored": 0, "failed": 1}
 
         # Clean up ALL old chunks for this file from any previous tree SHA
         # This prevents accumulation of duplicate chunks across multiple syncs
@@ -685,6 +703,7 @@ class IndexingUseCase:
             "chunks_created": chunks_created,
             "chunks_updated": chunks_updated,
             "vectors_stored": vectors_stored,
+            "failed": 0,
         }
 
     def _create_chunks(
