@@ -597,3 +597,7 @@ def test_missing_chunks_logged(db_path: Path, caplog: pytest.LogCaptureFixture) 
     assert "chunk_4" in log_record.message
     assert "chunk_5" in log_record.message
     assert "index corruption or stale data" in log_record.message
+
+    # Should include recovery guidance (issue #146)
+    assert "ember sync --force" in log_record.message
+    assert "report an issue" in log_record.message.lower()
