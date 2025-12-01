@@ -149,27 +149,32 @@ class DaemonLifecycle:
                     start_new_session=True,  # Detach from parent
                 )
 
-                # Check if process died instantly (before writing PID file)
-                time.sleep(0.1)  # Brief wait for instant failures
-                exit_code = process.poll()
-                if exit_code is not None:
-                    # Process already exited - try to get stderr
-                    stderr_output = ""
-                    try:
-                        stderr_bytes = process.stderr.read() if process.stderr else b""
-                        stderr_output = stderr_bytes.decode("utf-8", errors="replace").strip()
-                    except Exception:
-                        pass
+                try:
+                    # Check if process died instantly (before writing PID file)
+                    time.sleep(0.1)  # Brief wait for instant failures
+                    exit_code = process.poll()
+                    if exit_code is not None:
+                        # Process already exited - try to get stderr
+                        stderr_output = ""
+                        try:
+                            stderr_bytes = (
+                                process.stderr.read() if process.stderr else b""
+                            )
+                            stderr_output = stderr_bytes.decode(
+                                "utf-8", errors="replace"
+                            ).strip()
+                        except Exception:
+                            pass
 
-                    error_msg = f"Daemon failed to start (exit code: {exit_code})"
-                    if stderr_output:
-                        error_msg += f"\nStderr: {stderr_output}"
-                    error_msg += f"\nCheck daemon logs at: {self.log_file}"
-                    raise RuntimeError(error_msg)
-
-                # Close stderr now that we've confirmed startup
-                if process.stderr:
-                    process.stderr.close()
+                        error_msg = f"Daemon failed to start (exit code: {exit_code})"
+                        if stderr_output:
+                            error_msg += f"\nStderr: {stderr_output}"
+                        error_msg += f"\nCheck daemon logs at: {self.log_file}"
+                        raise RuntimeError(error_msg)
+                finally:
+                    # Always close stderr to prevent file descriptor leak
+                    if process.stderr:
+                        process.stderr.close()
 
                 # NOW write PID file (process survived initial check)
                 self.pid_file.write_text(str(process.pid))

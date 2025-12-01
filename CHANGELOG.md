@@ -49,6 +49,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Error messages show detailed information including exit code, stderr, and log file location
   - Added test coverage for daemon startup failure scenarios
 
+- **Fixed stderr file descriptor leak on daemon startup failure** (#139)
+  - stderr pipe is now closed in all exit paths using try/finally
+  - Prevents file descriptor exhaustion from repeated daemon startup failures
+  - Added test to verify stderr cleanup on instant daemon failure
+
 - **Fixed missing chunks during search retrieval** (#125)
   - Search adapters now return the actual `chunk_id` stored in the database instead of computing it on-the-fly
   - Prevents "Missing chunks during retrieval" warnings caused by ID mismatches
