@@ -149,12 +149,25 @@ class DaemonLifecycle:
                     start_new_session=True,  # Detach from parent
                 )
 
+                # Write PID file immediately after spawn to avoid race condition
+                # (process dying between check and write leaves stale PID)
                 try:
-                    # Check if process died instantly (before writing PID file)
+                    self.pid_file.write_text(str(process.pid))
+                    logger.info(f"Daemon started with PID {process.pid}")
+                except Exception as e:
+                    # Failed to write PID file - terminate process to avoid orphan
+                    process.terminate()
+                    raise RuntimeError(f"Failed to write PID file: {e}") from e
+
+                try:
+                    # Check if process died instantly
                     time.sleep(0.1)  # Brief wait for instant failures
                     exit_code = process.poll()
                     if exit_code is not None:
-                        # Process already exited - try to get stderr
+                        # Process already exited - clean up PID file
+                        self.pid_file.unlink(missing_ok=True)
+
+                        # Try to get stderr for error message
                         stderr_output = ""
                         try:
                             stderr_bytes = (
@@ -175,10 +188,6 @@ class DaemonLifecycle:
                     # Always close stderr to prevent file descriptor leak
                     if process.stderr:
                         process.stderr.close()
-
-                # NOW write PID file (process survived initial check)
-                self.pid_file.write_text(str(process.pid))
-                logger.info(f"Daemon started with PID {process.pid}")
 
                 # Wait for daemon to be ready (up to 20 seconds to allow model loading)
                 # Model loading typically takes 3-5 seconds, but can be longer on first download

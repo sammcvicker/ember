@@ -498,6 +498,79 @@ class TestDaemonLifecycle:
             # stderr should have been closed in the finally block
             mock_stderr.close.assert_called_once()
 
+    def test_start_pid_write_failure_terminates_process(
+        self, temp_socket_path, temp_log_file, tmp_path
+    ):
+        """Test that PID file write failure terminates spawned process (#152)."""
+        # Use a non-existent directory to cause write failure
+        nonexistent_dir = tmp_path / "nonexistent_dir" / "subdir"
+        pid_file = nonexistent_dir / "daemon.pid"
+
+        lifecycle = DaemonLifecycle(
+            socket_path=temp_socket_path,
+            pid_file=pid_file,
+            log_file=temp_log_file,
+        )
+
+        # Create mock process
+        mock_process = MagicMock()
+        mock_process.pid = 12345
+        mock_process.stderr = None
+
+        with patch("subprocess.Popen", return_value=mock_process):
+            with pytest.raises(RuntimeError) as exc_info:
+                lifecycle.start(foreground=False)
+
+            # Should raise error about PID file
+            error_msg = str(exc_info.value)
+            assert "Failed to write PID file" in error_msg
+
+            # Process should have been terminated to avoid orphan
+            mock_process.terminate.assert_called_once()
+
+    def test_start_pid_written_before_poll_check(
+        self, temp_socket_path, temp_pid_file, temp_log_file
+    ):
+        """Test that PID is written before checking if process died (#152).
+
+        This eliminates the race condition where process could die between
+        alive check and PID write, leaving a stale PID file.
+        """
+        lifecycle = DaemonLifecycle(
+            socket_path=temp_socket_path,
+            pid_file=temp_pid_file,
+            log_file=temp_log_file,
+        )
+
+        # Track when poll() is called relative to PID file
+        poll_called_pid_exists = None
+
+        mock_process = MagicMock()
+        mock_process.pid = 12345
+        mock_process.stderr = None
+
+        def poll_side_effect():
+            nonlocal poll_called_pid_exists
+            # Record whether PID file existed when poll was called
+            poll_called_pid_exists = temp_pid_file.exists()
+            return None  # Process alive
+
+        mock_process.poll.side_effect = poll_side_effect
+
+        # is_running: False initially (so we enter start logic), then True (daemon ready)
+        is_running_calls = [False, True]
+
+        with (
+            patch("subprocess.Popen", return_value=mock_process),
+            patch.object(lifecycle, "is_running", side_effect=is_running_calls),
+        ):
+            lifecycle.start(foreground=False)
+
+            # PID file should have been written BEFORE poll() was called
+            assert poll_called_pid_exists is True, (
+                "PID file should exist before poll() check - race condition!"
+            )
+
 
 class TestEndToEnd:
     """End-to-end integration tests.
