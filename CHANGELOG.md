@@ -35,6 +35,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Helps users resolve index corruption or stale data issues
 
 ### Fixed
+- **Fix race condition in daemon PID file management** (#152)
+  - PID file is now written immediately after spawning daemon process
+  - Eliminates race where process could die between alive-check and PID write
+  - PID file properly cleaned up in all error paths (instant failure, write failure)
+  - If PID file write fails, spawned process is terminated to prevent orphans
+  - Added 2 unit tests for PID file handling
+
 - **Add logging when TOML config parsing fails** (#145)
   - Config parsing failures now log a warning with the error details
   - Missing config file (expected) does not log a warning
