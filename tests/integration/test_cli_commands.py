@@ -880,3 +880,57 @@ class TestErrorHandling:
 
         assert result.exit_code != 0
         # Click should show missing argument error
+
+
+class TestGetEmberRepoRoot:
+    """Tests for the get_ember_repo_root helper function."""
+
+    def test_returns_repo_and_ember_dir_when_in_ember_repo(
+        self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
+    ) -> None:
+        """Test that helper returns correct paths in an ember repository."""
+        monkeypatch.chdir(git_repo_isolated)
+        # Initialize ember
+        runner.invoke(cli, ["init"], catch_exceptions=False)
+
+        from ember.entrypoints.cli import get_ember_repo_root
+
+        repo_root, ember_dir = get_ember_repo_root()
+
+        assert repo_root == git_repo_isolated
+        assert ember_dir == git_repo_isolated / ".ember"
+
+    def test_exits_when_not_in_ember_repo(self, runner: CliRunner, tmp_path: Path, monkeypatch) -> None:
+        """Test that helper exits with error when not in ember repository."""
+        # Create a directory without .ember
+        no_ember_dir = tmp_path / "no_ember"
+        no_ember_dir.mkdir()
+        monkeypatch.chdir(no_ember_dir)
+
+        from ember.entrypoints.cli import get_ember_repo_root
+
+        # Should call sys.exit(1)
+        with pytest.raises(SystemExit) as exc_info:
+            get_ember_repo_root()
+
+        assert exc_info.value.code == 1
+
+    def test_works_from_subdirectory(
+        self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
+    ) -> None:
+        """Test that helper finds ember root from a subdirectory."""
+        monkeypatch.chdir(git_repo_isolated)
+        # Initialize ember
+        runner.invoke(cli, ["init"], catch_exceptions=False)
+
+        # Create and change to subdirectory
+        subdir = git_repo_isolated / "subdir" / "nested"
+        subdir.mkdir(parents=True)
+        monkeypatch.chdir(subdir)
+
+        from ember.entrypoints.cli import get_ember_repo_root
+
+        repo_root, ember_dir = get_ember_repo_root()
+
+        assert repo_root == git_repo_isolated
+        assert ember_dir == git_repo_isolated / ".ember"

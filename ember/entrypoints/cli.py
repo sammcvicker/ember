@@ -99,6 +99,27 @@ def _create_embedder(config, show_progress: bool = True):
         return JinaCodeEmbedder()
 
 
+def get_ember_repo_root() -> tuple[Path, Path]:
+    """Get ember repository root or exit with error.
+
+    Finds the ember repository root and .ember directory from the current
+    working directory. If not in an ember repository, prints an error
+    message and exits with code 1.
+
+    Returns:
+        Tuple of (repo_root, ember_dir) where:
+        - repo_root: Absolute path to repository root
+        - ember_dir: Absolute path to .ember/ directory
+    """
+    from ember.core.repo_utils import find_repo_root
+
+    try:
+        return find_repo_root()
+    except RuntimeError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
 def _create_indexing_usecase(repo_root: Path, db_path: Path, config):
     """Create IndexingUseCase with all dependencies.
 
@@ -474,14 +495,8 @@ def sync(
     """
     from ember.adapters.config.toml_config_provider import TomlConfigProvider
     from ember.core.indexing.index_usecase import IndexRequest
-    from ember.core.repo_utils import find_repo_root
 
-    try:
-        repo_root, ember_dir = find_repo_root()
-    except RuntimeError as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
-
+    repo_root, ember_dir = get_ember_repo_root()
     db_path = ember_dir / "index.db"
     sync_mode = _parse_sync_mode(rev, staged, worktree)
 
@@ -580,14 +595,7 @@ def find(
         ember find "query" .          # Search current directory subtree
         ember find "query" src/       # Search src/ subtree
     """
-    from ember.core.repo_utils import find_repo_root
-
-    try:
-        repo_root, ember_dir = find_repo_root()
-    except RuntimeError as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
-
+    repo_root, ember_dir = get_ember_repo_root()
     db_path = ember_dir / "index.db"
 
     # Handle path argument: convert from CWD-relative to repo-relative glob
@@ -753,14 +761,7 @@ def search(
     import os
     import subprocess
 
-    from ember.core.repo_utils import find_repo_root
-
-    try:
-        repo_root, ember_dir = find_repo_root()
-    except RuntimeError as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
-
+    repo_root, ember_dir = get_ember_repo_root()
     db_path = ember_dir / "index.db"
 
     # Load config
@@ -888,13 +889,8 @@ def cat(ctx: click.Context, identifier: str, context: int) -> None:
     """
     from ember.adapters.config.toml_config_provider import TomlConfigProvider
     from ember.core.presentation.colors import render_syntax_highlighted
-    from ember.core.repo_utils import find_repo_root
 
-    try:
-        repo_root, ember_dir = find_repo_root()
-    except RuntimeError as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
+    repo_root, ember_dir = get_ember_repo_root()
 
     # Load config to check syntax highlighting settings
     config_provider = TomlConfigProvider()
@@ -1029,14 +1025,7 @@ def open_result(ctx: click.Context, index: int) -> None:
     import shutil
     import subprocess
 
-    from ember.core.repo_utils import find_repo_root
-
-    try:
-        repo_root, ember_dir = find_repo_root()
-    except RuntimeError as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
-
+    repo_root, ember_dir = get_ember_repo_root()
     cache_path = ember_dir / ".last_search.json"
 
     # Load cached results
@@ -1133,83 +1122,67 @@ def status(ctx: click.Context) -> None:
     - Whether index is up to date
     - Current configuration
     """
-    from pathlib import Path
-
+    from ember.adapters.config.toml_config_provider import TomlConfigProvider
     from ember.adapters.git_cmd.git_adapter import GitAdapter
     from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
     from ember.adapters.sqlite.meta_repository import SQLiteMetaRepository
-    from ember.core.repo_utils import find_ember_root
     from ember.core.status.status_usecase import StatusRequest, StatusUseCase
 
-    try:
-        # Find ember root (returns parent directory containing .ember/)
-        repo_root = find_ember_root(Path.cwd())
-        if repo_root is None:
-            click.echo("✗ Not in an ember repository (or any parent directory)", err=True)
-            click.echo("Run 'ember init' to initialize ember in this repository", err=True)
-            sys.exit(1)
+    repo_root, ember_dir = get_ember_repo_root()
 
-        ember_dir = repo_root / ".ember"
+    # Load configuration
+    config_provider = TomlConfigProvider()
+    config = config_provider.load(ember_dir)
 
-        # Load configuration
-        from ember.adapters.config.toml_config_provider import TomlConfigProvider
+    # Set up repositories
+    db_path = ember_dir / "index.db"
+    vcs = GitAdapter(repo_root)
+    chunk_repo = SQLiteChunkRepository(db_path)
+    meta_repo = SQLiteMetaRepository(db_path)
 
-        config_provider = TomlConfigProvider()
-        config = config_provider.load(ember_dir)
+    # Execute status use case
+    use_case = StatusUseCase(
+        vcs=vcs,
+        chunk_repo=chunk_repo,
+        meta_repo=meta_repo,
+        config=config,
+    )
 
-        # Set up repositories
-        db_path = ember_dir / "index.db"
-        vcs = GitAdapter(repo_root)
-        chunk_repo = SQLiteChunkRepository(db_path)
-        meta_repo = SQLiteMetaRepository(db_path)
+    response = use_case.execute(StatusRequest(repo_root=repo_root))
 
-        # Execute status use case
-        use_case = StatusUseCase(
-            vcs=vcs,
-            chunk_repo=chunk_repo,
-            meta_repo=meta_repo,
-            config=config,
-        )
-
-        response = use_case.execute(StatusRequest(repo_root=repo_root))
-
-        if not response.success:
-            click.echo(f"✗ Failed to get status: {response.error}", err=True)
-            sys.exit(1)
-
-        # Display status
-        click.echo(f"✓ Ember initialized at {repo_root}\n")
-
-        click.echo("Index Status:")
-        click.echo(f"  Indexed files: {response.indexed_files}")
-        click.echo(f"  Total chunks: {response.total_chunks}")
-
-        if response.last_tree_sha:
-            if response.is_stale:
-                click.echo(f"  Status: {click.style('⚠ Out of date', fg='yellow')}")
-                click.echo("    Run 'ember sync' to update index")
-            else:
-                click.echo(f"  Status: {click.style('✓ Up to date', fg='green')}")
-        else:
-            click.echo(f"  Status: {click.style('⚠ Never synced', fg='yellow')}")
-            click.echo("    Run 'ember sync' to index your repository")
-
-        # Show configuration
-        if response.config:
-            click.echo("\nConfiguration:")
-            click.echo(f"  Search results (topk): {response.config.search.topk}")
-            click.echo(f"  Chunking strategy: {response.config.index.chunk}")
-            if response.config.index.chunk == "lines":
-                click.echo(f"  Line window: {response.config.index.line_window} lines")
-                click.echo(f"  Overlap: {response.config.index.overlap_lines} lines")
-            if response.model_fingerprint:
-                # Extract model name from fingerprint (e.g., "jina-embeddings-v2-base-code")
-                model_name = response.model_fingerprint.split(":")[0] if ":" in response.model_fingerprint else response.model_fingerprint
-                click.echo(f"  Model: {model_name}")
-
-    except Exception as e:
-        click.echo(f"✗ Error: {e}", err=True)
+    if not response.success:
+        click.echo(f"✗ Failed to get status: {response.error}", err=True)
         sys.exit(1)
+
+    # Display status
+    click.echo(f"✓ Ember initialized at {repo_root}\n")
+
+    click.echo("Index Status:")
+    click.echo(f"  Indexed files: {response.indexed_files}")
+    click.echo(f"  Total chunks: {response.total_chunks}")
+
+    if response.last_tree_sha:
+        if response.is_stale:
+            click.echo(f"  Status: {click.style('⚠ Out of date', fg='yellow')}")
+            click.echo("    Run 'ember sync' to update index")
+        else:
+            click.echo(f"  Status: {click.style('✓ Up to date', fg='green')}")
+    else:
+        click.echo(f"  Status: {click.style('⚠ Never synced', fg='yellow')}")
+        click.echo("    Run 'ember sync' to index your repository")
+
+    # Show configuration
+    if response.config:
+        click.echo("\nConfiguration:")
+        click.echo(f"  Search results (topk): {response.config.search.topk}")
+        click.echo(f"  Chunking strategy: {response.config.index.chunk}")
+        if response.config.index.chunk == "lines":
+            click.echo(f"  Line window: {response.config.index.line_window} lines")
+            click.echo(f"  Overlap: {response.config.index.overlap_lines} lines")
+        if response.model_fingerprint:
+            # Extract model name from fingerprint (e.g., "jina-embeddings-v2-base-code")
+            model_name = response.model_fingerprint.split(":")[0] if ":" in response.model_fingerprint else response.model_fingerprint
+            click.echo(f"  Model: {model_name}")
 
 
 # Daemon management commands

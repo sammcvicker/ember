@@ -48,6 +48,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Helps users understand what type of scan was performed
 
 ### Changed
+- **Extracted common repo_root initialization pattern in CLI** (#151)
+  - Added `get_ember_repo_root()` helper function to reduce code duplication
+  - Consolidated 5 command implementations (sync, find, search, cat, open, status)
+  - Consistent error handling and messaging across all commands
+  - Added 3 unit tests for the helper function
+
 - **Refactored render_syntax_highlighted for reduced complexity and maintainability** (#137)
   - Extracted `AnsiCodes` class with named constants for ANSI escape sequences (replaces magic strings)
   - Extracted `EXTENSION_TO_LEXER` mapping as module-level constant for file extension detection
