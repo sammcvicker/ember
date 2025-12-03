@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **ResultPresenter refactored to use dependency injection for file I/O** (#170)
+  - Extracted file reading from core presentation layer to respect clean architecture
+  - ResultPresenter now accepts a FileSystem port via constructor injection
+  - Added `read_text_lines()` method to FileSystem protocol and LocalFileSystem adapter
+  - Tests can now easily mock file content without touching the filesystem
+  - Core layer no longer directly performs file I/O operations
+
 ### Added
 - **Comprehensive unit tests for ResultPresenter class** (#149)
   - Increased test coverage from 76% to 100%

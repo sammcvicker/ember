@@ -8,6 +8,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
+from ember.adapters.fs.local import LocalFileSystem
 from ember.core.presentation.result_presenter import ResultPresenter
 from ember.domain.config import DisplayConfig, EmberConfig
 
@@ -49,77 +52,127 @@ class MockSearchResult:
         return "\n".join(preview_lines)
 
 
+class MockFileSystem:
+    """Mock FileSystem for testing."""
+
+    def __init__(self, file_contents: dict[Path, list[str]] | None = None):
+        """Initialize with optional file contents mapping.
+
+        Args:
+            file_contents: Dict mapping paths to list of lines.
+        """
+        self._files = file_contents or {}
+
+    def read_text_lines(self, path: Path) -> list[str] | None:
+        """Return mocked file lines or None."""
+        return self._files.get(path)
+
+
+@pytest.fixture
+def presenter():
+    """Create a ResultPresenter with LocalFileSystem."""
+    return ResultPresenter(LocalFileSystem())
+
+
+@pytest.fixture
+def mock_presenter():
+    """Create a ResultPresenter with a mock FileSystem."""
+    return ResultPresenter(MockFileSystem())
+
+
 class TestDisplaySettingsExtraction:
     """Tests for display settings extraction from config."""
 
-    def test_get_display_settings_with_none_config(self):
+    def test_get_display_settings_with_none_config(self, presenter):
         """When config is None, returns default settings."""
-        settings = ResultPresenter._get_display_settings(None)
+        settings = presenter._get_display_settings(None)
         assert settings["use_highlighting"] is False
         assert settings["theme"] == "ansi"
 
-    def test_get_display_settings_with_highlighting_enabled(self):
+    def test_get_display_settings_with_highlighting_enabled(self, presenter):
         """When syntax highlighting is enabled, returns True."""
         config = EmberConfig(display=DisplayConfig(syntax_highlighting=True, theme="monokai"))
-        settings = ResultPresenter._get_display_settings(config)
+        settings = presenter._get_display_settings(config)
         assert settings["use_highlighting"] is True
         assert settings["theme"] == "monokai"
 
-    def test_get_display_settings_with_highlighting_disabled(self):
+    def test_get_display_settings_with_highlighting_disabled(self, presenter):
         """When syntax highlighting is disabled, returns False."""
         config = EmberConfig(display=DisplayConfig(syntax_highlighting=False))
-        settings = ResultPresenter._get_display_settings(config)
+        settings = presenter._get_display_settings(config)
         assert settings["use_highlighting"] is False
 
 
 class TestFileReading:
     """Tests for file reading utility."""
 
-    def test_read_file_lines_returns_lines(self, tmp_path):
+    def test_read_file_lines_returns_lines(self, tmp_path, presenter):
         """Reading a file returns list of lines."""
         test_file = tmp_path / "test.py"
         test_file.write_text("line 1\nline 2\nline 3\n")
 
-        lines = ResultPresenter._read_file_lines(test_file)
+        lines = presenter._read_file_lines(test_file)
         # splitlines() doesn't include trailing empty string
         assert lines == ["line 1", "line 2", "line 3"]
 
-    def test_read_file_lines_nonexistent_returns_none(self, tmp_path):
+    def test_read_file_lines_nonexistent_returns_none(self, tmp_path, presenter):
         """Reading nonexistent file returns None."""
         nonexistent = tmp_path / "nonexistent.py"
-        lines = ResultPresenter._read_file_lines(nonexistent)
+        lines = presenter._read_file_lines(nonexistent)
         assert lines is None
 
-    def test_read_file_lines_handles_encoding_errors(self, tmp_path):
+    def test_read_file_lines_handles_encoding_errors(self, tmp_path, presenter):
         """File with encoding errors is read with replacement."""
         test_file = tmp_path / "test.py"
         test_file.write_bytes(b"hello\x80world\n")
 
-        lines = ResultPresenter._read_file_lines(test_file)
+        lines = presenter._read_file_lines(test_file)
         assert lines is not None
         assert "hello" in lines[0]
+
+
+class TestFileReadingWithMock:
+    """Tests for file reading with mock filesystem."""
+
+    def test_read_file_lines_uses_injected_fs(self):
+        """File reading uses the injected filesystem."""
+        mock_fs = MockFileSystem({
+            Path("/test/file.py"): ["line1", "line2"]
+        })
+        presenter = ResultPresenter(mock_fs)
+
+        lines = presenter._read_file_lines(Path("/test/file.py"))
+        assert lines == ["line1", "line2"]
+
+    def test_read_file_lines_returns_none_for_missing(self):
+        """Returns None when file not in mock."""
+        mock_fs = MockFileSystem()
+        presenter = ResultPresenter(mock_fs)
+
+        lines = presenter._read_file_lines(Path("/missing.py"))
+        assert lines is None
 
 
 class TestResultGrouping:
     """Tests for grouping results by file."""
 
-    def test_group_results_by_file_single_file(self):
+    def test_group_results_by_file_single_file(self, presenter):
         """Results from same file are grouped together."""
         result1 = MockSearchResult(chunk=MockChunk(path=Path("a.py"), start_line=1), rank=1)
         result2 = MockSearchResult(chunk=MockChunk(path=Path("a.py"), start_line=10), rank=2)
 
-        grouped = ResultPresenter._group_results_by_file([result1, result2])
+        grouped = presenter._group_results_by_file([result1, result2])
 
         assert len(grouped) == 1
         assert Path("a.py") in grouped
         assert len(grouped[Path("a.py")]) == 2
 
-    def test_group_results_by_file_multiple_files(self):
+    def test_group_results_by_file_multiple_files(self, presenter):
         """Results from different files are grouped separately."""
         result1 = MockSearchResult(chunk=MockChunk(path=Path("a.py")), rank=1)
         result2 = MockSearchResult(chunk=MockChunk(path=Path("b.py")), rank=2)
 
-        grouped = ResultPresenter._group_results_by_file([result1, result2])
+        grouped = presenter._group_results_by_file([result1, result2])
 
         assert len(grouped) == 2
         assert Path("a.py") in grouped
@@ -129,25 +182,25 @@ class TestResultGrouping:
 class TestPreviewRendering:
     """Tests for compact preview rendering."""
 
-    def test_render_compact_preview_without_highlighting(self):
+    def test_render_compact_preview_without_highlighting(self, mock_presenter):
         """Preview without highlighting uses symbol highlighting."""
         result = MockSearchResult()
         settings = {"use_highlighting": False, "theme": "ansi"}
 
         with patch("ember.core.presentation.result_presenter.click") as mock_click:
-            ResultPresenter._render_compact_preview(result, settings, None)
+            mock_presenter._render_compact_preview(result, settings, None)
 
             # Verify click.echo was called
             assert mock_click.echo.called
 
-    def test_render_compact_preview_max_lines(self):
+    def test_render_compact_preview_max_lines(self, mock_presenter):
         """Preview shows maximum 3 lines."""
         chunk = MockChunk(content="line1\nline2\nline3\nline4\nline5")
         result = MockSearchResult(chunk=chunk)
         settings = {"use_highlighting": False, "theme": "ansi"}
 
         with patch("ember.core.presentation.result_presenter.click") as mock_click:
-            ResultPresenter._render_compact_preview(result, settings, None)
+            mock_presenter._render_compact_preview(result, settings, None)
 
             # Should have 3 calls: first line with rank, 2 additional preview lines
             assert mock_click.echo.call_count == 3
@@ -156,7 +209,7 @@ class TestPreviewRendering:
 class TestContextRendering:
     """Tests for rendering results with context."""
 
-    def test_render_with_context_calculates_range(self, tmp_path):
+    def test_render_with_context_calculates_range(self, tmp_path, presenter):
         """Context is calculated around match start line."""
         test_file = tmp_path / "test.py"
         test_file.write_text("\n".join([f"line{i}" for i in range(1, 21)]))
@@ -166,7 +219,7 @@ class TestContextRendering:
         settings = {"use_highlighting": False, "theme": "ansi"}
 
         with patch("ember.core.presentation.result_presenter.click") as mock_click:
-            ResultPresenter._render_with_context(result, 2, tmp_path, settings)
+            presenter._render_with_context(result, 2, tmp_path, settings)
 
             # Should show: 2 lines before (8, 9), match line (10), 2 lines after (11, 12)
             # Total: 5 lines
@@ -176,24 +229,24 @@ class TestContextRendering:
 class TestFormatHumanOutput:
     """Integration tests for format_human_output."""
 
-    def test_format_human_output_empty_results(self):
+    def test_format_human_output_empty_results(self, mock_presenter):
         """Empty results shows 'No results found'."""
         with patch("ember.core.presentation.result_presenter.click") as mock_click:
-            ResultPresenter.format_human_output([])
+            mock_presenter.format_human_output([])
             mock_click.echo.assert_called_once_with("No results found.")
 
-    def test_format_human_output_groups_by_file(self):
+    def test_format_human_output_groups_by_file(self, mock_presenter):
         """Results are grouped by file path."""
         result1 = MockSearchResult(chunk=MockChunk(path=Path("a.py"), start_line=1), rank=1)
         result2 = MockSearchResult(chunk=MockChunk(path=Path("a.py"), start_line=10), rank=2)
 
         with patch("ember.core.presentation.result_presenter.click") as mock_click:
-            ResultPresenter.format_human_output([result1, result2])
+            mock_presenter.format_human_output([result1, result2])
 
             # Should have called echo multiple times (file header + results)
             assert mock_click.echo.call_count > 2
 
-    def test_format_human_output_with_context(self, tmp_path):
+    def test_format_human_output_with_context(self, tmp_path, presenter):
         """Context flag shows surrounding lines."""
         test_file = tmp_path / "test.py"
         test_file.write_text("line1\nline2\nline3\nline4\nline5\n")
@@ -203,9 +256,9 @@ class TestFormatHumanOutput:
 
         with patch("ember.core.presentation.result_presenter.click"):
             # Should not raise
-            ResultPresenter.format_human_output([result], context=1, repo_root=tmp_path)
+            presenter.format_human_output([result], context=1, repo_root=tmp_path)
 
-    def test_format_human_output_with_context_adds_blank_lines_between_results(self, tmp_path):
+    def test_format_human_output_with_context_adds_blank_lines_between_results(self, tmp_path, presenter):
         """Multiple results with context have blank lines between them."""
         test_file = tmp_path / "test.py"
         test_file.write_text("line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\n")
@@ -216,7 +269,7 @@ class TestFormatHumanOutput:
         result2 = MockSearchResult(chunk=chunk2, rank=2)
 
         with patch("ember.core.presentation.result_presenter.click") as mock_click:
-            ResultPresenter.format_human_output([result1, result2], context=1, repo_root=tmp_path)
+            presenter.format_human_output([result1, result2], context=1, repo_root=tmp_path)
 
             # Check that blank lines are added between results (echo called with empty string)
             calls = [c[0][0] if c[0] else "" for c in mock_click.echo.call_args_list]
@@ -242,10 +295,10 @@ class TestSerializeForCache:
 class TestFormatJsonOutput:
     """Tests for JSON output formatting."""
 
-    def test_format_json_output_basic(self):
+    def test_format_json_output_basic(self, mock_presenter):
         """JSON output includes required fields."""
         result = MockSearchResult()
-        json_str = ResultPresenter.format_json_output([result])
+        json_str = mock_presenter.format_json_output([result])
 
         import json
         parsed = json.loads(json_str)
@@ -255,7 +308,7 @@ class TestFormatJsonOutput:
         assert parsed[0]["rank"] == 1
         assert parsed[0]["score"] == 0.95
 
-    def test_format_json_output_with_context(self, tmp_path):
+    def test_format_json_output_with_context(self, tmp_path, presenter):
         """JSON output includes context when requested."""
         test_file = tmp_path / "test.py"
         test_file.write_text("line1\nline2\nline3\n")
@@ -263,19 +316,19 @@ class TestFormatJsonOutput:
         chunk = MockChunk(path=Path("test.py"), start_line=2, end_line=2)
         result = MockSearchResult(chunk=chunk)
 
-        json_str = ResultPresenter.format_json_output([result], context=1, repo_root=tmp_path)
+        json_str = presenter.format_json_output([result], context=1, repo_root=tmp_path)
 
         import json
         parsed = json.loads(json_str)
 
         assert "context" in parsed[0]
 
-    def test_format_json_output_no_context_when_file_missing(self, tmp_path):
+    def test_format_json_output_no_context_when_file_missing(self, tmp_path, presenter):
         """JSON output excludes context when file doesn't exist."""
         chunk = MockChunk(path=Path("nonexistent.py"), start_line=2, end_line=2)
         result = MockSearchResult(chunk=chunk)
 
-        json_str = ResultPresenter.format_json_output([result], context=1, repo_root=tmp_path)
+        json_str = presenter.format_json_output([result], context=1, repo_root=tmp_path)
 
         import json
         parsed = json.loads(json_str)
@@ -287,7 +340,7 @@ class TestFormatJsonOutput:
 class TestGetContext:
     """Tests for context extraction method."""
 
-    def test_get_context_returns_before_and_after_lines(self, tmp_path):
+    def test_get_context_returns_before_and_after_lines(self, tmp_path, presenter):
         """Context includes lines before and after chunk."""
         test_file = tmp_path / "test.py"
         test_file.write_text("line1\nline2\nline3\nline4\nline5\n")
@@ -295,7 +348,7 @@ class TestGetContext:
         chunk = MockChunk(path=Path("test.py"), start_line=3, end_line=3)
         result = MockSearchResult(chunk=chunk)
 
-        context = ResultPresenter._get_context(result, 1, tmp_path)
+        context = presenter._get_context(result, 1, tmp_path)
 
         assert context is not None
         assert len(context["before"]) == 1
@@ -306,7 +359,7 @@ class TestGetContext:
         assert len(context["after"]) == 1
         assert context["after"][0]["line"] == 4
 
-    def test_get_context_handles_file_start_boundary(self, tmp_path):
+    def test_get_context_handles_file_start_boundary(self, tmp_path, presenter):
         """Context at file start doesn't go negative."""
         test_file = tmp_path / "test.py"
         test_file.write_text("line1\nline2\nline3\n")
@@ -314,13 +367,13 @@ class TestGetContext:
         chunk = MockChunk(path=Path("test.py"), start_line=1, end_line=1)
         result = MockSearchResult(chunk=chunk)
 
-        context = ResultPresenter._get_context(result, 2, tmp_path)
+        context = presenter._get_context(result, 2, tmp_path)
 
         assert context is not None
         assert len(context["before"]) == 0
         assert context["start_line"] == 1
 
-    def test_get_context_handles_file_end_boundary(self, tmp_path):
+    def test_get_context_handles_file_end_boundary(self, tmp_path, presenter):
         """Context at file end doesn't exceed file length."""
         test_file = tmp_path / "test.py"
         test_file.write_text("line1\nline2\nline3\n")
@@ -328,18 +381,18 @@ class TestGetContext:
         chunk = MockChunk(path=Path("test.py"), start_line=3, end_line=3)
         result = MockSearchResult(chunk=chunk)
 
-        context = ResultPresenter._get_context(result, 2, tmp_path)
+        context = presenter._get_context(result, 2, tmp_path)
 
         assert context is not None
         assert len(context["after"]) == 0
         assert context["end_line"] == 3
 
-    def test_get_context_returns_none_for_missing_file(self, tmp_path):
+    def test_get_context_returns_none_for_missing_file(self, tmp_path, presenter):
         """Returns None when file doesn't exist."""
         chunk = MockChunk(path=Path("nonexistent.py"), start_line=1, end_line=1)
         result = MockSearchResult(chunk=chunk)
 
-        context = ResultPresenter._get_context(result, 1, tmp_path)
+        context = presenter._get_context(result, 1, tmp_path)
 
         assert context is None
 
@@ -347,20 +400,20 @@ class TestGetContext:
 class TestRenderWithContextEdgeCases:
     """Additional edge case tests for context rendering."""
 
-    def test_render_with_context_file_not_found_shows_warning(self, tmp_path):
+    def test_render_with_context_file_not_found_shows_warning(self, tmp_path, presenter):
         """File not found shows warning and falls back to preview."""
         chunk = MockChunk(path=Path("nonexistent.py"), start_line=1, end_line=1)
         result = MockSearchResult(chunk=chunk)
         settings = {"use_highlighting": False, "theme": "ansi"}
 
         with patch("ember.core.presentation.result_presenter.click") as mock_click:
-            ResultPresenter._render_with_context(result, 1, tmp_path, settings)
+            presenter._render_with_context(result, 1, tmp_path, settings)
 
             # Should show warning message
             calls = [str(c) for c in mock_click.echo.call_args_list]
             assert any("Warning" in str(c) for c in calls)
 
-    def test_render_with_context_syntax_highlighting_enabled(self, tmp_path):
+    def test_render_with_context_syntax_highlighting_enabled(self, tmp_path, presenter):
         """Context with syntax highlighting uses render_syntax_highlighted."""
         test_file = tmp_path / "test.py"
         test_file.write_text("def foo():\n    pass\n    return True\n")
@@ -374,7 +427,7 @@ class TestRenderWithContextEdgeCases:
             patch("ember.core.presentation.result_presenter.render_syntax_highlighted") as mock_highlight,
         ):
             mock_highlight.return_value = "highlighted code"
-            ResultPresenter._render_with_context(result, 1, tmp_path, settings)
+            presenter._render_with_context(result, 1, tmp_path, settings)
 
             # Should call render_syntax_highlighted
             mock_highlight.assert_called_once()
@@ -383,7 +436,7 @@ class TestRenderWithContextEdgeCases:
 class TestRenderCompactPreviewEdgeCases:
     """Additional edge case tests for compact preview rendering."""
 
-    def test_render_compact_preview_with_syntax_highlighting(self, tmp_path):
+    def test_render_compact_preview_with_syntax_highlighting(self, tmp_path, presenter):
         """Preview with syntax highlighting reads from file."""
         test_file = tmp_path / "test.py"
         test_file.write_text("def foo():\n    pass\n    return True\n")
@@ -397,12 +450,12 @@ class TestRenderCompactPreviewEdgeCases:
             patch("ember.core.presentation.result_presenter.render_syntax_highlighted") as mock_highlight,
         ):
             mock_highlight.return_value = "line1\nline2\nline3"
-            ResultPresenter._render_compact_preview(result, settings, tmp_path)
+            presenter._render_compact_preview(result, settings, tmp_path)
 
             # Should call render_syntax_highlighted
             mock_highlight.assert_called_once()
 
-    def test_render_compact_preview_highlighting_with_missing_file(self, tmp_path):
+    def test_render_compact_preview_highlighting_with_missing_file(self, tmp_path, presenter):
         """Preview falls back to content when file is missing."""
         chunk = MockChunk(path=Path("nonexistent.py"), start_line=1, end_line=3)
         result = MockSearchResult(chunk=chunk)
@@ -410,14 +463,14 @@ class TestRenderCompactPreviewEdgeCases:
 
         with patch("ember.core.presentation.result_presenter.click") as mock_click:
             # Should not raise, should fall back to chunk content
-            ResultPresenter._render_compact_preview(result, settings, tmp_path)
+            presenter._render_compact_preview(result, settings, tmp_path)
             assert mock_click.echo.called
 
 
 class TestFileReadingEdgeCases:
     """Additional edge case tests for file reading."""
 
-    def test_read_file_lines_handles_read_exception(self, tmp_path, monkeypatch):
+    def test_read_file_lines_handles_read_exception(self, tmp_path, monkeypatch, presenter):
         """File read exceptions return None."""
         test_file = tmp_path / "test.py"
         test_file.write_text("content")
@@ -428,5 +481,5 @@ class TestFileReadingEdgeCases:
 
         monkeypatch.setattr(Path, "read_text", raise_error)
 
-        lines = ResultPresenter._read_file_lines(test_file)
+        lines = presenter._read_file_lines(test_file)
         assert lines is None

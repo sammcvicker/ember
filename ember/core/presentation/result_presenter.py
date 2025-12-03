@@ -11,6 +11,7 @@ from typing import Any
 import click
 
 from ember.core.presentation.colors import EmberColors, highlight_symbol, render_syntax_highlighted
+from ember.ports.fs import FileSystem
 
 
 class ResultPresenter:
@@ -18,7 +19,18 @@ class ResultPresenter:
 
     Separates business logic from presentation concerns by providing
     reusable formatters for JSON and human-readable output.
+
+    Args:
+        fs: FileSystem port for reading file contents.
     """
+
+    def __init__(self, fs: FileSystem) -> None:
+        """Initialize ResultPresenter with dependencies.
+
+        Args:
+            fs: FileSystem port for reading file contents.
+        """
+        self._fs = fs
 
     @staticmethod
     def serialize_for_cache(query: str, results: list[Any]) -> dict[str, Any]:
@@ -51,8 +63,7 @@ class ResultPresenter:
             ],
         }
 
-    @staticmethod
-    def format_json_output(results: list[Any], context: int = 0, repo_root: Path | None = None) -> str:
+    def format_json_output(self, results: list[Any], context: int = 0, repo_root: Path | None = None) -> str:
         """Format results as JSON string.
 
         Args:
@@ -80,7 +91,7 @@ class ResultPresenter:
 
             # Add context if requested
             if context > 0 and repo_root is not None:
-                context_data = ResultPresenter._get_context(
+                context_data = self._get_context(
                     result, context, repo_root
                 )
                 if context_data:
@@ -106,8 +117,7 @@ class ResultPresenter:
             }
         return {"use_highlighting": False, "theme": "ansi"}
 
-    @staticmethod
-    def _read_file_lines(file_path: Path) -> list[str] | None:
+    def _read_file_lines(self, file_path: Path) -> list[str] | None:
         """Read file and return lines.
 
         Args:
@@ -116,12 +126,7 @@ class ResultPresenter:
         Returns:
             List of lines, or None if file doesn't exist or can't be read.
         """
-        if not file_path.exists():
-            return None
-        try:
-            return file_path.read_text(errors="replace").splitlines()
-        except Exception:
-            return None
+        return self._fs.read_text_lines(file_path)
 
     @staticmethod
     def _group_results_by_file(results: list[Any]) -> dict[Path, list[Any]]:
@@ -138,8 +143,8 @@ class ResultPresenter:
             results_by_file[result.chunk.path].append(result)
         return dict(results_by_file)
 
-    @staticmethod
     def _render_compact_preview(
+        self,
         result: Any,
         settings: dict[str, Any],
         repo_root: Path | None,
@@ -158,7 +163,7 @@ class ResultPresenter:
         # Try syntax highlighting if enabled
         if settings["use_highlighting"] and repo_root is not None:
             file_path = repo_root / result.chunk.path
-            file_lines = ResultPresenter._read_file_lines(file_path)
+            file_lines = self._read_file_lines(file_path)
 
             if file_lines is not None:
                 start_line = result.chunk.start_line
@@ -205,8 +210,8 @@ class ResultPresenter:
                 highlighted_line = highlight_symbol(line, result.chunk.symbol)
                 click.echo(f"    {highlighted_line}")
 
-    @staticmethod
     def _render_with_context(
+        self,
         result: Any,
         context: int,
         repo_root: Path,
@@ -221,7 +226,7 @@ class ResultPresenter:
             settings: Display settings dict with 'use_highlighting' and 'theme'.
         """
         file_path = repo_root / result.chunk.path
-        file_lines = ResultPresenter._read_file_lines(file_path)
+        file_lines = self._read_file_lines(file_path)
 
         if file_lines is None:
             # Fall back to preview if file not found
@@ -275,8 +280,7 @@ class ResultPresenter:
                     dimmed_content = EmberColors.click_dimmed(line_content)
                     click.echo(f"    {line_num_str}:{dimmed_content}")
 
-    @staticmethod
-    def format_human_output(results: list[Any], context: int = 0, repo_root: Path | None = None, config: Any | None = None) -> None:
+    def format_human_output(self, results: list[Any], context: int = 0, repo_root: Path | None = None, config: Any | None = None) -> None:
         """Format and print results in human-readable ripgrep-style format.
 
         Args:
@@ -292,8 +296,8 @@ class ResultPresenter:
             click.echo("No results found.")
             return
 
-        results_by_file = ResultPresenter._group_results_by_file(results)
-        settings = ResultPresenter._get_display_settings(config)
+        results_by_file = self._group_results_by_file(results)
+        settings = self._get_display_settings(config)
 
         for file_path, file_results in results_by_file.items():
             # Print filename using centralized color
@@ -305,15 +309,14 @@ class ResultPresenter:
                     click.echo()
 
                 if context > 0 and repo_root is not None:
-                    ResultPresenter._render_with_context(result, context, repo_root, settings)
+                    self._render_with_context(result, context, repo_root, settings)
                 else:
-                    ResultPresenter._render_compact_preview(result, settings, repo_root)
+                    self._render_compact_preview(result, settings, repo_root)
 
             # Blank line between files
             click.echo()
 
-    @staticmethod
-    def _get_context(result: Any, context: int, repo_root: Path) -> dict[str, Any] | None:
+    def _get_context(self, result: Any, context: int, repo_root: Path) -> dict[str, Any] | None:
         """Get context lines for a search result.
 
         Args:
@@ -325,7 +328,7 @@ class ResultPresenter:
             Dictionary with context information, or None if file not readable.
         """
         file_path = repo_root / result.chunk.path
-        file_lines = ResultPresenter._read_file_lines(file_path)
+        file_lines = self._read_file_lines(file_path)
 
         if file_lines is None:
             return None

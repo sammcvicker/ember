@@ -71,3 +71,15 @@ class FileSystem(Protocol):
             List of matching absolute paths.
         """
         ...
+
+    def read_text_lines(self, path: Path) -> list[str] | None:
+        """Read file and return lines as strings.
+
+        Args:
+            path: Absolute path to file.
+
+        Returns:
+            List of lines (without trailing newlines), or None if file
+            doesn't exist or can't be read.
+        """
+        ...
