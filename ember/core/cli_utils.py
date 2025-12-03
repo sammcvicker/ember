@@ -16,13 +16,17 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn
 from ember.core.presentation.colors import EmberColors, highlight_symbol
 
 if TYPE_CHECKING:
+    from ember.domain.entities import Chunk
+    from ember.ports.chunk_repository import ChunkRepository
     from ember.ports.daemon import DaemonManager
 
 
 # Re-export highlight_symbol for backward compatibility
 __all__ = ["RichProgressCallback", "progress_context", "load_cached_results",
            "validate_result_index", "highlight_symbol", "format_result_header",
-           "ensure_daemon_with_progress"]
+           "ensure_daemon_with_progress", "lookup_result_from_cache",
+           "lookup_result_by_hash", "display_content_with_context",
+           "display_content_with_highlighting"]
 
 
 class RichProgressCallback:
@@ -221,3 +225,149 @@ def ensure_daemon_with_progress(
         except Exception as e:
             progress.update(task, description=f"✗ Failed to start daemon: {e}")
             return False
+
+
+def lookup_result_from_cache(
+    identifier: str, cache_path: Path
+) -> dict[str, Any]:
+    """Look up a result from the search cache by numeric index.
+
+    Args:
+        identifier: Numeric string index (1-based).
+        cache_path: Path to .last_search.json cache file.
+
+    Returns:
+        Result dictionary with path, start_line, end_line, content, lang, symbol.
+
+    Raises:
+        SystemExit: If cache doesn't exist, is corrupted, or index is out of range.
+    """
+    cache_data = load_cached_results(cache_path)
+    results = cache_data.get("results", [])
+    return validate_result_index(int(identifier), results)
+
+
+def lookup_result_by_hash(
+    identifier: str, chunk_repo: "ChunkRepository"
+) -> dict[str, Any]:
+    """Look up a result by chunk ID hash prefix.
+
+    Args:
+        identifier: Hash prefix (or full hash) to search for.
+        chunk_repo: Repository for chunk lookups.
+
+    Returns:
+        Result dictionary with path, start_line, end_line, content, lang, symbol.
+
+    Raises:
+        SystemExit: If no chunk found or multiple chunks match the prefix.
+    """
+    matches: list[Chunk] = chunk_repo.find_by_id_prefix(identifier)
+
+    if len(matches) == 0:
+        click.echo(f"Error: No chunk found with ID prefix '{identifier}'", err=True)
+        sys.exit(1)
+    elif len(matches) > 1:
+        click.echo(
+            f"Error: Ambiguous chunk ID prefix '{identifier}' matches {len(matches)} chunks:",
+            err=True,
+        )
+        for chunk in matches[:5]:  # Show first 5 matches
+            click.echo(f"  {chunk.id}", err=True)
+        if len(matches) > 5:
+            click.echo(f"  ... and {len(matches) - 5} more", err=True)
+        click.echo("\nUse a longer prefix to uniquely identify the chunk", err=True)
+        sys.exit(1)
+
+    # Found exactly one match - convert to result format
+    chunk = matches[0]
+    return {
+        "path": str(chunk.path),
+        "start_line": chunk.start_line,
+        "end_line": chunk.end_line,
+        "content": chunk.content,
+        "lang": chunk.lang,
+        "symbol": chunk.symbol,
+    }
+
+
+def display_content_with_context(
+    result: dict[str, Any],
+    context: int,
+    repo_root: Path,
+) -> bool:
+    """Display chunk content with surrounding context lines.
+
+    Args:
+        result: Result dictionary with path, start_line, end_line, content.
+        context: Number of lines to show before and after the chunk.
+        repo_root: Repository root for resolving file paths.
+
+    Returns:
+        True if content was displayed successfully, False if fallback needed.
+    """
+    file_path = repo_root / result["path"]
+    if not file_path.exists():
+        click.echo(
+            f"Warning: File {result['path']} not found, showing chunk only", err=True
+        )
+        return False
+
+    try:
+        file_lines = file_path.read_text(errors="replace").splitlines()
+        start_line = result["start_line"]
+        end_line = result["end_line"]
+
+        # Calculate context range (1-based line numbers)
+        context_start = max(1, start_line - context)
+        context_end = min(len(file_lines), end_line + context)
+
+        # Display with line numbers
+        for line_num in range(context_start, context_end + 1):
+            line_content = file_lines[line_num - 1]  # Convert to 0-based
+            # Highlight the chunk lines
+            if start_line <= line_num <= end_line:
+                click.echo(f"{line_num:5} | {line_content}")
+            else:
+                click.echo(click.style(f"{line_num:5} | {line_content}", dim=True))
+        return True
+    except Exception as e:
+        click.echo(
+            f"Warning: Could not read context from {result['path']}: {e}", err=True
+        )
+        return False
+
+
+def display_content_with_highlighting(
+    result: dict[str, Any],
+    config: Any,
+    verbose: bool = False,
+) -> None:
+    """Display chunk content with optional syntax highlighting.
+
+    Args:
+        result: Result dictionary with path, start_line, content.
+        config: EmberConfig with display settings.
+        verbose: Whether to show warning messages on highlighting failure.
+    """
+    from ember.core.presentation.colors import render_syntax_highlighted
+
+    content = result["content"]
+
+    if config.display.syntax_highlighting:
+        try:
+            highlighted = render_syntax_highlighted(
+                code=content,
+                file_path=Path(result["path"]),
+                start_line=result["start_line"],
+                theme=config.display.theme,
+            )
+            click.echo(highlighted)
+        except Exception as e:
+            # Fallback to plain text if highlighting fails
+            if verbose:
+                click.echo(f"Warning: Syntax highlighting failed: {e}", err=True)
+            click.echo(content)
+    else:
+        # Just display plain content
+        click.echo(content)
