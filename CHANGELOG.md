@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Reduced `cat` command complexity from C=16 to C=5** (#171)
+  - Extracted `lookup_result_from_cache()` helper for numeric index lookups
+  - Extracted `lookup_result_by_hash()` helper for hash-based chunk lookups
+  - Extracted `display_content_with_context()` helper for context line display
+  - Extracted `display_content_with_highlighting()` helper for syntax highlighting
+  - Main `cat` function reduced from 130 lines to ~50 lines
+  - All helpers are individually testable with 11 new unit tests
+
 - **ResultPresenter refactored to use dependency injection for file I/O** (#170)
   - Extracted file reading from core presentation layer to respect clean architecture
   - ResultPresenter now accepts a FileSystem port via constructor injection

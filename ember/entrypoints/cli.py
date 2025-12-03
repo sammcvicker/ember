@@ -12,8 +12,12 @@ import click
 
 from ember.adapters.fs.local import LocalFileSystem
 from ember.core.cli_utils import (
+    display_content_with_context,
+    display_content_with_highlighting,
     format_result_header,
     load_cached_results,
+    lookup_result_by_hash,
+    lookup_result_from_cache,
     progress_context,
     validate_result_index,
 )
@@ -890,63 +894,26 @@ def cat(ctx: click.Context, identifier: str, context: int) -> None:
       - Short hash prefix (e.g., 'a1b2c3d4') - minimum 8 characters
     """
     from ember.adapters.config.toml_config_provider import TomlConfigProvider
-    from ember.core.presentation.colors import render_syntax_highlighted
 
     repo_root, ember_dir = get_ember_repo_root()
-
-    # Load config to check syntax highlighting settings
     config_provider = TomlConfigProvider()
     config = config_provider.load(ember_dir)
 
-    # Determine if identifier is numeric index or hash ID
+    # Look up result by numeric index or hash ID
     is_numeric = identifier.isdigit()
-
     if is_numeric:
-        # Legacy behavior: numeric index from cached search results
         cache_path = ember_dir / ".last_search.json"
-        cache_data = load_cached_results(cache_path)
-        results = cache_data.get("results", [])
-        result = validate_result_index(int(identifier), results)
+        result = lookup_result_from_cache(identifier, cache_path)
     else:
-        # New behavior: hash-based lookup
         from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
 
         db_path = ember_dir / "index.db"
         chunk_repo = SQLiteChunkRepository(db_path)
+        result = lookup_result_by_hash(identifier, chunk_repo)
 
-        # Try to find chunk by ID prefix
-        matches = chunk_repo.find_by_id_prefix(identifier)
-
-        if len(matches) == 0:
-            click.echo(f"Error: No chunk found with ID prefix '{identifier}'", err=True)
-            sys.exit(1)
-        elif len(matches) > 1:
-            click.echo(f"Error: Ambiguous chunk ID prefix '{identifier}' matches {len(matches)} chunks:", err=True)
-            for chunk in matches[:5]:  # Show first 5 matches
-                click.echo(f"  {chunk.id}", err=True)
-            if len(matches) > 5:
-                click.echo(f"  ... and {len(matches) - 5} more", err=True)
-            click.echo("\nUse a longer prefix to uniquely identify the chunk", err=True)
-            sys.exit(1)
-
-        # Found exactly one match
-        chunk = matches[0]
-
-        # Convert chunk to result format (matching cached results structure)
-        result = {
-            "path": str(chunk.path),
-            "start_line": chunk.start_line,
-            "end_line": chunk.end_line,
-            "content": chunk.content,
-            "lang": chunk.lang,
-            "symbol": chunk.symbol,
-        }
-
-    # Display header using consistent formatting for both lookup methods
-    # Pass index only for numeric lookups (shows rank), None for hash lookups (no rank)
+    # Display header
     display_index = int(identifier) if is_numeric else None
     format_result_header(result, display_index, show_symbol=True)
-
     click.echo(
         click.style(
             f"Lines {result['start_line']}-{result['end_line']} ({result['lang'] or 'text'})",
@@ -955,60 +922,14 @@ def cat(ctx: click.Context, identifier: str, context: int) -> None:
     )
     click.echo()
 
-    # Get chunk content
-    content = result["content"]
-
-    # If context requested, read file and show surrounding lines
+    # Display content (with context or with highlighting)
     if context > 0:
-        file_path = repo_root / result["path"]
-        if file_path.exists():
-            try:
-                file_lines = file_path.read_text(errors="replace").splitlines()
-                start_line = result["start_line"]
-                end_line = result["end_line"]
-
-                # Calculate context range (1-based line numbers)
-                context_start = max(1, start_line - context)
-                context_end = min(len(file_lines), end_line + context)
-
-                # Display with line numbers
-                for line_num in range(context_start, context_end + 1):
-                    line_content = file_lines[line_num - 1]  # Convert to 0-based
-                    # Highlight the chunk lines
-                    if start_line <= line_num <= end_line:
-                        click.echo(f"{line_num:5} | {line_content}")
-                    else:
-                        click.echo(click.style(f"{line_num:5} | {line_content}", dim=True))
-            except Exception as e:
-                # Fall back to just chunk content if file read fails
-                click.echo(
-                    f"Warning: Could not read context from {result['path']}: {e}", err=True
-                )
-                click.echo(content)
-        else:
-            click.echo(
-                f"Warning: File {result['path']} not found, showing chunk only", err=True
-            )
-            click.echo(content)
+        if not display_content_with_context(result, context, repo_root):
+            click.echo(result["content"])
     else:
-        # Display the chunk content with syntax highlighting if enabled
-        if config.display.syntax_highlighting:
-            try:
-                highlighted = render_syntax_highlighted(
-                    code=content,
-                    file_path=Path(result["path"]),
-                    start_line=result["start_line"],
-                    theme=config.display.theme,
-                )
-                click.echo(highlighted)
-            except Exception as e:
-                # Fallback to plain text if highlighting fails
-                if ctx.obj.get("verbose", False):
-                    click.echo(f"Warning: Syntax highlighting failed: {e}", err=True)
-                click.echo(content)
-        else:
-            # Just display plain content
-            click.echo(content)
+        display_content_with_highlighting(
+            result, config, verbose=ctx.obj.get("verbose", False)
+        )
 
     click.echo()
 
