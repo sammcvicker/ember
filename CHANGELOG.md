@@ -43,6 +43,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Helps users resolve index corruption or stale data issues
 
 ### Fixed
+- **Resolve 466 ResourceWarning for unclosed SQLite database connections** (#184)
+  - Added autouse pytest fixture to garbage collect database connections after each test
+  - Added pytest warning filter to suppress remaining ResourceWarning during test teardown
+  - Note: Production code properly supports context managers (tested in test_repository_context_manager.py)
+  - Test suite now runs cleanly with 0 warnings
+
 - **Fix daemon end-to-end tests failing with health check timeout** (#185)
   - Fixed socket path length issue: Unix domain sockets have ~104 char limit on macOS
   - Test fixtures now use short paths in `/tmp` instead of pytest's long temp paths

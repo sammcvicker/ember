@@ -13,7 +13,15 @@ from ember.domain.entities import Chunk
 
 @pytest.fixture
 def chunk_repo(db_path: Path) -> SQLiteChunkRepository:
-    """Create a ChunkRepository instance for testing."""
+    """Create a ChunkRepository instance for testing.
+
+    Returns:
+        SQLiteChunkRepository instance.
+
+    Note:
+        Connection cleanup is handled by the autouse
+        cleanup_database_connections fixture in conftest.py.
+    """
     return SQLiteChunkRepository(db_path)
 
 
