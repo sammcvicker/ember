@@ -1,5 +1,6 @@
 """Pytest configuration and shared fixtures."""
 
+import gc
 import subprocess
 import tempfile
 from pathlib import Path
@@ -8,6 +9,24 @@ import pytest
 
 from ember.adapters.sqlite.schema import init_database
 from ember.domain.entities import Chunk
+
+
+@pytest.fixture(autouse=True)
+def cleanup_database_connections():
+    """Automatically clean up database connections after each test.
+
+    This fixture ensures that any unclosed SQLite database connections
+    are properly garbage collected after each test, preventing
+    ResourceWarning messages about unclosed database connections.
+
+    The fixture is autouse=True so it runs automatically for every test.
+    It runs gc.collect() twice to ensure finalizers are called.
+    """
+    yield
+    # Force garbage collection twice to ensure finalizers run
+    # First pass marks objects for collection, second pass runs finalizers
+    gc.collect()
+    gc.collect()
 
 
 @pytest.fixture
@@ -140,6 +159,10 @@ def db_path(tmp_path: Path) -> Path:
 
     Returns:
         Path to the initialized test database.
+
+    Note:
+        Database connection cleanup is handled by the autouse
+        cleanup_database_connections fixture.
     """
     db = tmp_path / "test.db"
     init_database(db)

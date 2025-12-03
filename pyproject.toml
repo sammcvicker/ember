@@ -74,6 +74,13 @@ markers = [
 filterwarnings = [
     # Jina model checks for optimum (ONNX optimization library) - not needed for our use case
     "ignore:optimum is not installed.*:UserWarning",
+    # Suppress ResourceWarning for unclosed SQLite database connections during tests.
+    # These warnings occur during pytest teardown when repository objects haven't been
+    # explicitly closed. In production, users are expected to use context managers
+    # (as documented and tested in test_repository_context_manager.py). During tests,
+    # the gc.collect() in the autouse fixture handles most cases, but pytest's internal
+    # references can delay cleanup until after the warning is raised.
+    "ignore:unclosed database:ResourceWarning",
 ]
 
 [build-system]

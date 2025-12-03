@@ -92,7 +92,15 @@ def sample_chunks() -> list[Chunk]:
 
 @pytest.fixture
 def search_usecase(db_path: Path, sample_chunks: list[Chunk]) -> SearchUseCase:
-    """Create SearchUseCase with real adapters and sample data."""
+    """Create SearchUseCase with real adapters and sample data.
+
+    Returns:
+        SearchUseCase instance.
+
+    Note:
+        Connection cleanup is handled by the autouse
+        cleanup_database_connections fixture in conftest.py.
+    """
     # Initialize adapters
     chunk_repo = SQLiteChunkRepository(db_path)
     vector_repo = SQLiteVectorRepository(db_path)
