@@ -10,6 +10,7 @@ from pathlib import Path
 import blake3
 import click
 
+from ember.adapters.fs.local import LocalFileSystem
 from ember.core.cli_utils import (
     format_result_header,
     load_cached_results,
@@ -689,10 +690,11 @@ def find(
             click.echo(f"Warning: Could not cache results: {e}", err=True)
 
     # Display results
+    presenter = ResultPresenter(LocalFileSystem())
     if json_output:
-        click.echo(ResultPresenter.format_json_output(results, context=context, repo_root=repo_root))
+        click.echo(presenter.format_json_output(results, context=context, repo_root=repo_root))
     else:
-        ResultPresenter.format_human_output(results, context=context, repo_root=repo_root, config=config)
+        presenter.format_human_output(results, context=context, repo_root=repo_root, config=config)
 
 
 @cli.command()
