@@ -13,12 +13,23 @@ Execute the following steps autonomously, only asking for user confirmation at m
 ### 1. Pick Next Issue
 
 ```bash
-# List open issues
+# Check milestone issues first (highest priority)
+gh issue list --state open --milestone "1.3.0" --json number,title,labels
+
+# Then check all open issues
 gh issue list --state open --json number,title,labels --limit 20
 ```
 
-- Prefer bugs over enhancements, then lowest numbered issue
+**Priority Order:**
+1. **Milestone issues** (#124-#129) - Active sprint, highest priority
+2. **Tech debt Priority 1** (#185, #184, #180, #173, #183, #170) - Bugs and architecture violations
+3. **Tech debt Priority 2** (#171, #172, #176, #179, #174, #182) - Complexity reduction
+4. **Tech debt Priority 3** (#181, #177, #175, #178) - Nice to have improvements
+
+Within each priority level: prefer bugs over enhancements, then lowest numbered issue.
+
 - If unclear which issue to work on, ask the user
+- See `CLAUDE.md` section "🔧 TECH DEBT BACKLOG" for full context on tech debt issues
 
 ### 2. Start Issue
 
@@ -110,12 +121,22 @@ Before moving to PR creation, verify:
 - [ ] All acceptance criteria met
 - [ ] Documentation updated
 
+**Known Test Issues (don't block on these):**
+- 2 slow tests fail (daemon end-to-end) - tracked in #185
+- 466 ResourceWarning about unclosed DB connections - tracked in #184
+- Run `uv run pytest -m slow` separately to check slow tests
+
 ## Reference Documents
 
-- `CLAUDE.md` - Current state and workflow guide
+- `CLAUDE.md` - Current state, workflow guide, and **tech debt backlog**
 - `MAINTAINER_GUIDE.md` - Detailed operational procedures
 - `prd.md` - Product requirements and architecture
 - `docs/decisions/` - Architecture Decision Records
+
+**Tech Debt Context:** See CLAUDE.md "🔧 TECH DEBT BACKLOG" section for:
+- 16 issues from Dec 2025 code quality audit
+- Priority rankings (P1: bugs/arch, P2: complexity, P3: nice-to-have)
+- Issue descriptions with code references
 
 Ready to start the workflow!
 

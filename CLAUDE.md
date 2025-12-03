@@ -20,12 +20,16 @@
 - Functional config system (.ember/config.toml) ✅
 - sqlite-vec for fast vector search (100x speedup) ✅
 - Batch embedding optimization (2-6x faster indexing) ✅
-- Fast test suite (<10s) ✅
-- Clean, refactored CLI (29% complexity reduction) ✅
-- 251+ automated tests passing ✅
+- Fast test suite (~47s, 369 tests) ✅
 - Clean architecture with ports/adapters ✅
+- 77% test coverage ✅
 
-**Current Focus:** Bug fixes and stability for interactive search and indexing
+**Known Issues:**
+- 2 failing slow tests (daemon end-to-end) - see #185
+- 466 ResourceWarning in test suite (unclosed DB connections) - see #184
+- 2 architecture violations in core/ - see #170, #180
+
+**Current Focus:** Bug fixes, stability, and tech debt reduction
 
 ---
 
@@ -52,6 +56,40 @@ See [GitHub milestone](https://github.com/sammcvicker/ember/milestone/6) for all
 - **v1.2.0** - Syntax highlighting polish (5 issues) ✅
 - **v1.1.0** - Interactive search feature ✅
 - **v1.0.0** - Core features complete (8 issues) ✅
+
+---
+
+## 🔧 TECH DEBT BACKLOG (from Dec 2025 audit)
+
+**Priority 1 - Fix Now (Bugs/Architecture):**
+| Issue | Description | Labels |
+|-------|-------------|--------|
+| #185 | Daemon end-to-end tests failing (health check timeout) | bug, testing |
+| #184 | 466 ResourceWarning for unclosed SQLite connections | testing, tech-debt |
+| #180 | Remove adapter import from core layer (init_usecase) | architecture |
+| #173 | Add validation to domain entities (Query, Chunk, Config) | tech-debt, architecture |
+| #183 | Fix socket timeout exception handling in DaemonServer | tech-debt |
+| #170 | Extract file I/O from ResultPresenter (clean architecture) | tech-debt, architecture |
+
+**Priority 2 - Next Release (Complexity/Quality):**
+| Issue | Description | Complexity |
+|-------|-------------|------------|
+| #171 | Reduce CLI cat function complexity | C=16 |
+| #172 | Reduce DaemonLifecycle.start() complexity | C=13 |
+| #176 | Reduce GitAdapter.diff_files() complexity | C=16 |
+| #179 | Reduce ResultPresenter._render_compact_preview() complexity | C=12 |
+| #174 | Add test coverage for untested modules (550+ lines) | testing |
+| #182 | Break up ResultPresenter (SRP violation) | tech-debt |
+
+**Priority 3 - Nice to Have:**
+| Issue | Description | Labels |
+|-------|-------------|--------|
+| #181 | Optimize slow daemon test (20+ seconds) | performance, testing |
+| #177 | Add helpful error messages with hints | dx |
+| #175 | Extract duplicate editor integration code | tech-debt |
+| #178 | Consolidate duplicate git repo fixtures (~300 lines) | testing |
+
+**When picking issues:** Milestone issues (#124-#129) take precedence over tech debt unless a tech debt issue is blocking.
 
 ---
 
@@ -194,5 +232,5 @@ See `docs/decisions/` for full ADRs:
 
 ---
 
-**Last Updated:** 2025-11-17 (v1.3.0 milestone - stability & polish)
-**Format Version:** 2.0 (Simplified)
+**Last Updated:** 2025-12-03 (added tech debt backlog from code audit)
+**Format Version:** 2.1 (Added tech debt tracking)
