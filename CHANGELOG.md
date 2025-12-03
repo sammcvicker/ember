@@ -35,6 +35,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Helps users resolve index corruption or stale data issues
 
 ### Fixed
+- **Fix daemon end-to-end tests failing with health check timeout** (#185)
+  - Fixed socket path length issue: Unix domain sockets have ~104 char limit on macOS
+  - Test fixtures now use short paths in `/tmp` instead of pytest's long temp paths
+  - Fixed zombie process detection in `is_process_alive()` by reaping child processes
+  - Increased SIGKILL verification timeout from 0.5s to 2.5s with retry loop
+  - Added `auto_start=False` to fallback test to ensure proper fallback behavior
+
 - **Fix race condition in daemon PID file management** (#152)
   - PID file is now written immediately after spawning daemon process
   - Eliminates race where process could die between alive-check and PID write
