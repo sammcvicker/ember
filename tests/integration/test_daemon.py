@@ -5,6 +5,8 @@ Tests the daemon server, client, and lifecycle management.
 
 
 import signal
+import tempfile
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -17,8 +19,20 @@ from ember.adapters.daemon.server import DaemonServer
 
 @pytest.fixture
 def temp_socket_path(tmp_path):
-    """Temporary socket path for testing."""
-    return tmp_path / "test-daemon.sock"
+    """Temporary socket path for testing.
+
+    Uses a short base path (/tmp) to avoid AF_UNIX path length limits (~104 chars on macOS).
+    The pytest tmp_path can be too long for Unix domain sockets.
+    """
+    # Create a short temp directory for the socket
+    # Unix sockets have ~104 char limit on macOS, pytest tmp_path can exceed this
+    short_tmp = tempfile.mkdtemp(prefix="emb_", dir="/tmp")
+    socket_path = Path(short_tmp) / "d.sock"  # Keep filename short too
+    yield socket_path
+    # Cleanup
+    if socket_path.exists():
+        socket_path.unlink()
+    Path(short_tmp).rmdir()
 
 
 @pytest.fixture
@@ -644,8 +658,11 @@ class TestEndToEnd:
     @pytest.mark.slow
     def test_client_fallback_on_daemon_failure(self, temp_socket_path):
         """Test client falls back to direct mode when daemon unavailable."""
-        # Create client with fallback enabled
-        client = DaemonEmbedderClient(socket_path=temp_socket_path, fallback=True)
+        # Create client with fallback enabled but auto_start disabled
+        # This ensures the daemon won't be started, forcing fallback
+        client = DaemonEmbedderClient(
+            socket_path=temp_socket_path, fallback=True, auto_start=False
+        )
 
         # Daemon is not running, so should fallback to direct mode
         texts = ["def test():"]

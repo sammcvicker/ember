@@ -73,9 +73,21 @@ class DaemonLifecycle:
             pid: Process ID
 
         Returns:
-            True if process exists
+            True if process exists and is not a zombie
         """
         try:
+            # First try to collect any zombie children to avoid false positives
+            # This handles the case where we spawned a daemon that has exited
+            # but hasn't been reaped yet (zombie state)
+            try:
+                os.waitpid(pid, os.WNOHANG)
+            except ChildProcessError:
+                # Process is not our child, that's fine
+                pass
+            except OSError:
+                # Process doesn't exist or other error
+                pass
+
             # Send signal 0 (no-op, just checks if process exists)
             os.kill(pid, 0)
             return True
@@ -276,14 +288,16 @@ class DaemonLifecycle:
             return False
 
         # Verify SIGKILL worked before cleanup
-        time.sleep(0.5)
-        if not self.is_process_alive(pid):
-            logger.info("Daemon force-killed")
-            self.cleanup_stale_files()
-            return True
-        else:
-            logger.error("Daemon survived SIGKILL! Manual cleanup required.")
-            return False
+        # Give process time to fully terminate (may take longer on some systems)
+        for _ in range(5):  # Up to 2.5s total
+            time.sleep(0.5)
+            if not self.is_process_alive(pid):
+                logger.info("Daemon force-killed")
+                self.cleanup_stale_files()
+                return True
+
+        logger.error("Daemon survived SIGKILL! Manual cleanup required.")
+        return False
 
     def restart(self, foreground: bool = False) -> bool:
         """Restart the daemon.
