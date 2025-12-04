@@ -8,13 +8,13 @@ Tests the complete CLI flow end-to-end to verify:
 """
 
 import json
-import subprocess
 from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
 
 from ember.entrypoints.cli import cli
+from tests.conftest import create_git_repo, git_add_and_commit, init_git_repo
 
 
 @pytest.fixture
@@ -32,29 +32,10 @@ def git_repo_isolated(runner: CliRunner, tmp_path: Path) -> Path:
     Returns:
         Path to the repository root.
     """
-    repo_root = tmp_path / "test_repo"
-    repo_root.mkdir()
-
-    # Initialize git repo
-    subprocess.run(["git", "init"], cwd=repo_root, check=True, capture_output=True, timeout=5)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"],
-        cwd=repo_root,
-        check=True,
-        capture_output=True,
-        timeout=5,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "Test User"],
-        cwd=repo_root,
-        check=True,
-        capture_output=True,
-        timeout=5,
-    )
-
-    # Create test file
-    test_file = repo_root / "example.py"
-    test_file.write_text("""def hello():
+    return create_git_repo(
+        tmp_path / "test_repo",
+        files={
+            "example.py": """def hello():
     '''Say hello.'''
     return "Hello, World!"
 
@@ -62,19 +43,9 @@ def git_repo_isolated(runner: CliRunner, tmp_path: Path) -> Path:
 def goodbye():
     '''Say goodbye.'''
     return "Goodbye!"
-""")
-
-    # Commit file
-    subprocess.run(["git", "add", "."], cwd=repo_root, check=True, capture_output=True, timeout=5)
-    subprocess.run(
-        ["git", "commit", "-m", "Initial commit"],
-        cwd=repo_root,
-        check=True,
-        capture_output=True,
-        timeout=5,
+""",
+        },
     )
-
-    return repo_root
 
 
 class TestInitCommand:
@@ -776,13 +747,7 @@ class TestStatusCommand:
         # Modify file (creating staleness)
         test_file = git_repo_isolated / "example.py"
         test_file.write_text(test_file.read_text() + "\n# New comment\n")
-        subprocess.run(["git", "add", "."], cwd=git_repo_isolated, check=True, capture_output=True)
-        subprocess.run(
-            ["git", "commit", "-m", "Update"],
-            cwd=git_repo_isolated,
-            check=True,
-            capture_output=True,
-        )
+        git_add_and_commit(git_repo_isolated, message="Update")
 
         # Check status
         result = runner.invoke(cli, ["status"], catch_exceptions=False)
@@ -836,9 +801,7 @@ class TestVerboseQuietFlags:
         # Init without quiet (in fresh repo)
         git_repo_2 = git_repo_isolated.parent / "test_repo_2"
         git_repo_2.mkdir()
-        subprocess.run(["git", "init"], cwd=git_repo_2, check=True, capture_output=True)
-        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=git_repo_2, check=True, capture_output=True)
-        subprocess.run(["git", "config", "user.name", "Test"], cwd=git_repo_2, check=True, capture_output=True)
+        init_git_repo(git_repo_2)
 
         monkeypatch.chdir(git_repo_2)
         result_normal = runner.invoke(cli, ["init"], catch_exceptions=False)

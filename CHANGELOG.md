@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Consolidated duplicate git repository test fixtures** (#178)
+  - Created shared helper functions in `tests/conftest.py`: `init_git_repo()`, `git_add_and_commit()`, `create_test_files()`, `create_git_repo()`
+  - Replaced ~280 lines of duplicate git setup code across 10 test files
+  - All test fixtures now use the consolidated helpers for consistent repository initialization
+  - Reduces duplication and makes test infrastructure easier to maintain
+
 ### Added
 - **Helpful error messages with context and hints** (#177)
   - New `EmberCliError` exception class with `hint` support for actionable guidance

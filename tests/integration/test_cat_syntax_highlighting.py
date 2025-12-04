@@ -11,6 +11,7 @@ import pytest
 from click.testing import CliRunner
 
 from ember.entrypoints.cli import cli
+from tests.conftest import create_git_repo
 
 
 @pytest.fixture
@@ -22,31 +23,10 @@ def runner() -> CliRunner:
 @pytest.fixture
 def python_repo(tmp_path: Path) -> Path:
     """Create a test repo with Python code for syntax highlighting tests."""
-    import subprocess
-
-    repo_root = tmp_path / "test_repo"
-    repo_root.mkdir()
-
-    # Initialize git repo
-    subprocess.run(["git", "init"], cwd=repo_root, check=True, capture_output=True, timeout=5)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"],
-        cwd=repo_root,
-        check=True,
-        capture_output=True,
-        timeout=5,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "Test User"],
-        cwd=repo_root,
-        check=True,
-        capture_output=True,
-        timeout=5,
-    )
-
-    # Create Python test file with clear syntax elements
-    test_file = repo_root / "example.py"
-    test_file.write_text('''def calculate_sum(a, b):
+    return create_git_repo(
+        tmp_path / "test_repo",
+        files={
+            "example.py": '''def calculate_sum(a, b):
     """Calculate the sum of two numbers."""
     result = a + b
     return result
@@ -58,19 +38,9 @@ class Calculator:
     def multiply(self, x, y):
         """Multiply two numbers."""
         return x * y
-''')
-
-    # Commit file
-    subprocess.run(["git", "add", "."], cwd=repo_root, check=True, capture_output=True, timeout=5)
-    subprocess.run(
-        ["git", "commit", "-m", "Initial commit"],
-        cwd=repo_root,
-        check=True,
-        capture_output=True,
-        timeout=5,
+''',
+        },
     )
-
-    return repo_root
 
 
 class TestCatSyntaxHighlighting:
@@ -361,39 +331,10 @@ class TestCatSyntaxHighlighting:
         self, runner: CliRunner, tmp_path: Path, monkeypatch
     ) -> None:
         """Test that cat gracefully handles files with unknown extensions."""
-        import subprocess
-
         # Create repo with unknown file type
-        repo_root = tmp_path / "test_repo"
-        repo_root.mkdir()
-
-        subprocess.run(["git", "init"], cwd=repo_root, check=True, capture_output=True, timeout=5)
-        subprocess.run(
-            ["git", "config", "user.email", "test@example.com"],
-            cwd=repo_root,
-            check=True,
-            capture_output=True,
-            timeout=5,
-        )
-        subprocess.run(
-            ["git", "config", "user.name", "Test User"],
-            cwd=repo_root,
-            check=True,
-            capture_output=True,
-            timeout=5,
-        )
-
-        # Create file with unknown extension
-        test_file = repo_root / "data.xyz"
-        test_file.write_text("some content here\nmore content\n")
-
-        subprocess.run(["git", "add", "."], cwd=repo_root, check=True, capture_output=True, timeout=5)
-        subprocess.run(
-            ["git", "commit", "-m", "Initial commit"],
-            cwd=repo_root,
-            check=True,
-            capture_output=True,
-            timeout=5,
+        repo_root = create_git_repo(
+            tmp_path / "test_repo",
+            files={"data.xyz": "some content here\nmore content\n"},
         )
 
         monkeypatch.chdir(repo_root)

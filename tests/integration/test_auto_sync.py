@@ -1,44 +1,19 @@
 """Integration tests for auto-sync on search functionality."""
 
-import subprocess
 from pathlib import Path
 
 import pytest
+
+from tests.conftest import create_git_repo, git_add_and_commit
 
 
 @pytest.fixture
 def auto_sync_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Create a test git repo for auto-sync testing."""
-    repo = tmp_path / "test-repo"
-    repo.mkdir()
-
-    # Initialize git repo
-    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, timeout=5)
-    subprocess.run(
-        ["git", "config", "user.email", "test@test.com"],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-        timeout=5,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "Test User"],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-        timeout=5,
-    )
-
-    # Create initial file
-    test_file = repo / "test.py"
-    test_file.write_text("def foo(): pass\n")
-    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True, timeout=5)
-    subprocess.run(
-        ["git", "commit", "-m", "initial"],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-        timeout=5,
+    repo = create_git_repo(
+        tmp_path / "test-repo",
+        files={"test.py": "def foo(): pass\n"},
+        commit_message="initial",
     )
 
     # Initialize ember
@@ -68,16 +43,7 @@ def test_auto_sync_on_stale_index(auto_sync_repo: Path, monkeypatch: pytest.Monk
     # Modify file to make index stale
     test_file = auto_sync_repo / "test.py"
     test_file.write_text("def foo(): pass\ndef bar(): pass\n")
-    subprocess.run(
-        ["git", "add", "."], cwd=auto_sync_repo, check=True, capture_output=True, timeout=5
-    )
-    subprocess.run(
-        ["git", "commit", "-m", "add bar"],
-        cwd=auto_sync_repo,
-        check=True,
-        capture_output=True,
-        timeout=5,
-    )
+    git_add_and_commit(auto_sync_repo, message="add bar")
 
     # Run find - should auto-sync
     monkeypatch.chdir(auto_sync_repo)
@@ -103,16 +69,7 @@ def test_auto_sync_skipped_with_no_sync_flag(
     # Modify file to make index stale
     test_file = auto_sync_repo / "test.py"
     test_file.write_text("def foo(): pass\ndef baz(): pass\n")
-    subprocess.run(
-        ["git", "add", "."], cwd=auto_sync_repo, check=True, capture_output=True, timeout=5
-    )
-    subprocess.run(
-        ["git", "commit", "-m", "add baz"],
-        cwd=auto_sync_repo,
-        check=True,
-        capture_output=True,
-        timeout=5,
-    )
+    git_add_and_commit(auto_sync_repo, message="add baz")
 
     # Run find with --no-sync - should NOT auto-sync
     monkeypatch.chdir(auto_sync_repo)
@@ -162,16 +119,7 @@ def test_auto_sync_with_json_output(auto_sync_repo: Path, monkeypatch: pytest.Mo
     # Modify file
     test_file = auto_sync_repo / "test.py"
     test_file.write_text("def foo(): pass\ndef qux(): pass\n")
-    subprocess.run(
-        ["git", "add", "."], cwd=auto_sync_repo, check=True, capture_output=True, timeout=5
-    )
-    subprocess.run(
-        ["git", "commit", "-m", "add qux"],
-        cwd=auto_sync_repo,
-        check=True,
-        capture_output=True,
-        timeout=5,
-    )
+    git_add_and_commit(auto_sync_repo, message="add qux")
 
     # Run find with --json
     monkeypatch.chdir(auto_sync_repo)
