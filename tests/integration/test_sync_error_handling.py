@@ -1,51 +1,24 @@
 """Integration tests for sync command error handling (Issue #66)."""
 
-import subprocess
 from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
 
 from ember.entrypoints.cli import sync
+from tests.conftest import create_git_repo
 
 
 @pytest.fixture
 def sync_test_repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Create a test git repo for sync error handling tests."""
-    repo = tmp_path / "test-repo"
-    repo.mkdir()
-
-    # Initialize git repo
-    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, timeout=5)
-    subprocess.run(
-        ["git", "config", "user.email", "test@test.com"],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-        timeout=5,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "Test User"],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-        timeout=5,
-    )
-
-    # Create .gitignore to ignore .ember directory
-    gitignore = repo / ".gitignore"
-    gitignore.write_text(".ember/\n")
-
-    # Create initial file
-    test_file = repo / "test.py"
-    test_file.write_text("def foo(): pass\n")
-    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True, timeout=5)
-    subprocess.run(
-        ["git", "commit", "-m", "initial"],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-        timeout=5,
+    repo = create_git_repo(
+        tmp_path / "test-repo",
+        files={
+            ".gitignore": ".ember/\n",
+            "test.py": "def foo(): pass\n",
+        },
+        commit_message="initial",
     )
 
     # Initialize ember
