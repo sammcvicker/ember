@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Reduced `GitAdapter.diff_files()` complexity from C=16 to B=4** (#176)
+  - Extracted `_parse_status_code()` helper function for git status code parsing
+  - Replaced 11-branch if/elif chain with table-driven lookup
+  - Created `_EXACT_STATUS_MAP` for direct status code matches (A, D, M, T)
+  - Created `_PREFIX_STATUS_MAP` for prefix matches (R###, C###)
+  - Centralized path extraction logic with consistent fallback behavior
+  - Added 15 unit tests covering all status codes and edge cases
+
 ### Added
 - **Unit tests for DaemonServer** (#183)
   - Added 9 tests covering socket timeout handling, error backoff, and model cleanup
