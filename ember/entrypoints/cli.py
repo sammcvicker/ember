@@ -12,6 +12,7 @@ import click
 
 from ember.adapters.fs.local import LocalFileSystem
 from ember.core.cli_utils import (
+    EmberCliError,
     display_content_with_context,
     display_content_with_highlighting,
     format_result_header,
@@ -19,7 +20,9 @@ from ember.core.cli_utils import (
     lookup_result_by_hash,
     lookup_result_from_cache,
     open_file_in_editor,
+    path_not_in_repo_error,
     progress_context,
+    repo_not_found_error,
     validate_result_index,
 )
 from ember.core.presentation import ResultPresenter
@@ -29,7 +32,8 @@ def handle_cli_errors(command_name: str):
     """Decorator to handle common CLI errors.
 
     Catches RuntimeError and Exception, displaying appropriate messages
-    and showing tracebacks in verbose mode.
+    and showing tracebacks in verbose mode. EmberCliError exceptions
+    are re-raised to use their built-in formatting.
 
     Args:
         command_name: Name of the command for error messages.
@@ -43,17 +47,25 @@ def handle_cli_errors(command_name: str):
         def wrapper(*args, **kwargs):
             try:
                 return func(*args, **kwargs)
+            except EmberCliError:
+                # Let EmberCliError propagate to use its format_message()
+                raise
             except RuntimeError as e:
-                click.echo(f"Error: {e}", err=True)
-                sys.exit(1)
+                # Convert RuntimeError to EmberCliError with generic hint
+                raise EmberCliError(
+                    str(e),
+                    hint="Run with --verbose for more details",
+                ) from e
             except Exception as e:
                 ctx = click.get_current_context()
-                click.echo(f"Unexpected error in {command_name}: {e}", err=True)
                 if ctx.obj.get("verbose", False):
                     import traceback
 
                     traceback.print_exc()
-                sys.exit(1)
+                raise EmberCliError(
+                    f"Unexpected error in {command_name}: {e}",
+                    hint="Run with --verbose for more details",
+                ) from e
 
         return wrapper
 
@@ -109,21 +121,22 @@ def get_ember_repo_root() -> tuple[Path, Path]:
     """Get ember repository root or exit with error.
 
     Finds the ember repository root and .ember directory from the current
-    working directory. If not in an ember repository, prints an error
-    message and exits with code 1.
+    working directory. If not in an ember repository, raises EmberCliError.
 
     Returns:
         Tuple of (repo_root, ember_dir) where:
         - repo_root: Absolute path to repository root
         - ember_dir: Absolute path to .ember/ directory
+
+    Raises:
+        EmberCliError: If not in an ember repository.
     """
     from ember.core.repo_utils import find_repo_root
 
     try:
         return find_repo_root()
-    except RuntimeError as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
+    except RuntimeError:
+        repo_not_found_error()
 
 
 def _create_indexing_usecase(repo_root: Path, db_path: Path, config):
@@ -327,12 +340,15 @@ def init(ctx: click.Context, force: bool) -> None:
             click.echo("\nNext: Run 'ember sync' to index your codebase")
 
     except FileExistsError as e:
-        click.echo(f"Error: {e}", err=True)
-        click.echo("Use 'ember init --force' to reinitialize", err=True)
-        sys.exit(1)
+        raise EmberCliError(
+            str(e),
+            hint="Use 'ember init --force' to reinitialize",
+        ) from e
     except Exception as e:
-        click.echo(f"Error initializing ember: {e}", err=True)
-        sys.exit(1)
+        raise EmberCliError(
+            f"Failed to initialize ember: {e}",
+            hint="Check permissions and try again, or use --force to reinitialize",
+        ) from e
 
 
 def _parse_sync_mode(rev: str | None, staged: bool, worktree: bool) -> str:
@@ -487,8 +503,10 @@ def sync(
             response = indexing_usecase.execute(request)
 
     if not response.success:
-        click.echo(f"Error during indexing: {response.error}", err=True)
-        sys.exit(1)
+        raise EmberCliError(
+            f"Indexing failed: {response.error}",
+            hint="Run 'ember sync --reindex' to force a fresh index",
+        )
 
     _format_sync_results(response)
 
@@ -571,17 +589,14 @@ def find(
         try:
             path_rel_to_repo = path_abs.relative_to(repo_root)
         except ValueError:
-            click.echo(f"Error: Path '{path}' is not within repository", err=True)
-            sys.exit(1)
+            path_not_in_repo_error(path)
 
         # Check for mutually exclusive filter options
         if path_filter:
-            click.echo(
-                f"Error: Cannot use both PATH argument ('{path}') and --in filter ('{path_filter}').\n"
-                f"Use PATH to search a directory subtree, OR --in for glob patterns, but not both.",
-                err=True,
+            raise EmberCliError(
+                f"Cannot use both PATH argument ('{path}') and --in filter ('{path_filter}')",
+                hint="Use PATH to search a directory subtree, OR --in for glob patterns, but not both",
             )
-            sys.exit(1)
 
         # Create glob pattern for this path subtree
         path_filter = f"{path_rel_to_repo}/**" if path_rel_to_repo != Path(".") else "*/**"
@@ -737,12 +752,10 @@ def search(
 
     # Check for mutually exclusive filter options
     if path_filter and file_pattern:
-        click.echo(
-            f"Error: Cannot use both --path ('{path_filter}') and --in ('{file_pattern}').\n"
-            f"Use --path to search a directory, OR --in for glob patterns, but not both.",
-            err=True,
+        raise EmberCliError(
+            f"Cannot use both --path ('{path_filter}') and --in ('{file_pattern}')",
+            hint="Use --path to search a directory, OR --in for glob patterns, but not both",
         )
-        sys.exit(1)
 
     # Convert file_pattern to path_filter format
     if file_pattern:
@@ -988,8 +1001,10 @@ def status(ctx: click.Context) -> None:
     response = use_case.execute(StatusRequest(repo_root=repo_root))
 
     if not response.success:
-        click.echo(f"✗ Failed to get status: {response.error}", err=True)
-        sys.exit(1)
+        raise EmberCliError(
+            f"Failed to get status: {response.error}",
+            hint="Try 'ember sync' to refresh the index",
+        )
 
     # Display status
     click.echo(f"✓ Ember initialized at {repo_root}\n")
@@ -1061,8 +1076,10 @@ def start(ctx: click.Context, foreground: bool) -> None:
         try:
             lifecycle.start(foreground=True)
         except RuntimeError as e:
-            click.echo(f"✗ Failed to start daemon: {e}", err=True)
-            sys.exit(1)
+            raise EmberCliError(
+                f"Failed to start daemon: {e}",
+                hint="Check 'ember daemon status' for details, or try 'ember daemon restart'",
+            ) from e
     else:
         # Background mode with progress
         from ember.adapters.daemon.lifecycle import DaemonLifecycle
@@ -1073,8 +1090,10 @@ def start(ctx: click.Context, foreground: bool) -> None:
             if not quiet:
                 click.echo("✓ Daemon started successfully")
         else:
-            click.echo("✗ Failed to start daemon", err=True)
-            sys.exit(1)
+            raise EmberCliError(
+                "Failed to start daemon",
+                hint="Check 'ember daemon status' for details, or try 'ember daemon restart'",
+            )
 
 
 @daemon.command()
@@ -1092,8 +1111,10 @@ def stop() -> None:
     if lifecycle.stop():
         click.echo("✓ Daemon stopped successfully")
     else:
-        click.echo("✗ Failed to stop daemon", err=True)
-        sys.exit(1)
+        raise EmberCliError(
+            "Failed to stop daemon",
+            hint="The process may have already exited. Check 'ember daemon status'",
+        )
 
 
 @daemon.command()
@@ -1107,8 +1128,10 @@ def restart() -> None:
     if lifecycle.restart():
         click.echo("✓ Daemon restarted successfully")
     else:
-        click.echo("✗ Failed to restart daemon", err=True)
-        sys.exit(1)
+        raise EmberCliError(
+            "Failed to restart daemon",
+            hint="Try 'ember daemon stop' then 'ember daemon start'",
+        )
 
 
 @daemon.command(name="status")

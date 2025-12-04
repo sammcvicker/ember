@@ -7,11 +7,10 @@ import json
 import os
 import shutil
 import subprocess
-import sys
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NoReturn
 
 import click
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
@@ -30,7 +29,113 @@ __all__ = ["RichProgressCallback", "progress_context", "load_cached_results",
            "ensure_daemon_with_progress", "lookup_result_from_cache",
            "lookup_result_by_hash", "display_content_with_context",
            "display_content_with_highlighting", "open_file_in_editor",
-           "get_editor_command", "EDITOR_PATTERNS"]
+           "get_editor_command", "EDITOR_PATTERNS", "EmberCliError",
+           "repo_not_found_error", "no_search_results_error",
+           "path_not_in_repo_error", "index_out_of_range_error"]
+
+
+# =============================================================================
+# Custom Error Handling
+# =============================================================================
+
+
+class EmberCliError(click.ClickException):
+    """CLI error with actionable hint for users.
+
+    Provides consistent error formatting across all ember commands with
+    optional hints that guide users toward resolving the issue.
+
+    Attributes:
+        message: The primary error message.
+        hint: Optional actionable suggestion for the user.
+
+    Example:
+        raise EmberCliError(
+            "Not in an ember repository",
+            hint="Run 'ember init' in your project root to initialize one"
+        )
+    """
+
+    def __init__(self, message: str, hint: str | None = None) -> None:
+        """Initialize the error with message and optional hint.
+
+        Args:
+            message: The primary error message.
+            hint: Optional actionable suggestion for the user.
+        """
+        super().__init__(message)
+        self.hint = hint
+
+    def format_message(self) -> str:
+        """Format the error message with hint if present.
+
+        Returns:
+            Formatted error message, with hint on a new line if provided.
+        """
+        msg = self.message
+        if self.hint:
+            msg += f"\nHint: {self.hint}"
+        return msg
+
+
+# =============================================================================
+# Common Error Pattern Helpers
+# =============================================================================
+
+
+def repo_not_found_error() -> NoReturn:
+    """Raise error when not in an ember repository.
+
+    Raises:
+        EmberCliError: Always raises with repo initialization hint.
+    """
+    raise EmberCliError(
+        "Not in an ember repository",
+        hint="Run 'ember init' in your project root to initialize one",
+    )
+
+
+def no_search_results_error() -> NoReturn:
+    """Raise error when no cached search results exist.
+
+    Raises:
+        EmberCliError: Always raises with search hint.
+    """
+    raise EmberCliError(
+        "No recent search results found",
+        hint="Run 'ember find <query>' first, then use 'ember cat <index>'",
+    )
+
+
+def path_not_in_repo_error(path: str) -> NoReturn:
+    """Raise error when path is outside repository.
+
+    Args:
+        path: The path that was outside the repository.
+
+    Raises:
+        EmberCliError: Always raises with path context.
+    """
+    raise EmberCliError(
+        f"Path '{path}' is not within repository",
+        hint="Specify a path relative to or within the repository root",
+    )
+
+
+def index_out_of_range_error(index: int, max_index: int) -> NoReturn:
+    """Raise error when result index is out of range.
+
+    Args:
+        index: The invalid index provided.
+        max_index: The maximum valid index.
+
+    Raises:
+        EmberCliError: Always raises with valid range hint.
+    """
+    raise EmberCliError(
+        f"Index {index} out of range (valid: 1-{max_index})",
+        hint="Run 'ember find <query>' to see available results",
+    )
 
 
 # Editor command patterns for opening files at specific line numbers
@@ -192,27 +297,29 @@ def load_cached_results(cache_path: Path) -> dict[str, Any]:
         Dictionary with 'query' and 'results' keys.
 
     Raises:
-        SystemExit: If cache doesn't exist or is corrupted.
+        EmberCliError: If cache doesn't exist, is corrupted, or empty.
     """
     # Check if cache exists
     if not cache_path.exists():
-        click.echo("Error: No recent search results found", err=True)
-        click.echo("Run 'ember find <query>' first", err=True)
-        sys.exit(1)
+        no_search_results_error()
 
     try:
         cache_data = json.loads(cache_path.read_text())
         results = cache_data.get("results", [])
 
         if not results:
-            click.echo("Error: No results in cache", err=True)
-            sys.exit(1)
+            raise EmberCliError(
+                "No results in cache",
+                hint="Run 'ember find <query>' to search your codebase",
+            )
 
         return cache_data
 
-    except json.JSONDecodeError:
-        click.echo("Error: Corrupted search cache", err=True)
-        sys.exit(1)
+    except json.JSONDecodeError as e:
+        raise EmberCliError(
+            "Corrupted search cache",
+            hint="Run 'ember find <query>' to refresh the cache",
+        ) from e
 
 
 def validate_result_index(index: int, results: list[dict[str, Any]]) -> dict[str, Any]:
@@ -226,12 +333,11 @@ def validate_result_index(index: int, results: list[dict[str, Any]]) -> dict[str
         The result dictionary at the given index.
 
     Raises:
-        SystemExit: If index is out of range.
+        EmberCliError: If index is out of range.
     """
     # Validate index (1-based)
     if index < 1 or index > len(results):
-        click.echo(f"Error: Index {index} out of range (1-{len(results)})", err=True)
-        sys.exit(1)
+        index_out_of_range_error(index, len(results))
 
     # Get the result (convert to 0-based)
     return results[index - 1]
@@ -343,24 +449,24 @@ def lookup_result_by_hash(
         Result dictionary with path, start_line, end_line, content, lang, symbol.
 
     Raises:
-        SystemExit: If no chunk found or multiple chunks match the prefix.
+        EmberCliError: If no chunk found or multiple chunks match the prefix.
     """
     matches: list[Chunk] = chunk_repo.find_by_id_prefix(identifier)
 
     if len(matches) == 0:
-        click.echo(f"Error: No chunk found with ID prefix '{identifier}'", err=True)
-        sys.exit(1)
-    elif len(matches) > 1:
-        click.echo(
-            f"Error: Ambiguous chunk ID prefix '{identifier}' matches {len(matches)} chunks:",
-            err=True,
+        raise EmberCliError(
+            f"No chunk found with ID prefix '{identifier}'",
+            hint="Use 'ember find <query>' to search and get valid chunk IDs",
         )
-        for chunk in matches[:5]:  # Show first 5 matches
-            click.echo(f"  {chunk.id}", err=True)
+    elif len(matches) > 1:
+        # Build list of matching IDs for context
+        match_list = "\n".join(f"  {chunk.id}" for chunk in matches[:5])
         if len(matches) > 5:
-            click.echo(f"  ... and {len(matches) - 5} more", err=True)
-        click.echo("\nUse a longer prefix to uniquely identify the chunk", err=True)
-        sys.exit(1)
+            match_list += f"\n  ... and {len(matches) - 5} more"
+        raise EmberCliError(
+            f"Ambiguous chunk ID prefix '{identifier}' matches {len(matches)} chunks:\n{match_list}",
+            hint="Use a longer prefix to uniquely identify the chunk",
+        )
 
     # Found exactly one match - convert to result format
     chunk = matches[0]

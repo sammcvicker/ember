@@ -900,20 +900,23 @@ class TestGetEmberRepoRoot:
         assert repo_root == git_repo_isolated
         assert ember_dir == git_repo_isolated / ".ember"
 
-    def test_exits_when_not_in_ember_repo(self, runner: CliRunner, tmp_path: Path, monkeypatch) -> None:
-        """Test that helper exits with error when not in ember repository."""
+    def test_raises_error_when_not_in_ember_repo(self, runner: CliRunner, tmp_path: Path, monkeypatch) -> None:
+        """Test that helper raises EmberCliError when not in ember repository."""
         # Create a directory without .ember
         no_ember_dir = tmp_path / "no_ember"
         no_ember_dir.mkdir()
         monkeypatch.chdir(no_ember_dir)
 
+        from ember.core.cli_utils import EmberCliError
         from ember.entrypoints.cli import get_ember_repo_root
 
-        # Should call sys.exit(1)
-        with pytest.raises(SystemExit) as exc_info:
+        # Should raise EmberCliError with helpful hint
+        with pytest.raises(EmberCliError) as exc_info:
             get_ember_repo_root()
 
-        assert exc_info.value.code == 1
+        assert "Not in an ember repository" in exc_info.value.message
+        assert exc_info.value.hint is not None
+        assert "ember init" in exc_info.value.hint
 
     def test_works_from_subdirectory(
         self, runner: CliRunner, git_repo_isolated: Path, monkeypatch

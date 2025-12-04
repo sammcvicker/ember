@@ -11,11 +11,80 @@ import click
 import pytest
 
 from ember.core.cli_utils import (
+    EmberCliError,
     display_content_with_context,
     display_content_with_highlighting,
+    index_out_of_range_error,
     lookup_result_by_hash,
     lookup_result_from_cache,
+    no_search_results_error,
+    path_not_in_repo_error,
+    repo_not_found_error,
 )
+
+
+class TestEmberCliError:
+    """Tests for EmberCliError exception class."""
+
+    def test_error_without_hint(self) -> None:
+        """Should format message correctly without hint."""
+        error = EmberCliError("Test error message")
+
+        assert error.message == "Test error message"
+        assert error.hint is None
+        assert error.format_message() == "Test error message"
+
+    def test_error_with_hint(self) -> None:
+        """Should format message correctly with hint."""
+        error = EmberCliError("Test error message", hint="Try this instead")
+
+        assert error.message == "Test error message"
+        assert error.hint == "Try this instead"
+        assert error.format_message() == "Test error message\nHint: Try this instead"
+
+    def test_is_click_exception(self) -> None:
+        """Should be a ClickException subclass."""
+        error = EmberCliError("Test")
+
+        assert isinstance(error, click.ClickException)
+
+
+class TestErrorHelperFunctions:
+    """Tests for error helper functions."""
+
+    def test_repo_not_found_error(self) -> None:
+        """Should raise EmberCliError with init hint."""
+        with pytest.raises(EmberCliError) as exc_info:
+            repo_not_found_error()
+
+        assert "Not in an ember repository" in exc_info.value.message
+        assert "ember init" in exc_info.value.hint
+
+    def test_no_search_results_error(self) -> None:
+        """Should raise EmberCliError with find hint."""
+        with pytest.raises(EmberCliError) as exc_info:
+            no_search_results_error()
+
+        assert "No recent search results" in exc_info.value.message
+        assert "ember find" in exc_info.value.hint
+
+    def test_path_not_in_repo_error(self) -> None:
+        """Should raise EmberCliError with path context."""
+        with pytest.raises(EmberCliError) as exc_info:
+            path_not_in_repo_error("/some/path")
+
+        assert "/some/path" in exc_info.value.message
+        assert "not within repository" in exc_info.value.message
+        assert exc_info.value.hint is not None
+
+    def test_index_out_of_range_error(self) -> None:
+        """Should raise EmberCliError with valid range hint."""
+        with pytest.raises(EmberCliError) as exc_info:
+            index_out_of_range_error(15, 10)
+
+        assert "15" in exc_info.value.message
+        assert "1-10" in exc_info.value.message
+        assert "ember find" in exc_info.value.hint
 
 
 class TestLookupResultFromCache:
@@ -38,15 +107,19 @@ class TestLookupResultFromCache:
         assert result["path"] == "file2.py"
         assert result["start_line"] == 10
 
-    def test_exits_for_missing_cache(self, tmp_path: Path) -> None:
-        """Should exit with error when cache doesn't exist."""
+    def test_raises_ember_cli_error_for_missing_cache(self, tmp_path: Path) -> None:
+        """Should raise EmberCliError when cache doesn't exist."""
         cache_path = tmp_path / ".last_search.json"
 
-        with pytest.raises(SystemExit):
+        with pytest.raises(EmberCliError) as exc_info:
             lookup_result_from_cache("1", cache_path)
 
-    def test_exits_for_index_out_of_range(self, tmp_path: Path) -> None:
-        """Should exit with error when index is out of range."""
+        assert "No recent search results" in exc_info.value.message
+        assert exc_info.value.hint is not None
+        assert "ember find" in exc_info.value.hint
+
+    def test_raises_ember_cli_error_for_index_out_of_range(self, tmp_path: Path) -> None:
+        """Should raise EmberCliError when index is out of range."""
         cache_path = tmp_path / ".last_search.json"
         cache_data = {
             "query": "test",
@@ -54,8 +127,11 @@ class TestLookupResultFromCache:
         }
         cache_path.write_text(json.dumps(cache_data))
 
-        with pytest.raises(SystemExit):
+        with pytest.raises(EmberCliError) as exc_info:
             lookup_result_from_cache("5", cache_path)
+
+        assert "out of range" in exc_info.value.message
+        assert exc_info.value.hint is not None
 
 
 class TestLookupResultByHash:
@@ -83,16 +159,20 @@ class TestLookupResultByHash:
         assert result["lang"] == "python"
         assert result["symbol"] == "test_func"
 
-    def test_exits_for_no_matches(self) -> None:
-        """Should exit with error when no chunks match."""
+    def test_raises_ember_cli_error_for_no_matches(self) -> None:
+        """Should raise EmberCliError when no chunks match."""
         mock_repo = MagicMock()
         mock_repo.find_by_id_prefix.return_value = []
 
-        with pytest.raises(SystemExit):
+        with pytest.raises(EmberCliError) as exc_info:
             lookup_result_by_hash("abc123", mock_repo)
 
-    def test_exits_for_multiple_matches(self) -> None:
-        """Should exit with error when multiple chunks match."""
+        assert "No chunk found" in exc_info.value.message
+        assert "abc123" in exc_info.value.message
+        assert exc_info.value.hint is not None
+
+    def test_raises_ember_cli_error_for_multiple_matches(self) -> None:
+        """Should raise EmberCliError when multiple chunks match."""
         mock_chunk1 = MagicMock()
         mock_chunk1.id = "abc123456"
         mock_chunk2 = MagicMock()
@@ -101,8 +181,13 @@ class TestLookupResultByHash:
         mock_repo = MagicMock()
         mock_repo.find_by_id_prefix.return_value = [mock_chunk1, mock_chunk2]
 
-        with pytest.raises(SystemExit):
+        with pytest.raises(EmberCliError) as exc_info:
             lookup_result_by_hash("abc123", mock_repo)
+
+        assert "Ambiguous" in exc_info.value.message
+        assert "abc123" in exc_info.value.message
+        assert exc_info.value.hint is not None
+        assert "longer prefix" in exc_info.value.hint
 
 
 class TestDisplayContentWithContext:
