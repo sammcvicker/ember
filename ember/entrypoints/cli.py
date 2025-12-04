@@ -344,13 +344,15 @@ def init(ctx: click.Context, force: bool) -> None:
     If in a git repository, initializes at the git root.
     """
     # Lazy import - only load when init is actually called
+    from ember.adapters.sqlite.initializer import SqliteDatabaseInitializer
     from ember.core.config.init_usecase import InitRequest, InitUseCase
     from ember.core.repo_utils import find_repo_root_for_init
 
     repo_root = find_repo_root_for_init()
 
-    # Create use case and execute
-    use_case = InitUseCase(version="1.1.0")
+    # Create use case with injected dependencies
+    db_initializer = SqliteDatabaseInitializer()
+    use_case = InitUseCase(db_initializer=db_initializer, version="1.1.0")
     request = InitRequest(repo_root=repo_root, force=force)
 
     try:

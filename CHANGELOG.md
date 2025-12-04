@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Removed architecture violation: adapter import in core layer** (#180)
+  - `InitUseCase` now uses dependency injection for database initialization
+  - Created `DatabaseInitializer` port interface in `ember/ports/database.py`
+  - Created `SqliteDatabaseInitializer` adapter implementation
+  - Core layer (`ember/core/`) no longer imports from adapters layer
+  - Clean architecture dependency rule is now fully restored
+
 - **Reduced `cat` command complexity from C=16 to C=5** (#171)
   - Extracted `lookup_result_from_cache()` helper for numeric index lookups
   - Extracted `lookup_result_by_hash()` helper for hash-based chunk lookups
