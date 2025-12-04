@@ -18,6 +18,7 @@ from ember.core.cli_utils import (
     load_cached_results,
     lookup_result_by_hash,
     lookup_result_from_cache,
+    open_file_in_editor,
     progress_context,
     validate_result_index,
 )
@@ -257,51 +258,6 @@ def check_and_auto_sync(
         # If staleness check fails, continue with search anyway
         if verbose:
             click.echo(f"Warning: Could not check index staleness: {e}", err=True)
-
-
-# Editor command patterns for opening files at specific line numbers
-EDITOR_PATTERNS = {
-    # Editors that use +line syntax (vim, emacs, nano)
-    "vim-style": {
-        "editors": ["vim", "vi", "nvim", "emacs", "emacsclient", "nano"],
-        "build": lambda ed, fp, ln: [ed, f"+{ln}", str(fp)],
-    },
-    # VS Code: --goto file:line
-    "vscode-style": {
-        "editors": ["code", "vscode"],
-        "build": lambda ed, fp, ln: [ed, "--goto", f"{fp}:{ln}"],
-    },
-    # Sublime Text and Atom: file:line
-    "colon-style": {
-        "editors": ["subl", "atom"],
-        "build": lambda ed, fp, ln: [ed, f"{fp}:{ln}"],
-    },
-}
-
-
-def get_editor_command(editor: str, file_path: Path, line_num: int) -> list[str]:
-    """Build editor command with line number support.
-
-    Args:
-        editor: Editor executable name or path.
-        file_path: Path to file to open.
-        line_num: Line number to jump to.
-
-    Returns:
-        Command list for subprocess.run().
-
-    Note:
-        Falls back to vim-style +line syntax for unknown editors.
-    """
-    editor_name = Path(editor).name.lower()
-
-    # Find matching pattern
-    for pattern in EDITOR_PATTERNS.values():
-        if editor_name in pattern["editors"]:
-            return pattern["build"](editor, file_path, line_num)
-
-    # Default: vim-style +line syntax (most widely supported)
-    return [editor, f"+{line_num}", str(file_path)]
 
 
 @click.group()
@@ -766,9 +722,6 @@ def search(
 
     Can be run from any subdirectory within the repository.
     """
-    import os
-    import subprocess
-
     repo_root, ember_dir = get_ember_repo_root()
     db_path = ember_dir / "index.db"
 
@@ -845,32 +798,10 @@ def search(
 
     selected_file, selected_line = ui.run()
 
-    # If user selected a file, open it
+    # If user selected a file, open it in editor
     if selected_file and selected_line:
-        # Determine which editor to use
-        editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "vim"
-
-        # Build absolute file path
         file_path = repo_root / selected_file
-
-        # Check if file exists
-        if not file_path.exists():
-            click.echo(f"Error: File not found: {selected_file}", err=True)
-            sys.exit(1)
-
-        # Build editor command
-        cmd = get_editor_command(editor, file_path, selected_line)
-
-        # Open in editor
-        try:
-            subprocess.run(cmd, check=True)
-        except subprocess.CalledProcessError as e:
-            click.echo(f"Error opening editor: {e}", err=True)
-            sys.exit(1)
-        except FileNotFoundError:
-            click.echo(f"Error: Editor '{editor}' not found", err=True)
-            click.echo("Set $EDITOR or $VISUAL environment variable", err=True)
-            sys.exit(1)
+        open_file_in_editor(file_path, selected_line)
 
 
 @cli.command()
@@ -947,8 +878,6 @@ def open_result(ctx: click.Context, index: int) -> None:
     Can be run from any subdirectory within the repository.
     """
     import os
-    import shutil
-    import subprocess
 
     repo_root, ember_dir = get_ember_repo_root()
     cache_path = ember_dir / ".last_search.json"
@@ -962,33 +891,16 @@ def open_result(ctx: click.Context, index: int) -> None:
 
     # Build absolute file path
     file_path = repo_root / result["path"]
-
-    # Check if file exists
-    if not file_path.exists():
-        click.echo(f"Error: File not found: {result['path']}", err=True)
-        sys.exit(1)
-
-    # Determine which editor to use
-    # Priority: $VISUAL > $EDITOR > vim (fallback)
-    editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "vim"
-
-    # Build editor command with line number
     line_num = result["start_line"]
-    cmd = get_editor_command(editor, file_path, line_num)
-
-    # Check if editor exists before trying to run it
-    if not shutil.which(editor):
-        click.echo(f"Error: Editor '{editor}' not found", err=True)
-        click.echo("Set $EDITOR or $VISUAL environment variable", err=True)
-        sys.exit(1)
 
     # Show what we're doing (if not quiet)
     if not ctx.obj.get("quiet", False):
+        editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "vim"
         click.echo(f"Opening in {editor}:")
         format_result_header(result, index, show_symbol=True)
 
-    # Execute editor command
-    subprocess.run(cmd, check=True)
+    # Open in editor
+    open_file_in_editor(file_path, line_num)
 
 
 @cli.command()

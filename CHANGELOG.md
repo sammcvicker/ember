@@ -24,6 +24,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added 35 new tests covering validation edge cases
 
 ### Changed
+- **Extract duplicate editor integration code** (#175)
+  - Created `open_file_in_editor()` helper function for consistent editor handling
+  - Moved `EDITOR_PATTERNS` and `get_editor_command()` to cli_utils module
+  - Unified error handling across `search()` and `open_result()` commands
+  - Both commands now use identical error messages and editor detection logic
+  - Added 6 unit tests covering editor opening scenarios
+
 - **Reduced `DaemonLifecycle.start()` complexity from C=13 to B=6** (#172)
   - Extracted `_wait_for_daemon_ready()` for consolidated health check waiting
   - Extracted `_cleanup_failed_startup()` for PID file cleanup after failures
