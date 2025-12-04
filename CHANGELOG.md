@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Helpful error messages with context and hints** (#177)
+  - New `EmberCliError` exception class with `hint` support for actionable guidance
+  - Helper functions for common error patterns: `repo_not_found_error()`, `no_search_results_error()`, `path_not_in_repo_error()`, `index_out_of_range_error()`
+  - All CLI errors now display a hint to help users resolve issues
+  - Examples: "Not in an ember repository" → Hint: "Run 'ember init' in your project root"
+  - Added 11 new tests for error handling
+
 ### Changed
 - **Reduced `ResultPresenter._render_compact_preview()` complexity from C=12 to B=6** (#179)
   - Extracted `_safe_get_lines()` helper for safe 1-based line extraction with boundary clamping
