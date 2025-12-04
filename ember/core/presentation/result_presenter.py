@@ -143,6 +143,26 @@ class ResultPresenter:
             results_by_file[result.chunk.path].append(result)
         return dict(results_by_file)
 
+    @staticmethod
+    def _safe_get_lines(file_lines: list[str], start: int, end: int) -> list[str]:
+        """Safely extract lines from file content using 1-based line numbers.
+
+        Args:
+            file_lines: List of file lines (0-indexed internally).
+            start: Start line number (1-based, inclusive).
+            end: End line number (1-based, inclusive).
+
+        Returns:
+            List of extracted lines. Empty list if range is invalid.
+        """
+        if not file_lines:
+            return []
+        start = max(1, start)
+        end = min(len(file_lines), end)
+        if start > end:
+            return []
+        return file_lines[start - 1 : end]
+
     def _render_compact_preview(
         self,
         result: Any,
@@ -158,56 +178,97 @@ class ResultPresenter:
         """
         max_preview_lines = 3
         rank = EmberColors.click_rank(f"[{result.rank}]")
-        line_num = EmberColors.click_line_number(f"{result.chunk.start_line}")
+        line_num_str = EmberColors.click_line_number(f"{result.chunk.start_line}")
 
-        # Try syntax highlighting if enabled
+        # Try to get preview lines from file (for syntax highlighting)
+        preview_lines: list[str] | None = None
+        file_path: Path | None = None
+
         if settings["use_highlighting"] and repo_root is not None:
             file_path = repo_root / result.chunk.path
             file_lines = self._read_file_lines(file_path)
-
             if file_lines is not None:
-                start_line = result.chunk.start_line
-                end_line = result.chunk.end_line
+                end_line = min(
+                    result.chunk.start_line + max_preview_lines - 1,
+                    result.chunk.end_line,
+                )
+                preview_lines = self._safe_get_lines(
+                    file_lines, result.chunk.start_line, end_line
+                )
 
-                # Get preview lines (first N lines of chunk)
-                preview_lines = []
-                for line_num_iter in range(start_line, min(start_line + max_preview_lines, end_line + 1, len(file_lines) + 1)):
-                    if line_num_iter - 1 < len(file_lines):
-                        preview_lines.append(file_lines[line_num_iter - 1])
+        # Render with syntax highlighting if we have file content
+        if preview_lines and file_path is not None:
+            self._render_highlighted_preview(
+                preview_lines, file_path, result.chunk.start_line,
+                settings["theme"], rank, line_num_str
+            )
+            return
 
-                if preview_lines:
-                    code_block = "\n".join(preview_lines)
+        # Fallback: render from chunk content without highlighting
+        self._render_plain_preview(
+            result.chunk.content, result.chunk.symbol,
+            max_preview_lines, rank, line_num_str
+        )
 
-                    # Apply syntax highlighting to preview
-                    highlighted = render_syntax_highlighted(
-                        code=code_block,
-                        file_path=file_path,
-                        start_line=start_line,
-                        theme=settings["theme"],
-                    )
+    def _render_highlighted_preview(
+        self,
+        preview_lines: list[str],
+        file_path: Path,
+        start_line: int,
+        theme: str,
+        rank: str,
+        line_num_str: str,
+    ) -> None:
+        """Render preview with syntax highlighting.
 
-                    # Show rank and line number with first line
-                    highlighted_lines = highlighted.splitlines() if highlighted else code_block.splitlines()
-                    if highlighted_lines:
-                        click.echo(f"{rank} {line_num}:{highlighted_lines[0]}")
+        Args:
+            preview_lines: Lines to render.
+            file_path: Path for language detection.
+            start_line: Starting line number for highlighting.
+            theme: Syntax highlighting theme.
+            rank: Formatted rank string.
+            line_num_str: Formatted line number string.
+        """
+        code_block = "\n".join(preview_lines)
+        highlighted = render_syntax_highlighted(
+            code=code_block,
+            file_path=file_path,
+            start_line=start_line,
+            theme=theme,
+        )
+        output_lines = highlighted.splitlines() if highlighted else preview_lines
 
-                        # Show remaining preview lines (indented)
-                        for line in highlighted_lines[1:]:
-                            click.echo(f"    {line}")
-                    return
+        if output_lines:
+            click.echo(f"{rank} {line_num_str}:{output_lines[0]}")
+            for line in output_lines[1:]:
+                click.echo(f"    {line}")
 
-        # Fallback: use preview without syntax highlighting
-        content_lines = result.chunk.content.split("\n")
-        preview_lines = content_lines[:max_preview_lines]
+    @staticmethod
+    def _render_plain_preview(
+        content: str,
+        symbol: str | None,
+        max_lines: int,
+        rank: str,
+        line_num_str: str,
+    ) -> None:
+        """Render preview without syntax highlighting.
 
-        # First line with rank and line number
+        Args:
+            content: Chunk content to display.
+            symbol: Symbol to highlight (if any).
+            max_lines: Maximum lines to show.
+            rank: Formatted rank string.
+            line_num_str: Formatted line number string.
+        """
+        content_lines = content.split("\n")
+        preview_lines = content_lines[:max_lines]
+
         if preview_lines:
-            first_line = highlight_symbol(preview_lines[0], result.chunk.symbol)
-            click.echo(f"{rank} {line_num}:{first_line}")
+            first_line = highlight_symbol(preview_lines[0], symbol)
+            click.echo(f"{rank} {line_num_str}:{first_line}")
 
-            # Additional preview lines (indented, no ellipses)
             for line in preview_lines[1:]:
-                highlighted_line = highlight_symbol(line, result.chunk.symbol)
+                highlighted_line = highlight_symbol(line, symbol)
                 click.echo(f"    {highlighted_line}")
 
     def _render_with_context(

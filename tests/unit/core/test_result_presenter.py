@@ -467,6 +467,154 @@ class TestRenderCompactPreviewEdgeCases:
             assert mock_click.echo.called
 
 
+class TestSafeGetLines:
+    """Tests for _safe_get_lines helper method."""
+
+    def test_extracts_lines_from_middle(self, presenter):
+        """Extracts correct lines from middle of list."""
+        lines = ["line1", "line2", "line3", "line4", "line5"]
+        result = presenter._safe_get_lines(lines, 2, 4)
+        assert result == ["line2", "line3", "line4"]
+
+    def test_handles_start_at_beginning(self, presenter):
+        """Handles start line at 1."""
+        lines = ["line1", "line2", "line3"]
+        result = presenter._safe_get_lines(lines, 1, 2)
+        assert result == ["line1", "line2"]
+
+    def test_handles_end_at_file_end(self, presenter):
+        """Handles end line at file length."""
+        lines = ["line1", "line2", "line3"]
+        result = presenter._safe_get_lines(lines, 2, 3)
+        assert result == ["line2", "line3"]
+
+    def test_clamps_start_to_minimum_1(self, presenter):
+        """Start line less than 1 is clamped to 1."""
+        lines = ["line1", "line2", "line3"]
+        result = presenter._safe_get_lines(lines, 0, 2)
+        assert result == ["line1", "line2"]
+
+    def test_clamps_end_to_file_length(self, presenter):
+        """End line beyond file is clamped to file length."""
+        lines = ["line1", "line2", "line3"]
+        result = presenter._safe_get_lines(lines, 1, 10)
+        assert result == ["line1", "line2", "line3"]
+
+    def test_returns_empty_for_invalid_range(self, presenter):
+        """Returns empty list when start > end after clamping."""
+        lines = ["line1", "line2", "line3"]
+        result = presenter._safe_get_lines(lines, 5, 3)
+        assert result == []
+
+    def test_returns_empty_for_empty_input(self, presenter):
+        """Returns empty list for empty input."""
+        result = presenter._safe_get_lines([], 1, 3)
+        assert result == []
+
+    def test_single_line_extraction(self, presenter):
+        """Extracts single line correctly."""
+        lines = ["line1", "line2", "line3"]
+        result = presenter._safe_get_lines(lines, 2, 2)
+        assert result == ["line2"]
+
+
+class TestRenderCompactPreviewLineExtraction:
+    """Tests for correct line extraction in _render_compact_preview."""
+
+    def test_extracts_correct_lines_from_file_middle(self, tmp_path, presenter):
+        """Correctly extracts lines from middle of file."""
+        test_file = tmp_path / "test.py"
+        lines = ["line1", "line2", "line3", "line4", "line5", "line6", "line7"]
+        test_file.write_text("\n".join(lines))
+
+        chunk = MockChunk(path=Path("test.py"), start_line=3, end_line=5)
+        result = MockSearchResult(chunk=chunk)
+        settings = {"use_highlighting": True, "theme": "ansi"}
+
+        with (
+            patch("ember.core.presentation.result_presenter.click") as mock_click,
+            patch("ember.core.presentation.result_presenter.render_syntax_highlighted") as mock_highlight,
+        ):
+            mock_highlight.return_value = "line3\nline4\nline5"
+            presenter._render_compact_preview(result, settings, tmp_path)
+
+            # Verify render_syntax_highlighted was called with correct lines
+            call_args = mock_highlight.call_args
+            assert "line3" in call_args.kwargs["code"]
+
+    def test_handles_start_line_at_file_beginning(self, tmp_path, presenter):
+        """Correctly handles chunk starting at line 1."""
+        test_file = tmp_path / "test.py"
+        test_file.write_text("line1\nline2\nline3\n")
+
+        chunk = MockChunk(path=Path("test.py"), start_line=1, end_line=3)
+        result = MockSearchResult(chunk=chunk)
+        settings = {"use_highlighting": True, "theme": "ansi"}
+
+        with (
+            patch("ember.core.presentation.result_presenter.click"),
+            patch("ember.core.presentation.result_presenter.render_syntax_highlighted") as mock_highlight,
+        ):
+            mock_highlight.return_value = "line1\nline2\nline3"
+            presenter._render_compact_preview(result, settings, tmp_path)
+            mock_highlight.assert_called_once()
+
+    def test_handles_chunk_at_file_end(self, tmp_path, presenter):
+        """Correctly handles chunk at end of file."""
+        test_file = tmp_path / "test.py"
+        test_file.write_text("line1\nline2\nline3\n")
+
+        chunk = MockChunk(path=Path("test.py"), start_line=3, end_line=3)
+        result = MockSearchResult(chunk=chunk)
+        settings = {"use_highlighting": True, "theme": "ansi"}
+
+        with (
+            patch("ember.core.presentation.result_presenter.click"),
+            patch("ember.core.presentation.result_presenter.render_syntax_highlighted") as mock_highlight,
+        ):
+            mock_highlight.return_value = "line3"
+            presenter._render_compact_preview(result, settings, tmp_path)
+            mock_highlight.assert_called_once()
+
+    def test_limits_to_max_preview_lines(self, tmp_path, presenter):
+        """Preview is limited to max_preview_lines (3)."""
+        test_file = tmp_path / "test.py"
+        test_file.write_text("line1\nline2\nline3\nline4\nline5\nline6\n")
+
+        chunk = MockChunk(path=Path("test.py"), start_line=1, end_line=6)
+        result = MockSearchResult(chunk=chunk)
+        settings = {"use_highlighting": True, "theme": "ansi"}
+
+        with (
+            patch("ember.core.presentation.result_presenter.click"),
+            patch("ember.core.presentation.result_presenter.render_syntax_highlighted") as mock_highlight,
+        ):
+            # Should only include first 3 lines
+            mock_highlight.return_value = "line1\nline2\nline3"
+            presenter._render_compact_preview(result, settings, tmp_path)
+
+            call_args = mock_highlight.call_args
+            code = call_args.kwargs["code"]
+            # Should have at most 3 lines
+            assert code.count("\n") <= 2
+
+    def test_handles_empty_preview_lines(self, tmp_path, presenter):
+        """Falls back gracefully when no preview lines can be extracted."""
+        # Create empty file
+        test_file = tmp_path / "test.py"
+        test_file.write_text("")
+
+        chunk = MockChunk(path=Path("test.py"), start_line=1, end_line=1)
+        result = MockSearchResult(chunk=chunk)
+        settings = {"use_highlighting": True, "theme": "ansi"}
+
+        with patch("ember.core.presentation.result_presenter.click") as mock_click:
+            # Should fall back to chunk content
+            presenter._render_compact_preview(result, settings, tmp_path)
+            # Should still call echo (fallback path)
+            assert mock_click.echo.called
+
+
 class TestFileReadingEdgeCases:
     """Additional edge case tests for file reading."""
 

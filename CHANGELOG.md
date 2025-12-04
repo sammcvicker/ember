@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Reduced `ResultPresenter._render_compact_preview()` complexity from C=12 to B=6** (#179)
+  - Extracted `_safe_get_lines()` helper for safe 1-based line extraction with boundary clamping
+  - Extracted `_render_highlighted_preview()` for syntax-highlighted output path
+  - Extracted `_render_plain_preview()` for fallback chunk content rendering
+  - Eliminated off-by-one error risks via centralized line extraction helper
+  - Unified rendering algorithm with clear highlighting vs plain text paths
+  - Added 13 unit tests covering line extraction edge cases
+
 - **Reduced `GitAdapter.diff_files()` complexity from C=16 to B=4** (#176)
   - Extracted `_parse_status_code()` helper function for git status code parsing
   - Replaced 11-branch if/elif chain with table-driven lookup
