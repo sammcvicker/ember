@@ -30,6 +30,9 @@ class Chunk:
         file_hash: blake3 hash of entire file (for change detection).
         tree_sha: Git tree SHA when chunk was indexed.
         rev: Git revision (commit SHA) when indexed, or "worktree".
+
+    Raises:
+        ValueError: If line numbers are invalid (< 1 or start > end).
     """
 
     id: str
@@ -44,6 +47,15 @@ class Chunk:
     file_hash: str
     tree_sha: str
     rev: str
+
+    def __post_init__(self) -> None:
+        """Validate chunk data after initialization."""
+        if self.start_line < 1 or self.end_line < 1:
+            raise ValueError("Line numbers must be >= 1")
+        if self.start_line > self.end_line:
+            raise ValueError(
+                f"start_line ({self.start_line}) > end_line ({self.end_line})"
+            )
 
     @staticmethod
     def compute_content_hash(content: str) -> str:
@@ -110,6 +122,9 @@ class Query:
         path_filter: Optional glob pattern to filter by file path.
         lang_filter: Optional language code to filter by.
         json_output: Whether to output JSON instead of human-readable text.
+
+    Raises:
+        ValueError: If text is empty or topk is not positive.
     """
 
     text: str
@@ -117,6 +132,13 @@ class Query:
     path_filter: str | None = None
     lang_filter: str | None = None
     json_output: bool = False
+
+    def __post_init__(self) -> None:
+        """Validate query data after initialization."""
+        if not self.text or not self.text.strip():
+            raise ValueError("Query text cannot be empty")
+        if self.topk <= 0:
+            raise ValueError(f"topk must be positive, got {self.topk}")
 
 
 @dataclass

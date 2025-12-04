@@ -72,14 +72,17 @@ def sample_chunks() -> list[Chunk]:
     """
     chunks = []
     for i in range(5):
+        # Start lines at 1 (1-indexed) to satisfy validation
+        start_line = (i * 10) + 1
+        end_line = start_line + 10
         chunk = Chunk(
             id=f"chunk_{i}",
             project_id="test_project",
             path=Path(f"src/file_{i}.py"),
             lang="py",
             symbol=f"function_{i}",
-            start_line=i * 10,
-            end_line=(i * 10) + 10,
+            start_line=start_line,
+            end_line=end_line,
             content=f"def function_{i}():\n    pass",
             content_hash=Chunk.compute_content_hash(f"def function_{i}():\n    pass"),
             file_hash=f"hash_{i}",
