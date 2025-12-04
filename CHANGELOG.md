@@ -19,6 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added 35 new tests covering validation edge cases
 
 ### Changed
+- **Reduced `DaemonLifecycle.start()` complexity from C=13 to B=6** (#172)
+  - Extracted `_wait_for_daemon_ready()` for consolidated health check waiting
+  - Extracted `_cleanup_failed_startup()` for PID file cleanup after failures
+  - Extracted `_read_stderr_output()` for safe stderr reading with logging
+  - Extracted `_start_foreground()` for foreground daemon execution
+  - Extracted `_spawn_background_process()` for background process creation
+  - Extracted `_write_pid_file()` for PID file writing with process termination on failure
+  - Extracted `_check_instant_failure()` for early process failure detection
+  - Extracted `_handle_startup_timeout()` for timeout error handling
+  - Main `start()` function reduced to simple orchestration of helper methods
+
 - **Removed architecture violation: adapter import in core layer** (#180)
   - `InitUseCase` now uses dependency injection for database initialization
   - Created `DatabaseInitializer` port interface in `ember/ports/database.py`
