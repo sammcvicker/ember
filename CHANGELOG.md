@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Unit tests for untested infrastructure modules** (#174)
+  - Added 20 tests for SimpleVectorSearch (100% coverage) - covers cosine similarity, vector decoding, query operations
+  - Added 11 tests for TomlConfigProvider (100% coverage) - covers valid/invalid TOML parsing, partial configs, defaults
+  - Added 42 tests for Daemon Protocol (100% coverage) - covers Request/Response serialization, socket message handling
+
 - **Input validation for domain entities** (#173)
   - Query validates `topk > 0` and non-empty text on construction
   - Chunk validates `start_line` and `end_line` are >= 1 and `start_line <= end_line`
