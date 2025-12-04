@@ -7,6 +7,7 @@ import tempfile
 from pathlib import Path
 
 from ember.adapters.config.toml_config_provider import TomlConfigProvider
+from ember.adapters.sqlite.initializer import SqliteDatabaseInitializer
 from ember.core.config.init_usecase import InitRequest, InitUseCase
 from ember.shared.config_io import load_config
 
@@ -18,7 +19,8 @@ def test_init_creates_valid_config():
         repo_root.mkdir()
 
         # Initialize ember
-        use_case = InitUseCase(version="0.1.0")
+        db_initializer = SqliteDatabaseInitializer()
+        use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
         request = InitRequest(repo_root=repo_root, force=False)
         response = use_case.execute(request)
 
@@ -38,7 +40,8 @@ def test_config_provider_loads_init_config():
         repo_root.mkdir()
 
         # Initialize ember
-        use_case = InitUseCase(version="0.1.0")
+        db_initializer = SqliteDatabaseInitializer()
+        use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
         request = InitRequest(repo_root=repo_root, force=False)
         response = use_case.execute(request)
 
@@ -59,7 +62,8 @@ def test_modified_config_is_loaded():
         repo_root.mkdir()
 
         # Initialize ember
-        use_case = InitUseCase(version="0.1.0")
+        db_initializer = SqliteDatabaseInitializer()
+        use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
         request = InitRequest(repo_root=repo_root, force=False)
         response = use_case.execute(request)
 

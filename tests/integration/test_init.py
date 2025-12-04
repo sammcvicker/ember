@@ -9,15 +9,22 @@ from pathlib import Path
 
 import pytest
 
+from ember.adapters.sqlite.initializer import SqliteDatabaseInitializer
 from ember.core.config.init_usecase import InitRequest, InitUseCase
 from ember.shared.config_io import load_config
 from ember.shared.state_io import load_state
 
 
-def test_init_creates_all_files(tmp_path: Path) -> None:
+@pytest.fixture
+def db_initializer() -> SqliteDatabaseInitializer:
+    """Provide a database initializer for tests."""
+    return SqliteDatabaseInitializer()
+
+
+def test_init_creates_all_files(tmp_path: Path, db_initializer: SqliteDatabaseInitializer) -> None:
     """Test that init creates all required files and directories."""
     # Execute init
-    use_case = InitUseCase(version="0.1.0")
+    use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
     request = InitRequest(repo_root=tmp_path, force=False)
     response = use_case.execute(request)
 
@@ -35,9 +42,9 @@ def test_init_creates_all_files(tmp_path: Path) -> None:
     assert not response.was_reinitialized
 
 
-def test_init_config_is_valid_toml(tmp_path: Path) -> None:
+def test_init_config_is_valid_toml(tmp_path: Path, db_initializer: SqliteDatabaseInitializer) -> None:
     """Test that created config.toml is valid and loadable."""
-    use_case = InitUseCase(version="0.1.0")
+    use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
     request = InitRequest(repo_root=tmp_path)
     response = use_case.execute(request)
 
@@ -60,9 +67,9 @@ def test_init_config_is_valid_toml(tmp_path: Path) -> None:
     assert config.redaction.max_file_mb == 5
 
 
-def test_init_creates_valid_database_schema(tmp_path: Path) -> None:
+def test_init_creates_valid_database_schema(tmp_path: Path, db_initializer: SqliteDatabaseInitializer) -> None:
     """Test that SQLite database has correct schema."""
-    use_case = InitUseCase(version="0.1.0")
+    use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
     request = InitRequest(repo_root=tmp_path)
     response = use_case.execute(request)
 
@@ -95,9 +102,9 @@ def test_init_creates_valid_database_schema(tmp_path: Path) -> None:
     conn.close()
 
 
-def test_init_creates_valid_state_json(tmp_path: Path) -> None:
+def test_init_creates_valid_state_json(tmp_path: Path, db_initializer: SqliteDatabaseInitializer) -> None:
     """Test that state.json is created with correct initial values."""
-    use_case = InitUseCase(version="0.1.0")
+    use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
     request = InitRequest(repo_root=tmp_path)
     response = use_case.execute(request)
 
@@ -111,10 +118,10 @@ def test_init_creates_valid_state_json(tmp_path: Path) -> None:
     assert state.indexed_at  # Should have a timestamp
 
 
-def test_init_fails_if_ember_dir_exists(tmp_path: Path) -> None:
+def test_init_fails_if_ember_dir_exists(tmp_path: Path, db_initializer: SqliteDatabaseInitializer) -> None:
     """Test that init fails if .ember/ already exists without --force."""
     # First init
-    use_case = InitUseCase(version="0.1.0")
+    use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
     request = InitRequest(repo_root=tmp_path, force=False)
     use_case.execute(request)
 
@@ -123,9 +130,9 @@ def test_init_fails_if_ember_dir_exists(tmp_path: Path) -> None:
         use_case.execute(request)
 
 
-def test_init_force_reinitializes(tmp_path: Path) -> None:
+def test_init_force_reinitializes(tmp_path: Path, db_initializer: SqliteDatabaseInitializer) -> None:
     """Test that init --force reinitializes existing .ember/ directory."""
-    use_case = InitUseCase(version="0.1.0")
+    use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
 
     # First init
     request1 = InitRequest(repo_root=tmp_path, force=False)
@@ -148,9 +155,9 @@ def test_init_force_reinitializes(tmp_path: Path) -> None:
     assert "# Modified" not in new_content
 
 
-def test_init_database_has_fts5_triggers(tmp_path: Path) -> None:
+def test_init_database_has_fts5_triggers(tmp_path: Path, db_initializer: SqliteDatabaseInitializer) -> None:
     """Test that FTS5 triggers are created for automatic indexing."""
-    use_case = InitUseCase(version="0.1.0")
+    use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
     request = InitRequest(repo_root=tmp_path)
     response = use_case.execute(request)
 
