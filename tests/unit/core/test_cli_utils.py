@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import click
 import pytest
 
 from ember.core.cli_utils import (
@@ -183,3 +184,139 @@ class TestDisplayContentWithHighlighting:
 
         # Should not raise any errors (falls back to plain text)
         display_content_with_highlighting(result, mock_config)
+
+
+class TestOpenFileInEditor:
+    """Tests for open_file_in_editor function."""
+
+    def test_opens_file_in_editor_successfully(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Should open file in editor when all conditions are met."""
+        from ember.core.cli_utils import open_file_in_editor
+
+        # Create a test file
+        test_file = tmp_path / "test.py"
+        test_file.write_text("def foo():\n    pass\n")
+
+        # Mock environment and subprocess
+        monkeypatch.setenv("EDITOR", "vim")
+        mock_run = MagicMock()
+        monkeypatch.setattr("subprocess.run", mock_run)
+        monkeypatch.setattr("shutil.which", lambda x: "/usr/bin/vim")
+
+        # Should succeed without raising
+        open_file_in_editor(test_file, line_num=1)
+
+        # Verify subprocess was called
+        mock_run.assert_called_once()
+        call_args = mock_run.call_args[0][0]
+        assert "vim" in call_args[0]
+        assert str(test_file) in call_args
+
+    def test_raises_for_nonexistent_file(self, tmp_path: Path) -> None:
+        """Should raise ClickException when file doesn't exist."""
+        from ember.core.cli_utils import open_file_in_editor
+
+        nonexistent = tmp_path / "nonexistent.py"
+
+        with pytest.raises(click.ClickException) as exc_info:
+            open_file_in_editor(nonexistent, line_num=1)
+
+        assert "File not found" in str(exc_info.value)
+
+    def test_raises_for_missing_editor(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Should raise ClickException when editor is not found."""
+        from ember.core.cli_utils import open_file_in_editor
+
+        # Create a test file
+        test_file = tmp_path / "test.py"
+        test_file.write_text("content")
+
+        # Mock shutil.which to return None (editor not found)
+        monkeypatch.setattr("shutil.which", lambda x: None)
+        monkeypatch.delenv("VISUAL", raising=False)
+        monkeypatch.delenv("EDITOR", raising=False)
+
+        with pytest.raises(click.ClickException) as exc_info:
+            open_file_in_editor(test_file, line_num=1)
+
+        assert "not found" in str(exc_info.value)
+        assert "EDITOR" in str(exc_info.value) or "VISUAL" in str(exc_info.value)
+
+    def test_raises_on_editor_failure(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Should raise ClickException when editor fails."""
+        import subprocess
+
+        from ember.core.cli_utils import open_file_in_editor
+
+        # Create a test file
+        test_file = tmp_path / "test.py"
+        test_file.write_text("content")
+
+        # Mock environment
+        monkeypatch.setenv("EDITOR", "vim")
+        monkeypatch.setattr("shutil.which", lambda x: "/usr/bin/vim")
+
+        # Mock subprocess to raise CalledProcessError
+        def mock_run(*args, **kwargs):
+            raise subprocess.CalledProcessError(1, "vim")
+
+        monkeypatch.setattr("subprocess.run", mock_run)
+
+        with pytest.raises(click.ClickException) as exc_info:
+            open_file_in_editor(test_file, line_num=1)
+
+        assert "Editor failed" in str(exc_info.value)
+
+    def test_uses_visual_over_editor(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Should prefer $VISUAL over $EDITOR."""
+        from ember.core.cli_utils import open_file_in_editor
+
+        # Create a test file
+        test_file = tmp_path / "test.py"
+        test_file.write_text("content")
+
+        # Set both VISUAL and EDITOR
+        monkeypatch.setenv("VISUAL", "code")
+        monkeypatch.setenv("EDITOR", "vim")
+
+        mock_run = MagicMock()
+        monkeypatch.setattr("subprocess.run", mock_run)
+        monkeypatch.setattr("shutil.which", lambda x: f"/usr/bin/{x}")
+
+        open_file_in_editor(test_file, line_num=1)
+
+        # Verify code (VISUAL) was used, not vim (EDITOR)
+        call_args = mock_run.call_args[0][0]
+        assert "code" in call_args[0]
+
+    def test_defaults_to_vim(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Should default to vim when no env vars set."""
+        from ember.core.cli_utils import open_file_in_editor
+
+        # Create a test file
+        test_file = tmp_path / "test.py"
+        test_file.write_text("content")
+
+        # Clear VISUAL and EDITOR
+        monkeypatch.delenv("VISUAL", raising=False)
+        monkeypatch.delenv("EDITOR", raising=False)
+
+        mock_run = MagicMock()
+        monkeypatch.setattr("subprocess.run", mock_run)
+        monkeypatch.setattr("shutil.which", lambda x: "/usr/bin/vim")
+
+        open_file_in_editor(test_file, line_num=1)
+
+        # Verify vim was used as default
+        call_args = mock_run.call_args[0][0]
+        assert "vim" in call_args[0]
