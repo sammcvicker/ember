@@ -2,7 +2,9 @@
 
 from pathlib import Path
 
-from ember.domain.entities import Chunk
+import pytest
+
+from ember.domain.entities import Chunk, Query
 
 
 def test_chunk_compute_content_hash():
@@ -37,3 +39,169 @@ def test_chunk_creation(sample_chunk):
     assert sample_chunk.symbol == "test_function"
     assert sample_chunk.start_line == 10
     assert sample_chunk.end_line == 20
+
+
+# =============================================================================
+# Query validation tests
+# =============================================================================
+
+
+class TestQueryValidation:
+    """Tests for Query entity validation."""
+
+    def test_query_valid_creation(self):
+        """Test creating a valid Query."""
+        query = Query(text="search term", topk=10)
+        assert query.text == "search term"
+        assert query.topk == 10
+
+    def test_query_default_topk(self):
+        """Test Query uses default topk of 20."""
+        query = Query(text="search term")
+        assert query.topk == 20
+
+    def test_query_empty_text_raises_error(self):
+        """Test that empty query text raises ValueError."""
+        with pytest.raises(ValueError, match="Query text cannot be empty"):
+            Query(text="")
+
+    def test_query_whitespace_only_text_raises_error(self):
+        """Test that whitespace-only query text raises ValueError."""
+        with pytest.raises(ValueError, match="Query text cannot be empty"):
+            Query(text="   ")
+
+    def test_query_topk_zero_raises_error(self):
+        """Test that topk=0 raises ValueError."""
+        with pytest.raises(ValueError, match="topk must be positive"):
+            Query(text="search", topk=0)
+
+    def test_query_topk_negative_raises_error(self):
+        """Test that negative topk raises ValueError."""
+        with pytest.raises(ValueError, match="topk must be positive"):
+            Query(text="search", topk=-5)
+
+    def test_query_topk_positive_valid(self):
+        """Test that positive topk values are valid."""
+        query = Query(text="search", topk=1)
+        assert query.topk == 1
+
+        query = Query(text="search", topk=100)
+        assert query.topk == 100
+
+
+# =============================================================================
+# Chunk validation tests
+# =============================================================================
+
+
+class TestChunkValidation:
+    """Tests for Chunk entity validation."""
+
+    def test_chunk_valid_creation(self):
+        """Test creating a valid Chunk."""
+        chunk = Chunk(
+            id="test_id",
+            project_id="proj",
+            path=Path("file.py"),
+            lang="py",
+            symbol="func",
+            start_line=1,
+            end_line=10,
+            content="code",
+            content_hash="hash",
+            file_hash="fhash",
+            tree_sha="tree",
+            rev="HEAD",
+        )
+        assert chunk.start_line == 1
+        assert chunk.end_line == 10
+
+    def test_chunk_start_line_zero_raises_error(self):
+        """Test that start_line=0 raises ValueError (1-indexed)."""
+        with pytest.raises(ValueError, match="Line numbers must be >= 1"):
+            Chunk(
+                id="test_id",
+                project_id="proj",
+                path=Path("file.py"),
+                lang="py",
+                symbol="func",
+                start_line=0,
+                end_line=10,
+                content="code",
+                content_hash="hash",
+                file_hash="fhash",
+                tree_sha="tree",
+                rev="HEAD",
+            )
+
+    def test_chunk_end_line_zero_raises_error(self):
+        """Test that end_line=0 raises ValueError (1-indexed)."""
+        with pytest.raises(ValueError, match="Line numbers must be >= 1"):
+            Chunk(
+                id="test_id",
+                project_id="proj",
+                path=Path("file.py"),
+                lang="py",
+                symbol="func",
+                start_line=1,
+                end_line=0,
+                content="code",
+                content_hash="hash",
+                file_hash="fhash",
+                tree_sha="tree",
+                rev="HEAD",
+            )
+
+    def test_chunk_negative_line_numbers_raises_error(self):
+        """Test that negative line numbers raise ValueError."""
+        with pytest.raises(ValueError, match="Line numbers must be >= 1"):
+            Chunk(
+                id="test_id",
+                project_id="proj",
+                path=Path("file.py"),
+                lang="py",
+                symbol="func",
+                start_line=-1,
+                end_line=10,
+                content="code",
+                content_hash="hash",
+                file_hash="fhash",
+                tree_sha="tree",
+                rev="HEAD",
+            )
+
+    def test_chunk_start_greater_than_end_raises_error(self):
+        """Test that start_line > end_line raises ValueError."""
+        with pytest.raises(ValueError, match="start_line.*>.*end_line"):
+            Chunk(
+                id="test_id",
+                project_id="proj",
+                path=Path("file.py"),
+                lang="py",
+                symbol="func",
+                start_line=20,
+                end_line=10,
+                content="code",
+                content_hash="hash",
+                file_hash="fhash",
+                tree_sha="tree",
+                rev="HEAD",
+            )
+
+    def test_chunk_start_equals_end_valid(self):
+        """Test that start_line == end_line is valid (single line chunk)."""
+        chunk = Chunk(
+            id="test_id",
+            project_id="proj",
+            path=Path("file.py"),
+            lang="py",
+            symbol="func",
+            start_line=5,
+            end_line=5,
+            content="code",
+            content_hash="hash",
+            file_hash="fhash",
+            tree_sha="tree",
+            rev="HEAD",
+        )
+        assert chunk.start_line == chunk.end_line == 5

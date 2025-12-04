@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Input validation for domain entities** (#173)
+  - Query validates `topk > 0` and non-empty text on construction
+  - Chunk validates `start_line` and `end_line` are >= 1 and `start_line <= end_line`
+  - IndexConfig validates `line_window > 0`, `line_stride > 0`, `overlap_lines >= 0`, and `overlap_lines < line_window`
+  - SearchConfig validates `topk > 0`
+  - RedactionConfig validates `max_file_mb > 0`
+  - ModelConfig validates `daemon_timeout > 0` and `daemon_startup_timeout > 0`
+  - Invalid configuration values now fail fast with clear error messages
+  - Added 35 new tests covering validation edge cases
+
 ### Changed
 - **Removed architecture violation: adapter import in core layer** (#180)
   - `InitUseCase` now uses dependency injection for database initialization
