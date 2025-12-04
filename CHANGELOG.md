@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Unit tests for DaemonServer** (#183)
+  - Added 9 tests covering socket timeout handling, error backoff, and model cleanup
+  - Tests verify server continues operating after timeouts and general exceptions
+  - Tests verify backoff delay is applied on persistent errors
+  - Tests verify model resources are properly released during cleanup
+
 - **Unit tests for untested infrastructure modules** (#174)
   - Added 20 tests for SimpleVectorSearch (100% coverage) - covers cosine similarity, vector decoding, query operations
   - Added 11 tests for TomlConfigProvider (100% coverage) - covers valid/invalid TOML parsing, partial configs, defaults
@@ -24,6 +30,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added 35 new tests covering validation edge cases
 
 ### Changed
+- **Improved DaemonServer error handling and cleanup** (#183)
+  - Added backoff delay (100ms) on persistent errors to prevent tight CPU loops
+  - Added model resource cleanup on server shutdown to release memory
+  - Cleaned up exception handling comments in serve_forever loop
+
 - **Extract duplicate editor integration code** (#175)
   - Created `open_file_in_editor()` helper function for consistent editor handling
   - Moved `EDITOR_PATTERNS` and `get_editor_command()` to cli_utils module

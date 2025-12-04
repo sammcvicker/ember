@@ -244,6 +244,8 @@ class DaemonServer:
             except Exception as e:
                 if self.running:
                     logger.exception(f"Error in server loop: {e}")
+                    # Add backoff to prevent tight loop on persistent errors
+                    time.sleep(0.1)
 
         logger.info("Daemon server stopped")
 
@@ -254,6 +256,11 @@ class DaemonServer:
 
         if self.socket_path.exists():
             self.socket_path.unlink()
+
+        # Release model resources
+        if self.embedder is not None:
+            self.embedder = None
+            logger.debug("Released embedder model reference")
 
         logger.info(f"Cleaned up socket: {self.socket_path}")
 
