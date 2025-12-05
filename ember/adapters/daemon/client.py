@@ -285,3 +285,49 @@ def is_daemon_running(socket_path: Path | None = None) -> bool:
     finally:
         if sock:
             sock.close()
+
+
+def get_daemon_pid(socket_path: Path | None = None) -> int | None:
+    """Get daemon PID via health check.
+
+    This allows recovering the daemon PID even if the PID file is missing,
+    by querying the daemon directly (#214).
+
+    Args:
+        socket_path: Path to daemon socket (default: ~/.ember/daemon.sock)
+
+    Returns:
+        Daemon PID if running and responding, None otherwise
+    """
+    socket_path = socket_path or (Path.home() / ".ember" / "daemon.sock")
+
+    if not socket_path.exists():
+        return None
+
+    sock = None
+    try:
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.settimeout(2.0)
+        sock.connect(str(socket_path))
+
+        request = Request(method="health", params={})
+        send_message(sock, request)
+
+        response = receive_message(sock, Response)
+
+        if response.is_error():
+            return None
+
+        # Extract PID from health response
+        result = response.result
+        if isinstance(result, dict) and "pid" in result:
+            pid = result["pid"]
+            if isinstance(pid, int):
+                return pid
+
+        return None
+    except Exception:
+        return None
+    finally:
+        if sock:
+            sock.close()

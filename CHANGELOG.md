@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Fixed daemon status showing "PID None" when PID file is missing** (#214)
+  - When daemon is running but PID file is missing/corrupted, status now recovers PID from daemon
+  - Daemon health check now returns server PID, allowing status recovery
+  - Status message now shows "PID unknown" instead of confusing "PID None" as fallback
+  - Added `get_daemon_pid()` helper function to query daemon PID via health check
+
 - **Fixed daemon startup race condition causing "running (PID None)" status** (#216)
   - When daemon startup timed out (>20s), the process was left running without a PID file
   - This caused `ember daemon status` to show "running (PID None)"

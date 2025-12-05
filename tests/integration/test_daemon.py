@@ -11,7 +11,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ember.adapters.daemon.client import DaemonEmbedderClient, is_daemon_running
+from ember.adapters.daemon.client import (
+    DaemonEmbedderClient,
+    get_daemon_pid,
+    is_daemon_running,
+)
 from ember.adapters.daemon.lifecycle import DaemonLifecycle
 from ember.adapters.daemon.protocol import ProtocolError, Request, Response
 from ember.adapters.daemon.server import DaemonServer
@@ -172,13 +176,16 @@ class TestDaemonServer:
 
     def test_handle_health_request(self, temp_socket_path):
         """Test health check request handling."""
+        import os
+
         server = DaemonServer(socket_path=temp_socket_path, idle_timeout=0)
 
         request = Request(method="health", params={})
         response = server.handle_request(request)
 
         assert not response.is_error()
-        assert response.result == {"status": "ok"}
+        assert response.result["status"] == "ok"
+        assert response.result["pid"] == os.getpid()
 
     def test_handle_unknown_method(self, temp_socket_path):
         """Test unknown method handling."""
@@ -288,6 +295,61 @@ class TestDaemonLifecycle:
         assert not status["running"]
         assert status["status"] == "stopped"
         assert "not running" in status["message"].lower()
+
+    def test_status_recovers_pid_when_pid_file_missing(
+        self, temp_socket_path, temp_pid_file
+    ):
+        """Test status recovers PID from daemon when PID file is missing (#214).
+
+        This tests the fix for issue #214 where status would show "PID None"
+        when daemon is running but PID file was deleted.
+        """
+        lifecycle = DaemonLifecycle(
+            socket_path=temp_socket_path,
+            pid_file=temp_pid_file,
+        )
+
+        # Mock daemon running but PID file missing
+        with (
+            patch.object(lifecycle, "is_running", return_value=True),
+            patch.object(lifecycle, "get_pid", return_value=None),  # No PID file
+            patch(
+                "ember.adapters.daemon.lifecycle.get_daemon_pid", return_value=12345
+            ) as mock_get_pid,
+        ):
+            status = lifecycle.status()
+
+            # Should have recovered PID from daemon
+            mock_get_pid.assert_called_once_with(temp_socket_path)
+            assert status["running"] is True
+            assert status["pid"] == 12345
+            assert status["status"] == "running"
+            assert "PID 12345" in status["message"]
+
+    def test_status_never_shows_pid_none_when_running(
+        self, temp_socket_path, temp_pid_file
+    ):
+        """Test status never shows 'PID None' when daemon is actually running (#214)."""
+        lifecycle = DaemonLifecycle(
+            socket_path=temp_socket_path,
+            pid_file=temp_pid_file,
+        )
+
+        # Mock daemon running but both PID file and health check fail to get PID
+        with (
+            patch.object(lifecycle, "is_running", return_value=True),
+            patch.object(lifecycle, "get_pid", return_value=None),
+            patch(
+                "ember.adapters.daemon.lifecycle.get_daemon_pid", return_value=None
+            ),
+        ):
+            status = lifecycle.status()
+
+            # Should never show "PID None" - use "unknown" instead
+            assert status["running"] is True
+            assert status["pid"] is None
+            assert "PID None" not in status["message"]
+            assert "unknown" in status["message"].lower()
 
     def test_stop_sigterm_failure_falls_through_to_sigkill(
         self, temp_socket_path, temp_pid_file
@@ -727,6 +789,10 @@ class TestEndToEnd:
         """Test is_daemon_running helper function."""
         # Should return False when daemon not running
         assert not is_daemon_running(temp_socket_path)
+
+    def test_get_daemon_pid_returns_none_when_not_running(self, temp_socket_path):
+        """Test get_daemon_pid returns None when daemon not running."""
+        assert get_daemon_pid(temp_socket_path) is None
 
     def test_daemon_startup_failure_raises_before_client_embed(
         self, temp_socket_path, temp_pid_file, temp_log_file

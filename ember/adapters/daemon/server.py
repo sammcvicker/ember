@@ -154,8 +154,16 @@ class DaemonServer:
             )
 
     def _handle_health(self, request: Request) -> Response:
-        """Handle health check request."""
-        return Response.success({"status": "ok"}, request_id=request.id)
+        """Handle health check request.
+
+        Returns status and the daemon's PID, which allows clients to recover
+        the PID even if the PID file is missing (#214).
+        """
+        import os
+
+        return Response.success(
+            {"status": "ok", "pid": os.getpid()}, request_id=request.id
+        )
 
     def _handle_stats(self, request: Request) -> Response:
         """Handle stats request."""

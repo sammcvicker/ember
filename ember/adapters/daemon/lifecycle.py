@@ -11,7 +11,7 @@ import sys
 import time
 from pathlib import Path
 
-from ember.adapters.daemon.client import is_daemon_running
+from ember.adapters.daemon.client import get_daemon_pid, is_daemon_running
 
 logger = logging.getLogger(__name__)
 
@@ -409,6 +409,11 @@ class DaemonLifecycle:
         is_running = self.is_running()
         pid = self.get_pid()
 
+        # If daemon is running but PID file is missing, try to recover PID
+        # from daemon health check (#214)
+        if is_running and pid is None:
+            pid = get_daemon_pid(self.socket_path)
+
         status = {
             "running": is_running,
             "pid": pid,
@@ -432,7 +437,11 @@ class DaemonLifecycle:
                 status["message"] = "Daemon is not running"
         else:
             status["status"] = "running"
-            status["message"] = f"Daemon is running (PID {pid})"
+            # Never show "PID None" - use "unknown" if PID couldn't be recovered (#214)
+            if pid is not None:
+                status["message"] = f"Daemon is running (PID {pid})"
+            else:
+                status["message"] = "Daemon is running (PID unknown)"
 
         return status
 

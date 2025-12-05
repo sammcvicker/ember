@@ -1,5 +1,6 @@
 """Unit tests for daemon server module."""
 
+import os
 import socket
 import time
 from pathlib import Path
@@ -8,6 +9,44 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from ember.adapters.daemon.server import DaemonServer
+
+
+class TestHealthEndpoint:
+    """Tests for health check endpoint returning PID (#214)."""
+
+    @pytest.fixture
+    def temp_socket_path(self, tmp_path: Path) -> Path:
+        """Temporary socket path for testing."""
+        return tmp_path / "test.sock"
+
+    @pytest.fixture
+    def server(self, temp_socket_path: Path) -> DaemonServer:
+        """Create a DaemonServer instance for testing."""
+        return DaemonServer(
+            socket_path=temp_socket_path,
+            idle_timeout=0,
+        )
+
+    def test_health_response_includes_pid(self, server: DaemonServer) -> None:
+        """Test health check response includes server PID."""
+        from ember.adapters.daemon.protocol import Request
+
+        request = Request(method="health", params={})
+        response = server.handle_request(request)
+
+        assert not response.is_error()
+        assert response.result["status"] == "ok"
+        assert response.result["pid"] == os.getpid()
+
+    def test_health_response_pid_is_integer(self, server: DaemonServer) -> None:
+        """Test health check response PID is an integer."""
+        from ember.adapters.daemon.protocol import Request
+
+        request = Request(method="health", params={})
+        response = server.handle_request(request)
+
+        assert isinstance(response.result["pid"], int)
+        assert response.result["pid"] > 0
 
 
 class TestSocketTimeoutHandling:
