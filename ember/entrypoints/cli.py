@@ -5,6 +5,7 @@ Command-line interface for Ember code search tool.
 
 import functools
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 import blake3
@@ -200,24 +201,58 @@ def _create_indexing_usecase(repo_root: Path, db_path: Path, config):
     )
 
 
-def check_and_auto_sync(
+@dataclass
+class SyncResult:
+    """Result of an ensure_synced() call.
+
+    Provides information about whether a sync was performed and its outcome.
+
+    Attributes:
+        synced: True if a sync was performed, False if index was already up to date.
+        files_indexed: Number of files that were indexed (0 if no sync).
+        error: Error message if sync failed, None otherwise.
+    """
+
+    synced: bool = False
+    files_indexed: int = 0
+    error: str | None = None
+
+
+def ensure_synced(
     repo_root: Path,
     db_path: Path,
     config,
-    quiet_mode: bool = False,
+    show_progress: bool = True,
+    interactive_mode: bool = False,
     verbose: bool = False,
-) -> None:
-    """Check if index is stale and auto-sync if needed.
+) -> SyncResult:
+    """Ensure the index is synced before running a command.
+
+    This is the unified sync helper for all Ember commands that need fresh data.
+    Use this instead of implementing sync logic directly in each command.
 
     Args:
         repo_root: Repository root path.
         db_path: Path to SQLite database.
         config: Configuration object.
-        quiet_mode: If True, suppress progress and messages.
+        show_progress: If True, show progress bar during sync. Default True.
+        interactive_mode: If True, show brief status message even without progress bar.
+            Use this for TUI commands where progress bar would corrupt display.
         verbose: If True, show warnings on errors.
 
-    Note:
-        If staleness check fails, continues silently to allow search to proceed.
+    Returns:
+        SyncResult with information about whether sync was performed.
+
+    Example:
+        # In a command that needs fresh data with progress bar:
+        result = ensure_synced(repo_root, db_path, config, show_progress=True)
+
+        # In a TUI command (no progress bar but show status):
+        result = ensure_synced(repo_root, db_path, config,
+                              show_progress=False, interactive_mode=True)
+
+        # In JSON output mode (completely silent):
+        result = ensure_synced(repo_root, db_path, config, show_progress=False)
     """
     try:
         # Import dependencies
@@ -234,43 +269,86 @@ def check_and_auto_sync(
         # Get last indexed tree SHA
         last_tree_sha = meta_repo.get("last_tree_sha")
 
-        # If tree SHAs differ, index is stale - auto-sync
-        if last_tree_sha != current_tree_sha:
-            # Create indexing use case with all dependencies
-            indexing_usecase = _create_indexing_usecase(repo_root, db_path, config)
+        # If tree SHAs match, index is up to date - no sync needed
+        if last_tree_sha == current_tree_sha:
+            return SyncResult(synced=False, files_indexed=0)
 
-            # Execute incremental sync
-            request = IndexRequest(
-                repo_root=repo_root,
-                sync_mode="worktree",
-                path_filters=[],
-                force_reindex=False,
-            )
+        # Index is stale - need to sync
 
-            # Use progress bars unless in quiet mode
-            from ember.core.cli_utils import progress_context
+        # Show "Syncing..." message for interactive mode (even without progress bar)
+        if interactive_mode and not show_progress:
+            click.echo("Syncing index...", err=True)
 
-            with progress_context(quiet_mode=quiet_mode) as progress:
-                if progress:
-                    response = indexing_usecase.execute(request, progress=progress)
-                else:
-                    # Silent mode
-                    response = indexing_usecase.execute(request)
+        # Create indexing use case with all dependencies
+        indexing_usecase = _create_indexing_usecase(repo_root, db_path, config)
 
-            # Show completion message AFTER progress context exits (ensures progress bar is cleared)
-            if not quiet_mode and response.success:
-                if response.files_indexed > 0:
-                    click.echo(
-                        f"✓ Synced {response.files_indexed} file(s)",
-                        err=True,
-                    )
-                else:
-                    click.echo("✓ Index up to date", err=True)
+        # Execute incremental sync
+        request = IndexRequest(
+            repo_root=repo_root,
+            sync_mode="worktree",
+            path_filters=[],
+            force_reindex=False,
+        )
+
+        # Use progress bars unless in quiet mode
+        quiet_mode = not show_progress
+        with progress_context(quiet_mode=quiet_mode) as progress:
+            if progress:
+                response = indexing_usecase.execute(request, progress=progress)
+            else:
+                # Silent mode
+                response = indexing_usecase.execute(request)
+
+        # Show completion message AFTER progress context exits
+        if show_progress and response.success:
+            if response.files_indexed > 0:
+                click.echo(
+                    f"✓ Synced {response.files_indexed} file(s)",
+                    err=True,
+                )
+            else:
+                click.echo("✓ Index up to date", err=True)
+
+        return SyncResult(synced=True, files_indexed=response.files_indexed)
 
     except Exception as e:
         # If staleness check fails, continue with search anyway
         if verbose:
             click.echo(f"Warning: Could not check index staleness: {e}", err=True)
+        return SyncResult(synced=False, files_indexed=0, error=str(e))
+
+
+def check_and_auto_sync(
+    repo_root: Path,
+    db_path: Path,
+    config,
+    quiet_mode: bool = False,
+    verbose: bool = False,
+) -> None:
+    """Check if index is stale and auto-sync if needed.
+
+    .. deprecated::
+        Use :func:`ensure_synced` instead. This function is kept for backward
+        compatibility and will be removed in a future version.
+
+    Args:
+        repo_root: Repository root path.
+        db_path: Path to SQLite database.
+        config: Configuration object.
+        quiet_mode: If True, suppress progress and messages.
+        verbose: If True, show warnings on errors.
+
+    Note:
+        If staleness check fails, continues silently to allow search to proceed.
+    """
+    # Delegate to ensure_synced with appropriate parameters
+    ensure_synced(
+        repo_root=repo_root,
+        db_path=db_path,
+        config=config,
+        show_progress=not quiet_mode,
+        verbose=verbose,
+    )
 
 
 @click.group()
@@ -612,12 +690,13 @@ def find(
         topk = config.search.topk
 
     # Auto-sync: Check if index is stale and sync if needed (unless --no-sync)
+    # Use ensure_synced - show progress unless in JSON output mode
     if not no_sync:
-        check_and_auto_sync(
+        ensure_synced(
             repo_root=repo_root,
             db_path=db_path,
             config=config,
-            quiet_mode=json_output,
+            show_progress=not json_output,  # Show progress in human mode
             verbose=ctx.obj.get("verbose", False),
         )
 
@@ -762,12 +841,14 @@ def search(
         path_filter = f"**/{file_pattern}"
 
     # Auto-sync unless disabled
+    # Use ensure_synced with interactive_mode=True to show "Syncing..." status
     if not no_sync:
-        check_and_auto_sync(
+        ensure_synced(
             repo_root=repo_root,
             db_path=db_path,
             config=config,
-            quiet_mode=True,  # Always quiet for interactive mode
+            show_progress=False,  # No progress bar (would corrupt TUI)
+            interactive_mode=True,  # Show brief "Syncing..." message
             verbose=ctx.obj.get("verbose", False),
         )
 
