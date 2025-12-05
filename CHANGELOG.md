@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Refactored ResultPresenter into focused components (SRP compliance)** (#182)
+  - Extracted `JsonResultFormatter` for JSON serialization and cache formatting
+  - Extracted `CompactPreviewRenderer` for compact preview rendering (3-line previews)
+  - Extracted `ContextRenderer` for rendering results with surrounding context
+  - `ResultPresenter` now acts as thin orchestrator delegating to specialized components
+  - Each component has single responsibility and is independently testable
+  - Added 8 new tests for extracted components
+  - Maintains backward compatibility with existing API
+
 - **Optimized slow daemon test (20s → 0.2s)** (#181)
   - Mocked `time.sleep` in `test_start_failure_during_ready_wait_cleans_pid` to skip actual waits
   - Test now completes in ~0.2s instead of 20+ seconds (100x speedup)
