@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Optimized slow daemon test (20s → 0.2s)** (#181)
+  - Mocked `time.sleep` in `test_start_failure_during_ready_wait_cleans_pid` to skip actual waits
+  - Test now completes in ~0.2s instead of 20+ seconds (100x speedup)
+  - Full test suite time reduced by ~20 seconds
+
 - **Consolidated duplicate git repository test fixtures** (#178)
   - Created shared helper functions in `tests/conftest.py`: `init_git_repo()`, `git_add_and_commit()`, `create_test_files()`, `create_git_repo()`
   - Replaced ~280 lines of duplicate git setup code across 10 test files
