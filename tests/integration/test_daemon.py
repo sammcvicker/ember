@@ -489,6 +489,54 @@ class TestDaemonLifecycle:
             # PID file should have been cleaned up
             assert not temp_pid_file.exists()
 
+    def test_start_timeout_kills_unresponsive_process(
+        self, temp_socket_path, temp_pid_file, temp_log_file
+    ):
+        """Test that startup timeout terminates unresponsive daemon process (#216).
+
+        This prevents the race condition where:
+        1. Daemon is spawned but takes too long to start (e.g., slow model load)
+        2. Health check times out after 20s
+        3. PID file is deleted but process continues in background
+        4. Process eventually becomes ready
+        5. Status shows "running (PID None)" because no PID file
+
+        The fix: kill the process before deleting PID file.
+        """
+        lifecycle = DaemonLifecycle(
+            socket_path=temp_socket_path,
+            pid_file=temp_pid_file,
+            log_file=temp_log_file,
+        )
+
+        # Create mock process that stays alive but never becomes ready
+        mock_process = MagicMock()
+        mock_process.pid = 12345
+        mock_process.poll.return_value = None  # Still alive
+        mock_process.stderr = None
+
+        with (
+            patch("subprocess.Popen", return_value=mock_process),
+            patch.object(lifecycle, "is_running", return_value=False),  # Never ready
+            patch("ember.adapters.daemon.lifecycle.time.sleep"),  # Skip waits
+            patch("os.kill") as mock_kill,
+            # is_process_alive: True initially (for timeout handler), then False after kill
+            patch.object(lifecycle, "is_process_alive", side_effect=[True, False]),
+            pytest.raises(RuntimeError) as exc_info,
+        ):
+            lifecycle.start(foreground=False)
+
+        # Should raise error about not responding
+        error_msg = str(exc_info.value)
+        assert "not responding to health checks" in error_msg
+        assert "terminated" in error_msg
+
+        # SIGTERM should have been sent to kill the process
+        mock_kill.assert_any_call(12345, signal.SIGTERM)
+
+        # PID file should have been cleaned up
+        assert not temp_pid_file.exists()
+
     def test_start_instant_failure_closes_stderr(
         self, temp_socket_path, temp_pid_file, temp_log_file
     ):

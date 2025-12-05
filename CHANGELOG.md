@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Fixed daemon startup race condition causing "running (PID None)" status** (#216)
+  - When daemon startup timed out (>20s), the process was left running without a PID file
+  - This caused `ember daemon status` to show "running (PID None)"
+  - Now properly terminates unresponsive daemon processes before cleaning up PID file
+  - Prevents orphan daemon processes from causing confusing status reports
+
 ### Added
 - **Unified sync behavior with visible progress across all commands** (#209)
   - Added `ensure_synced()` helper function as single entry point for sync-before-run
