@@ -1,7 +1,7 @@
 """Compact preview rendering for search results.
 
 Renders search results in a condensed format without surrounding context.
-Shows 3-line previews with syntax highlighting support.
+Shows 3-line previews with symbol-only highlighting (red bold for matches).
 """
 
 from pathlib import Path
@@ -12,7 +12,6 @@ import click
 from ember.core.presentation.colors import (
     EmberColors,
     highlight_symbol,
-    render_syntax_highlighted,
 )
 from ember.ports.fs import FileSystem
 
@@ -20,8 +19,13 @@ from ember.ports.fs import FileSystem
 class CompactPreviewRenderer:
     """Renders compact previews of search results.
 
-    Shows a brief preview (up to 3 lines) of each result,
-    with optional syntax highlighting.
+    Shows a brief preview (up to 3 lines) of each result.
+    Uses symbol-only highlighting (red bold) for fast scanning.
+
+    Note:
+        This renderer intentionally does NOT use syntax highlighting.
+        The find command is for quickly locating symbols, so it uses
+        red bold for matches only, with dim line numbers and regular text.
 
     Args:
         fs: FileSystem port for reading file contents.
@@ -45,43 +49,20 @@ class CompactPreviewRenderer:
     ) -> None:
         """Render a compact preview of a search result (no context).
 
+        Uses plain rendering with symbol-only highlighting for fast scanning.
+        The settings parameter is accepted for API compatibility but
+        syntax highlighting is intentionally not applied.
+
         Args:
             result: SearchResult object.
-            settings: Display settings dict with 'use_highlighting' and 'theme'.
-            repo_root: Repository root path for reading files.
+            settings: Display settings dict (unused, kept for API compatibility).
+            repo_root: Repository root path (unused, kept for API compatibility).
         """
         rank = EmberColors.click_rank(f"[{result.rank}]")
         line_num_str = EmberColors.click_line_number(f"{result.chunk.start_line}")
 
-        # Try to get preview lines from file (for syntax highlighting)
-        preview_lines: list[str] | None = None
-        file_path: Path | None = None
-
-        if settings["use_highlighting"] and repo_root is not None:
-            file_path = repo_root / result.chunk.path
-            file_lines = self._fs.read_text_lines(file_path)
-            if file_lines is not None:
-                end_line = min(
-                    result.chunk.start_line + self.MAX_PREVIEW_LINES - 1,
-                    result.chunk.end_line,
-                )
-                preview_lines = self._safe_get_lines(
-                    file_lines, result.chunk.start_line, end_line
-                )
-
-        # Render with syntax highlighting if we have file content
-        if preview_lines and file_path is not None:
-            self._render_highlighted_preview(
-                preview_lines,
-                file_path,
-                result.chunk.start_line,
-                settings["theme"],
-                rank,
-                line_num_str,
-            )
-            return
-
-        # Fallback: render from chunk content without highlighting
+        # Always use plain preview with symbol-only highlighting
+        # Syntax highlighting is intentionally disabled for find command
         self._render_plain_preview(
             result.chunk.content,
             result.chunk.symbol,
@@ -108,39 +89,6 @@ class CompactPreviewRenderer:
         if start > end:
             return []
         return file_lines[start - 1 : end]
-
-    def _render_highlighted_preview(
-        self,
-        preview_lines: list[str],
-        file_path: Path,
-        start_line: int,
-        theme: str,
-        rank: str,
-        line_num_str: str,
-    ) -> None:
-        """Render preview with syntax highlighting.
-
-        Args:
-            preview_lines: Lines to render.
-            file_path: Path for language detection.
-            start_line: Starting line number for highlighting.
-            theme: Syntax highlighting theme.
-            rank: Formatted rank string.
-            line_num_str: Formatted line number string.
-        """
-        code_block = "\n".join(preview_lines)
-        highlighted = render_syntax_highlighted(
-            code=code_block,
-            file_path=file_path,
-            start_line=start_line,
-            theme=theme,
-        )
-        output_lines = highlighted.splitlines() if highlighted else preview_lines
-
-        if output_lines:
-            click.echo(f"{rank} {line_num_str}:{output_lines[0]}")
-            for line in output_lines[1:]:
-                click.echo(f"    {line}")
 
     def _render_plain_preview(
         self,

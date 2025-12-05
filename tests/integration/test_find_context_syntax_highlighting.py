@@ -1,7 +1,8 @@
-"""Integration tests for find --context syntax highlighting.
+"""Integration tests for find --context output formatting.
 
-Tests that the find command properly applies syntax highlighting when --context is used,
-using the render_syntax_highlighted() infrastructure from ember.core.presentation.colors.
+Tests that the find command properly formats output with --context flag.
+Note: As of issue #207, find uses simplified highlighting (symbol-only, red bold)
+instead of full syntax highlighting for faster visual scanning.
 """
 
 import json
@@ -44,38 +45,41 @@ class Calculator:
 
 
 class TestFindContextSyntaxHighlighting:
-    """Tests for syntax highlighting in find --context command."""
+    """Tests for output formatting in find --context command.
 
-    def test_find_context_applies_syntax_highlighting_by_default(
+    Note: As of issue #207, find uses simplified highlighting (symbol-only, red bold)
+    instead of full syntax highlighting for faster visual scanning.
+    """
+
+    def test_find_context_shows_line_numbers(
         self, runner: CliRunner, python_repo: Path, monkeypatch
     ) -> None:
-        """Test that find --context applies syntax highlighting by default."""
+        """Test that find --context shows line numbers in output."""
         monkeypatch.chdir(python_repo)
 
         # Init and sync
         runner.invoke(cli, ["init"], catch_exceptions=False)
         runner.invoke(cli, ["sync"], catch_exceptions=False)
 
-        # Find with context - should have syntax highlighting by default
+        # Find with context
         result = runner.invoke(cli, ["find", "calculate", "--context", "3"], catch_exceptions=False)
 
         assert result.exit_code == 0
-        # Check for line numbers in output (syntax highlighting includes line numbers)
+        # Output should have line numbers (format: [rank] line_num:content or line_num:content)
         lines = [line for line in result.output.split('\n') if line.strip() and not line.startswith('[')]
-        # Syntax highlighted output has line numbers at the start (e.g., "  1 " or "  2 ")
         has_line_numbers = any(line.strip() and line[0:5].strip().isdigit() for line in lines)
         assert has_line_numbers, f"Expected line numbers in output. Lines: {lines[:5]}"
 
-    def test_find_context_respects_syntax_highlighting_disabled(
+    def test_find_context_uses_plain_format(
         self, runner: CliRunner, python_repo: Path, monkeypatch
     ) -> None:
-        """Test that find --context respects config.display.syntax_highlighting=false."""
+        """Test that find --context uses plain format with colon separator."""
         monkeypatch.chdir(python_repo)
 
         # Init
         runner.invoke(cli, ["init"], catch_exceptions=False)
 
-        # Modify config to disable syntax highlighting
+        # Modify config to disable syntax highlighting (should have no effect now)
         config_path = python_repo / ".ember" / "config.toml"
         config_content = config_path.read_text()
         # Add display.syntax_highlighting = false to config
@@ -94,25 +98,22 @@ class TestFindContextSyntaxHighlighting:
         result = runner.invoke(cli, ["find", "calculate", "--context", "3"], catch_exceptions=False)
 
         assert result.exit_code == 0
-        # Without syntax highlighting, should use compact ripgrep-style format
-        # with colon separator and dimmed context lines
-        # Expected format: [rank] line_num:content for match
-        #                      line_num:content for context (dimmed)
+        # Plain format uses colon separator: line_num:content
         assert ":" in result.output, f"Expected colon separator in output. Output: {result.output}"
         # Should have rank indicator [1], [2], etc.
         assert "[1]" in result.output or "[2]" in result.output, \
             f"Expected rank indicator in output. Output: {result.output}"
 
-    def test_find_context_uses_configured_theme(
+    def test_find_context_ignores_theme_setting(
         self, runner: CliRunner, python_repo: Path, monkeypatch
     ) -> None:
-        """Test that find --context uses the theme from config.display.theme."""
+        """Test that find --context ignores theme setting (uses plain format)."""
         monkeypatch.chdir(python_repo)
 
         # Init
         runner.invoke(cli, ["init"], catch_exceptions=False)
 
-        # Modify config to use a different theme
+        # Modify config to use a different theme (should have no effect)
         config_path = python_repo / ".ember" / "config.toml"
         config_content = config_path.read_text()
         if "[display]" not in config_content:
@@ -129,15 +130,15 @@ class TestFindContextSyntaxHighlighting:
         result = runner.invoke(cli, ["find", "calculate", "--context", "3"], catch_exceptions=False)
 
         assert result.exit_code == 0
-        # With syntax highlighting enabled, should have line numbers
+        # Output should still have line numbers (plain format)
         lines = [line for line in result.output.split('\n') if line.strip() and not line.startswith('[')]
         has_line_numbers = any(line.strip() and line[0:5].strip().isdigit() for line in lines)
         assert has_line_numbers
 
-    def test_find_context_detects_language_from_file_extension(
+    def test_find_context_works_with_any_file_type(
         self, runner: CliRunner, python_repo: Path, monkeypatch
     ) -> None:
-        """Test that find --context automatically detects language from file path."""
+        """Test that find --context works regardless of file type."""
         monkeypatch.chdir(python_repo)
 
         # Init, sync, and find with context
@@ -146,7 +147,7 @@ class TestFindContextSyntaxHighlighting:
         result = runner.invoke(cli, ["find", "calculate", "--context", "3"], catch_exceptions=False)
 
         assert result.exit_code == 0
-        # Should apply Python syntax highlighting with line numbers
+        # Should show line numbers in plain format
         lines = [line for line in result.output.split('\n') if line.strip() and not line.startswith('[')]
         has_line_numbers = any(line.strip() and line[0:5].strip().isdigit() for line in lines)
         assert has_line_numbers

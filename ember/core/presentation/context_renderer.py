@@ -12,7 +12,6 @@ import click
 from ember.core.presentation.colors import (
     EmberColors,
     highlight_symbol,
-    render_syntax_highlighted,
 )
 from ember.ports.fs import FileSystem
 
@@ -21,7 +20,12 @@ class ContextRenderer:
     """Renders search results with surrounding context.
 
     Shows the match line with configurable lines of context
-    before and after, with optional syntax highlighting.
+    before and after. Uses symbol-only highlighting (red bold) for fast scanning.
+
+    Note:
+        This renderer intentionally does NOT use syntax highlighting.
+        The find command is for quickly locating symbols, so it uses
+        red bold for matches only, with dim line numbers and regular text.
 
     Args:
         fs: FileSystem port for reading file contents.
@@ -44,11 +48,15 @@ class ContextRenderer:
     ) -> None:
         """Render a search result with surrounding context lines.
 
+        Uses plain rendering with symbol-only highlighting for fast scanning.
+        The settings parameter is accepted for API compatibility but
+        syntax highlighting is intentionally not applied.
+
         Args:
             result: SearchResult object.
             context: Number of lines of context around the match start line.
             repo_root: Repository root path.
-            settings: Display settings dict with 'use_highlighting' and 'theme'.
+            settings: Display settings dict (unused, kept for API compatibility).
         """
         file_path = repo_root / result.chunk.path
         file_lines = self._fs.read_text_lines(file_path)
@@ -68,52 +76,11 @@ class ContextRenderer:
         context_start = max(1, match_line - context)
         context_end = min(len(file_lines), match_line + context)
 
-        if settings["use_highlighting"]:
-            self._render_highlighted_context(
-                file_lines, context_start, context_end, file_path, result.rank, settings["theme"]
-            )
-        else:
-            self._render_plain_context(
-                file_lines, context_start, context_end, match_line, result.rank, result.chunk.symbol
-            )
-
-    def _render_highlighted_context(
-        self,
-        file_lines: list[str],
-        context_start: int,
-        context_end: int,
-        file_path: Path,
-        rank: int,
-        theme: str,
-    ) -> None:
-        """Render context with syntax highlighting.
-
-        Args:
-            file_lines: All lines from the file.
-            context_start: First line to display (1-based).
-            context_end: Last line to display (1-based).
-            file_path: Path for language detection.
-            rank: Result rank for display.
-            theme: Syntax highlighting theme.
-        """
-        all_lines = []
-        for line_num in range(context_start, context_end + 1):
-            all_lines.append(file_lines[line_num - 1])
-
-        code_block = "\n".join(all_lines)
-
-        # Apply syntax highlighting with line numbers starting at context_start
-        highlighted = render_syntax_highlighted(
-            code=code_block,
-            file_path=file_path,
-            start_line=context_start,
-            theme=theme,
+        # Always use plain rendering with symbol-only highlighting
+        # Syntax highlighting is intentionally disabled for find command
+        self._render_plain_context(
+            file_lines, context_start, context_end, match_line, result.rank, result.chunk.symbol
         )
-
-        # Add rank indicator before the highlighted output
-        rank_str = EmberColors.click_rank(f"[{rank}]")
-        click.echo(rank_str)
-        click.echo(highlighted)
 
     def _render_plain_context(
         self,
