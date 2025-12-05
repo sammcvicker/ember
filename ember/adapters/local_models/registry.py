@@ -40,6 +40,9 @@ MODEL_PRESETS: dict[str, str] = {
     "bge-small-en-v1.5": "BAAI/bge-small-en-v1.5",
 }
 
+# Special model name for auto-selection based on hardware
+AUTO_MODEL = "auto"
+
 # Full HuggingFace model IDs that we support directly
 SUPPORTED_MODELS: set[str] = {
     "jinaai/jina-embeddings-v2-base-code",
@@ -55,7 +58,7 @@ def resolve_model_name(model_name: str) -> str:
     """Resolve a model name to its canonical HuggingFace ID.
 
     Args:
-        model_name: User-provided model name (preset or HF ID)
+        model_name: User-provided model name (preset, HF ID, or "auto")
 
     Returns:
         Canonical HuggingFace model ID
@@ -66,6 +69,13 @@ def resolve_model_name(model_name: str) -> str:
     # Normalize case for preset lookup
     normalized = model_name.lower()
 
+    # Handle "auto" - detect hardware and pick best model
+    if normalized == AUTO_MODEL:
+        from ember.core.hardware import recommend_model
+
+        recommended = recommend_model()
+        return MODEL_PRESETS[recommended]
+
     # Check if it's a preset
     if normalized in MODEL_PRESETS:
         return MODEL_PRESETS[normalized]
@@ -75,7 +85,7 @@ def resolve_model_name(model_name: str) -> str:
         return model_name
 
     # Not recognized
-    valid_options = sorted(set(MODEL_PRESETS.keys()) | SUPPORTED_MODELS)
+    valid_options = sorted(set(MODEL_PRESETS.keys()) | SUPPORTED_MODELS | {AUTO_MODEL})
     raise ValueError(
         f"Unknown embedding model: '{model_name}'. "
         f"Valid options are: {', '.join(valid_options)}"
