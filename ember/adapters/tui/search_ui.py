@@ -335,10 +335,16 @@ class InteractiveSearchUI:
         return [("", "")]
 
     def _get_results_text(self) -> list[tuple[str, str]]:
-        """Get formatted results text.
+        """Get formatted results text with color hierarchy.
 
         Returns:
             List of (style, text) tuples for formatted text.
+            Each result line is broken into styled segments:
+            - Path: class:path (magenta)
+            - Line range: class:dimmed (gray)
+            - Symbol: class:symbol (red bold)
+            - Score: class:score (dim)
+            - Selected items get class:selected combined with other styles
         """
         if not self.session.query_text:
             return [("", "Type to search...")]
@@ -356,21 +362,30 @@ class InteractiveSearchUI:
         lines: list[tuple[str, str]] = []
 
         for idx, result in enumerate(self.session.current_results):
-            style = "class:selected" if idx == self.session.selected_index else ""
+            is_selected = idx == self.session.selected_index
+            ul = " underline" if is_selected else ""
 
-            # Format: path:lines (symbol) | score
             chunk = result.chunk
-            path = chunk.path
+            path = str(chunk.path)
             line_range = f"{chunk.start_line}-{chunk.end_line}"
-            symbol = f" ({chunk.symbol})" if chunk.symbol else ""
 
-            result_text = f"  {path}:{line_range}{symbol}"
+            # Build styled segments for this result line
+            # Leading indent
+            lines.append(("", "  "))
 
-            if self.show_scores:
-                score = f" │ {result.score:.3f}" if result.score else ""
-                result_text += score
+            # Path (magenta bold)
+            lines.append((f"class:path{ul}", path))
 
-            lines.append((style, result_text + "\n"))
+            # Colon and line range (dimmed)
+            lines.append((f"class:dimmed{ul}", f":{line_range}"))
+
+            # Symbol if present (red bold)
+            if chunk.symbol:
+                lines.append(("", " "))
+                lines.append((f"class:symbol{ul}", chunk.symbol))
+
+            # Newline at end
+            lines.append(("", "\n"))
 
         return lines
 
