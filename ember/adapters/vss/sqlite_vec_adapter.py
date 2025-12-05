@@ -55,12 +55,14 @@ class SqliteVecAdapter:
 
         Reuses an existing connection if available, otherwise creates a new one.
         The sqlite-vec extension is loaded only once when the connection is created.
+        Uses check_same_thread=False to allow use from different threads, which
+        is required for interactive search where queries run in a thread executor.
 
         Returns:
             SQLite connection object with vec extension enabled.
         """
         if self._conn is None:
-            self._conn = sqlite3.connect(self.db_path)
+            self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
             self._conn.enable_load_extension(True)
             sqlite_vec.load(self._conn)
             self._conn.enable_load_extension(False)

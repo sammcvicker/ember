@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Fixed SQLite thread safety error in interactive search** (#204)
+  - Interactive search (`ember search`) was failing with "SQLite objects created in a thread can only be used in that same thread"
+  - Added `check_same_thread=False` to SQLite connections in FTS, vector search, and chunk repository adapters
+  - This allows search operations to run in a thread executor for responsive UI while maintaining connection reuse
+  - Added 5 new integration tests to verify cross-thread SQLite access works correctly
+
 - **Interactive search now displays error messages instead of silently showing "No results found"** (#202)
   - Added `error_message` field to `InteractiveSearchSession` to track search errors
   - Added `set_error()` method to capture error state and clear stale results

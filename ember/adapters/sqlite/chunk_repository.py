@@ -28,12 +28,14 @@ class SQLiteChunkRepository:
         """Get a database connection with foreign keys enabled.
 
         Reuses an existing connection if available, otherwise creates a new one.
+        Uses check_same_thread=False to allow use from different threads, which
+        is required for interactive search where queries run in a thread executor.
 
         Returns:
             SQLite connection object.
         """
         if self._conn is None:
-            self._conn = sqlite3.connect(self.db_path)
+            self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
             self._conn.execute("PRAGMA foreign_keys = ON")
         return self._conn
 
