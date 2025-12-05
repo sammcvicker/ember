@@ -13,23 +13,19 @@ Execute the following steps autonomously, only asking for user confirmation at m
 ### 1. Pick Next Issue
 
 ```bash
-# Check milestone issues first (highest priority)
-gh issue list --state open --milestone "1.3.0" --json number,title,labels
-
-# Then check all open issues
+# Check for open issues
 gh issue list --state open --json number,title,labels --limit 20
 ```
 
 **Priority Order:**
-1. **Milestone issues** (#124-#129) - Active sprint, highest priority
-2. **Tech debt Priority 1** (#185, #184, #180, #173, #183, #170) - Bugs and architecture violations
-3. **Tech debt Priority 2** (#171, #172, #176, #179, #174, #182) - Complexity reduction
-4. **Tech debt Priority 3** (#181, #177, #175, #178) - Nice to have improvements
+1. **Bug fixes** - Issues labeled `bug`
+2. **Enhancements** - Issues labeled `enhancement`
+3. **Tech debt** - Issues labeled `tech-debt`
 
-Within each priority level: prefer bugs over enhancements, then lowest numbered issue.
+Within each priority level: prefer lowest numbered issue.
 
+- If no open issues exist, inform the user and ask what they'd like to work on
 - If unclear which issue to work on, ask the user
-- See `CLAUDE.md` section "🔧 TECH DEBT BACKLOG" for full context on tech debt issues
 
 ### 2. Start Issue
 
@@ -96,16 +92,16 @@ Report to the user:
 - Issue number and title completed
 - PR link
 - Test coverage stats
-- Next issue number
+- Next issue number (if any)
 - Ask if they want to continue with next issue or stop
 
 ## Important Notes
 
 - **Read CLAUDE.md first** to understand current project state
-- **Follow the critical path** - issues are ordered with dependencies in mind
 - **Don't skip steps** - tests, linting, documentation are all required
 - **Commit frequently** during implementation (not just at the end)
 - **Only stop for confirmation** when:
+  - No open issues exist
   - Unclear which issue to work on
   - Multiple valid implementation approaches exist
   - Encountering blocking errors
@@ -121,22 +117,11 @@ Before moving to PR creation, verify:
 - [ ] All acceptance criteria met
 - [ ] Documentation updated
 
-**Known Test Issues (don't block on these):**
-- 2 slow tests fail (daemon end-to-end) - tracked in #185
-- 466 ResourceWarning about unclosed DB connections - tracked in #184
-- Run `uv run pytest -m slow` separately to check slow tests
-
 ## Reference Documents
 
-- `CLAUDE.md` - Current state, workflow guide, and **tech debt backlog**
+- `CLAUDE.md` - Current state and workflow guide
 - `MAINTAINER_GUIDE.md` - Detailed operational procedures
 - `prd.md` - Product requirements and architecture
 - `docs/decisions/` - Architecture Decision Records
 
-**Tech Debt Context:** See CLAUDE.md "🔧 TECH DEBT BACKLOG" section for:
-- 16 issues from Dec 2025 code quality audit
-- Priority rankings (P1: bugs/arch, P2: complexity, P3: nice-to-have)
-- Issue descriptions with code references
-
 Ready to start the workflow!
-

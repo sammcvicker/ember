@@ -6,90 +6,45 @@
 
 ## 📍 CURRENT STATE
 
-**Status:** v1.1.0 in develop, working towards v1.3.0
+**Status:** v1.1.0 in develop, ready for v1.2.0 release
 **Branch:** `develop` (for ongoing work)
 **Last Release:** v1.1.0
-**Active Milestone:** 1.3.0
-**Theme:** Stability and polish - Fix interactive search bugs, improve reliability
+**Active Milestone:** None - all issues resolved!
 
 **What's Working:**
 - Core indexing and search functionality ✅
 - Interactive search TUI (`ember search`) ✅
 - Syntax highlighting (cat, find, search) ✅
-- Auto-sync on search (zero-friction workflow) ✅
+- Auto-sync on search with visible progress ✅
 - Functional config system (.ember/config.toml) ✅
 - sqlite-vec for fast vector search (100x speedup) ✅
 - Batch embedding optimization (2-6x faster indexing) ✅
-- Fast test suite (~47s, 369 tests) ✅
+- Fast test suite (~83s, 591 tests) ✅
 - Clean architecture with ports/adapters ✅
-- 77% test coverage ✅
+- 82% test coverage ✅
 
-**Known Issues:**
-- 2 failing slow tests (daemon end-to-end) - see #185
-- 466 ResourceWarning in test suite (unclosed DB connections) - see #184
-- 2 architecture violations in core/ - see #170, #180
+**Known Issues:** None! All tech debt resolved.
 
-**Current Focus:** Bug fixes, stability, and tech debt reduction
+**Current Focus:** Feature development or user-requested improvements
 
 ---
 
-## 🎯 NEXT MILESTONE: v1.3.0 "Stability & Polish"
+## 🎯 NEXT STEPS
 
-See [GitHub milestone](https://github.com/sammcvicker/ember/milestone/6) for all issues.
+No open issues! Options:
+1. **Release v1.2.0** - Bundle recent improvements into a release
+2. **New features** - Wait for user requests or feature ideas
+3. **Performance** - Further optimization opportunities
 
-**Philosophy:** Fix bugs in interactive search and output formatting, improve reliability and UX.
-
-**Issues (All High Priority):**
-1. **#124** - Suppress logging during interactive search 🐛 `[bug, dx, tui]`
-   - *Logging corrupts TUI display - suppress stderr output during search*
-2. **#125** - Fix missing chunks during search retrieval 🐛 `[bug, indexing, search]`
-   - *Investigate and fix root cause of missing chunks warnings*
-3. **#126** - Improve daemon startup error reporting 🐛 `[bug, dx, tui, daemon]`
-   - *Better error handling when daemon fails in interactive mode*
-4. **#129** - Fix `ember find -C` output format 🐛 `[bug, dx, enhancement]`
-   - *Context flag shows entire chunks instead of compact ripgrep-style output*
-
-**Total:** 4 issues, bug fixes and UX improvements
-**Outcome:** Stable, reliable, and usable interactive search and find commands
-
-**Recently Completed:**
-- **v1.2.0** - Syntax highlighting polish (5 issues) ✅
-- **v1.1.0** - Interactive search feature ✅
-- **v1.0.0** - Core features complete (8 issues) ✅
-
----
-
-## 🔧 TECH DEBT BACKLOG (from Dec 2025 audit)
-
-**Priority 1 - Fix Now (Bugs/Architecture):**
-| Issue | Description | Labels |
-|-------|-------------|--------|
-| #185 | Daemon end-to-end tests failing (health check timeout) | bug, testing |
-| #184 | 466 ResourceWarning for unclosed SQLite connections | testing, tech-debt |
-| #180 | Remove adapter import from core layer (init_usecase) | architecture |
-| #173 | Add validation to domain entities (Query, Chunk, Config) | tech-debt, architecture |
-| #183 | Fix socket timeout exception handling in DaemonServer | tech-debt |
-| #170 | Extract file I/O from ResultPresenter (clean architecture) | tech-debt, architecture |
-
-**Priority 2 - Next Release (Complexity/Quality):**
-| Issue | Description | Complexity |
-|-------|-------------|------------|
-| #171 | Reduce CLI cat function complexity | C=16 |
-| #172 | Reduce DaemonLifecycle.start() complexity | C=13 |
-| #176 | Reduce GitAdapter.diff_files() complexity | C=16 |
-| #179 | Reduce ResultPresenter._render_compact_preview() complexity | C=12 |
-| #174 | Add test coverage for untested modules (550+ lines) | testing |
-| #182 | Break up ResultPresenter (SRP violation) | tech-debt |
-
-**Priority 3 - Nice to Have:**
-| Issue | Description | Labels |
-|-------|-------------|--------|
-| #181 | Optimize slow daemon test (20+ seconds) | performance, testing |
-| #177 | Add helpful error messages with hints | dx |
-| #175 | Extract duplicate editor integration code | tech-debt |
-| #178 | Consolidate duplicate git repo fixtures (~300 lines) | testing |
-
-**When picking issues:** Milestone issues (#124-#129) take precedence over tech debt unless a tech debt issue is blocking.
+**Recently Completed (v1.2.0 work):**
+- Unified sync-before-run behavior with visible progress (#209)
+- Color separation in search results for faster scanning (#208, #212)
+- Simplified find highlighting (#207, #211)
+- Error message wrapping in TUI (#206, #210)
+- SQLite thread safety fix (#204, #205)
+- Search error display (#202, #203)
+- ResultPresenter SRP refactor (#182, #201)
+- All 16 tech debt issues from Dec 2025 audit ✅
 
 ---
 
@@ -104,7 +59,7 @@ See [GitHub milestone](https://github.com/sammcvicker/ember/milestone/6) for all
 cat CLAUDE.md | head -30
 
 # 2. See what needs doing
-gh issue list --state open --milestone "1.0.0"
+gh issue list --state open
 
 # 3. Check branch status
 git status
@@ -115,7 +70,7 @@ git log --oneline -5
 
 ### Work Pattern
 
-1. **Pick issue** from milestone
+1. **Pick issue** from open issues (or create one)
 2. **Create branch** from `develop`: `git checkout -b fix/issue-N-description`
 3. **Work with tests**: Write tests, implement, verify
 4. **Update CHANGELOG.md** under "Unreleased" section
@@ -182,7 +137,7 @@ git checkout -b feat/...   # Create feature branch
 git log --oneline -10      # Recent commits
 
 # GitHub CLI
-gh issue list --milestone "1.0.0"  # Current milestone issues
+gh issue list              # Open issues
 gh pr create --base develop        # PR to develop (NOT main!)
 gh pr merge --squash               # Merge and squash commits
 
@@ -232,5 +187,5 @@ See `docs/decisions/` for full ADRs:
 
 ---
 
-**Last Updated:** 2025-12-03 (added tech debt backlog from code audit)
-**Format Version:** 2.1 (Added tech debt tracking)
+**Last Updated:** 2025-12-04 (all tech debt resolved, clean state)
+**Format Version:** 2.2 (Simplified - no backlog)
