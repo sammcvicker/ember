@@ -446,47 +446,39 @@ class TestRenderWithContextEdgeCases:
             calls = [str(c) for c in mock_click.echo.call_args_list]
             assert any("Warning" in str(c) for c in calls)
 
-    def test_render_with_context_syntax_highlighting_enabled(self, tmp_path, presenter):
-        """Context with syntax highlighting uses render_syntax_highlighted."""
+    def test_render_with_context_ignores_highlighting_setting(self, tmp_path, presenter):
+        """Context rendering ignores use_highlighting setting (always plain)."""
         test_file = tmp_path / "test.py"
         test_file.write_text("def foo():\n    pass\n    return True\n")
 
         chunk = MockChunk(path=Path("test.py"), start_line=2, end_line=2)
         result = MockSearchResult(chunk=chunk)
+        # Even with use_highlighting=True, should use plain rendering
         settings = {"use_highlighting": True, "theme": "ansi"}
 
-        with (
-            patch("ember.core.presentation.context_renderer.click"),
-            patch("ember.core.presentation.context_renderer.render_syntax_highlighted") as mock_highlight,
-        ):
-            mock_highlight.return_value = "highlighted code"
+        with patch("ember.core.presentation.context_renderer.click") as mock_click:
             presenter._render_with_context(result, 1, tmp_path, settings)
-
-            # Should call render_syntax_highlighted
-            mock_highlight.assert_called_once()
+            # Should have 3 lines (context before, match, context after)
+            assert mock_click.echo.call_count == 3
 
 
 class TestRenderCompactPreviewEdgeCases:
     """Additional edge case tests for compact preview rendering."""
 
-    def test_render_compact_preview_with_syntax_highlighting(self, tmp_path, presenter):
-        """Preview with syntax highlighting reads from file."""
+    def test_render_compact_preview_ignores_highlighting_setting(self, tmp_path, presenter):
+        """Preview ignores use_highlighting setting (always plain)."""
         test_file = tmp_path / "test.py"
         test_file.write_text("def foo():\n    pass\n    return True\n")
 
         chunk = MockChunk(path=Path("test.py"), start_line=1, end_line=3)
         result = MockSearchResult(chunk=chunk)
+        # Even with use_highlighting=True, should use plain rendering
         settings = {"use_highlighting": True, "theme": "ansi"}
 
-        with (
-            patch("ember.core.presentation.compact_renderer.click"),
-            patch("ember.core.presentation.compact_renderer.render_syntax_highlighted") as mock_highlight,
-        ):
-            mock_highlight.return_value = "line1\nline2\nline3"
+        with patch("ember.core.presentation.compact_renderer.click") as mock_click:
             presenter._render_compact_preview(result, settings, tmp_path)
-
-            # Should call render_syntax_highlighted
-            mock_highlight.assert_called_once()
+            # Should have called echo (plain rendering)
+            assert mock_click.echo.called
 
     def test_render_compact_preview_highlighting_with_missing_file(self, tmp_path, presenter):
         """Preview falls back to content when file is missing."""
@@ -551,101 +543,56 @@ class TestSafeGetLines:
         assert result == ["line2"]
 
 
-class TestRenderCompactPreviewLineExtraction:
-    """Tests for correct line extraction in _render_compact_preview."""
+class TestRenderCompactPreviewPlainRendering:
+    """Tests for plain rendering behavior in _render_compact_preview.
 
-    def test_extracts_correct_lines_from_file_middle(self, tmp_path, presenter):
-        """Correctly extracts lines from middle of file."""
-        test_file = tmp_path / "test.py"
-        lines = ["line1", "line2", "line3", "line4", "line5", "line6", "line7"]
-        test_file.write_text("\n".join(lines))
+    Note: Compact preview now always uses plain rendering with symbol-only
+    highlighting, ignoring the use_highlighting setting.
+    """
 
-        chunk = MockChunk(path=Path("test.py"), start_line=3, end_line=5)
-        result = MockSearchResult(chunk=chunk)
-        settings = {"use_highlighting": True, "theme": "ansi"}
-
-        with (
-            patch("ember.core.presentation.compact_renderer.click"),
-            patch("ember.core.presentation.compact_renderer.render_syntax_highlighted") as mock_highlight,
-        ):
-            mock_highlight.return_value = "line3\nline4\nline5"
-            presenter._render_compact_preview(result, settings, tmp_path)
-
-            # Verify render_syntax_highlighted was called with correct lines
-            call_args = mock_highlight.call_args
-            assert "line3" in call_args.kwargs["code"]
-
-    def test_handles_start_line_at_file_beginning(self, tmp_path, presenter):
-        """Correctly handles chunk starting at line 1."""
-        test_file = tmp_path / "test.py"
-        test_file.write_text("line1\nline2\nline3\n")
-
-        chunk = MockChunk(path=Path("test.py"), start_line=1, end_line=3)
-        result = MockSearchResult(chunk=chunk)
-        settings = {"use_highlighting": True, "theme": "ansi"}
-
-        with (
-            patch("ember.core.presentation.compact_renderer.click"),
-            patch("ember.core.presentation.compact_renderer.render_syntax_highlighted") as mock_highlight,
-        ):
-            mock_highlight.return_value = "line1\nline2\nline3"
-            presenter._render_compact_preview(result, settings, tmp_path)
-            mock_highlight.assert_called_once()
-
-    def test_handles_chunk_at_file_end(self, tmp_path, presenter):
-        """Correctly handles chunk at end of file."""
-        test_file = tmp_path / "test.py"
-        test_file.write_text("line1\nline2\nline3\n")
-
-        chunk = MockChunk(path=Path("test.py"), start_line=3, end_line=3)
-        result = MockSearchResult(chunk=chunk)
-        settings = {"use_highlighting": True, "theme": "ansi"}
-
-        with (
-            patch("ember.core.presentation.compact_renderer.click"),
-            patch("ember.core.presentation.compact_renderer.render_syntax_highlighted") as mock_highlight,
-        ):
-            mock_highlight.return_value = "line3"
-            presenter._render_compact_preview(result, settings, tmp_path)
-            mock_highlight.assert_called_once()
-
-    def test_limits_to_max_preview_lines(self, tmp_path, presenter):
-        """Preview is limited to max_preview_lines (3)."""
-        test_file = tmp_path / "test.py"
-        test_file.write_text("line1\nline2\nline3\nline4\nline5\nline6\n")
-
-        chunk = MockChunk(path=Path("test.py"), start_line=1, end_line=6)
-        result = MockSearchResult(chunk=chunk)
-        settings = {"use_highlighting": True, "theme": "ansi"}
-
-        with (
-            patch("ember.core.presentation.compact_renderer.click"),
-            patch("ember.core.presentation.compact_renderer.render_syntax_highlighted") as mock_highlight,
-        ):
-            # Should only include first 3 lines
-            mock_highlight.return_value = "line1\nline2\nline3"
-            presenter._render_compact_preview(result, settings, tmp_path)
-
-            call_args = mock_highlight.call_args
-            code = call_args.kwargs["code"]
-            # Should have at most 3 lines
-            assert code.count("\n") <= 2
-
-    def test_handles_empty_preview_lines(self, tmp_path, presenter):
-        """Falls back gracefully when no preview lines can be extracted."""
-        # Create empty file
-        test_file = tmp_path / "test.py"
-        test_file.write_text("")
-
-        chunk = MockChunk(path=Path("test.py"), start_line=1, end_line=1)
+    def test_renders_from_chunk_content(self, mock_presenter):
+        """Preview uses chunk content for rendering."""
+        chunk = MockChunk(content="line1\nline2\nline3")
         result = MockSearchResult(chunk=chunk)
         settings = {"use_highlighting": True, "theme": "ansi"}
 
         with patch("ember.core.presentation.compact_renderer.click") as mock_click:
-            # Should fall back to chunk content
-            presenter._render_compact_preview(result, settings, tmp_path)
-            # Should still call echo (fallback path)
-            assert mock_click.echo.called
+            mock_presenter._render_compact_preview(result, settings, None)
+            # Should have 3 calls (first line with rank, 2 additional lines)
+            assert mock_click.echo.call_count == 3
+
+    def test_limits_to_max_preview_lines(self, mock_presenter):
+        """Preview is limited to max_preview_lines (3)."""
+        chunk = MockChunk(content="line1\nline2\nline3\nline4\nline5\nline6")
+        result = MockSearchResult(chunk=chunk)
+        settings = {"use_highlighting": True, "theme": "ansi"}
+
+        with patch("ember.core.presentation.compact_renderer.click") as mock_click:
+            mock_presenter._render_compact_preview(result, settings, None)
+            # Should only show 3 lines
+            assert mock_click.echo.call_count == 3
+
+    def test_handles_empty_content(self, mock_presenter):
+        """Gracefully handles empty chunk content."""
+        chunk = MockChunk(content="")
+        result = MockSearchResult(chunk=chunk)
+        settings = {"use_highlighting": True, "theme": "ansi"}
+
+        with patch("ember.core.presentation.compact_renderer.click"):
+            # Should not raise
+            mock_presenter._render_compact_preview(result, settings, None)
+            # May or may not call echo depending on implementation
+            # The important thing is it doesn't crash
+
+    def test_single_line_content(self, mock_presenter):
+        """Handles single line content correctly."""
+        chunk = MockChunk(content="single line")
+        result = MockSearchResult(chunk=chunk)
+        settings = {"use_highlighting": True, "theme": "ansi"}
+
+        with patch("ember.core.presentation.compact_renderer.click") as mock_click:
+            mock_presenter._render_compact_preview(result, settings, None)
+            assert mock_click.echo.call_count == 1
 
 
 class TestFileReadingEdgeCases:

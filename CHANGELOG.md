@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Simplified `ember find` highlighting for faster visual scanning** (#207)
+  - `ember find` now uses red bold highlighting for matched symbols only
+  - Removed syntax highlighting from find output (both with and without `--context`)
+  - Line numbers are dim, body text is regular - easier to scan at a glance
+  - `ember cat` and `ember search` (TUI) retain full syntax highlighting
+  - Improves developer experience by reducing visual noise when locating symbols
+
 ### Fixed
 - **Error messages in interactive search TUI now wrap instead of truncating** (#206)
   - Long error messages (e.g., "Search error: SQLite objects created in a thread...") were being cut off at terminal width
