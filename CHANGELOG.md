@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Added color separation to `ember search` results list for faster scanning** (#208)
+  - File paths are magenta bold (consistent with `ember find`)
+  - Matched symbol names are red bold (visual anchor - "the thing you searched for")
+  - Line ranges and scores are dimmed (secondary information)
+  - Selected item uses reverse video to preserve colors while indicating selection
+  - Uses ANSI color names to respect user's terminal theme (Solarized, Dracula, etc.)
+  - Makes it easier to scan results list without relying solely on the preview pane
+
 - **Simplified `ember find` highlighting for faster visual scanning** (#207)
   - `ember find` now uses red bold highlighting for matched symbols only
   - Removed syntax highlighting from find output (both with and without `--context`)

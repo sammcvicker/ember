@@ -437,3 +437,287 @@ class TestInteractiveSearchUIErrorHandling:
         assert len(results_text) == 1
         style, text = results_text[0]
         assert "No results found" not in text
+
+
+class TestInteractiveSearchUIResultsListColorSeparation:
+    """Tests for color separation in the results list.
+
+    Issue #208: Add clear color coding to results list for better scannability.
+    - Red bold for matched symbol name
+    - Magenta for file paths
+    - Dim for secondary info (scores, line ranges)
+    """
+
+    def test_results_list_has_symbol_styling(
+        self, mock_config: EmberConfig, sample_search_result: SearchResult
+    ) -> None:
+        """Test that symbol names have class:symbol styling."""
+        def mock_search_fn(query: Query) -> list[SearchResult]:
+            return [sample_search_result]
+
+        ui = InteractiveSearchUI(
+            search_fn=mock_search_fn,
+            config=mock_config,
+            initial_query="test",
+        )
+
+        # Set up session with a result that has a symbol
+        ui.session = InteractiveSearchSession(query_text="test", preview_visible=True)
+        ui.session.update_results([sample_search_result], 10.0)
+        ui.session.selected_index = 0
+
+        results_text = ui._get_results_text()
+
+        # Should have multiple styled segments
+        assert len(results_text) > 1
+
+        # Find the symbol segment - should have class:symbol styling
+        symbol_segments = [
+            (style, text) for style, text in results_text
+            if "symbol" in style and "calculate_sum" in text
+        ]
+        assert len(symbol_segments) == 1, "Symbol should be styled with class:symbol"
+
+    def test_results_list_has_path_styling(
+        self, mock_config: EmberConfig, sample_search_result: SearchResult
+    ) -> None:
+        """Test that file paths have class:path styling."""
+        def mock_search_fn(query: Query) -> list[SearchResult]:
+            return [sample_search_result]
+
+        ui = InteractiveSearchUI(
+            search_fn=mock_search_fn,
+            config=mock_config,
+            initial_query="test",
+        )
+
+        ui.session = InteractiveSearchSession(query_text="test", preview_visible=True)
+        ui.session.update_results([sample_search_result], 10.0)
+        ui.session.selected_index = 0
+
+        results_text = ui._get_results_text()
+
+        # Find the path segment - should have class:path styling
+        path_segments = [
+            (style, text) for style, text in results_text
+            if "path" in style and "example.py" in text
+        ]
+        assert len(path_segments) == 1, "Path should be styled with class:path"
+
+    def test_results_list_has_dimmed_line_range(
+        self, mock_config: EmberConfig, sample_search_result: SearchResult
+    ) -> None:
+        """Test that line ranges have class:dimmed styling."""
+        def mock_search_fn(query: Query) -> list[SearchResult]:
+            return [sample_search_result]
+
+        ui = InteractiveSearchUI(
+            search_fn=mock_search_fn,
+            config=mock_config,
+            initial_query="test",
+        )
+
+        ui.session = InteractiveSearchSession(query_text="test", preview_visible=True)
+        ui.session.update_results([sample_search_result], 10.0)
+        ui.session.selected_index = 0
+
+        results_text = ui._get_results_text()
+
+        # Find the line range segment - should have class:dimmed styling
+        # Line range is "1-4" for this chunk
+        line_range_segments = [
+            (style, text) for style, text in results_text
+            if "dimmed" in style and "1-4" in text
+        ]
+        assert len(line_range_segments) == 1, "Line range should be styled with class:dimmed"
+
+    def test_results_list_has_dimmed_score(
+        self, mock_config: EmberConfig, sample_search_result: SearchResult
+    ) -> None:
+        """Test that scores have class:score styling (dimmed)."""
+        def mock_search_fn(query: Query) -> list[SearchResult]:
+            return [sample_search_result]
+
+        ui = InteractiveSearchUI(
+            search_fn=mock_search_fn,
+            config=mock_config,
+            initial_query="test",
+            show_scores=True,
+        )
+
+        ui.session = InteractiveSearchSession(query_text="test", preview_visible=True)
+        ui.session.update_results([sample_search_result], 10.0)
+        ui.session.selected_index = 0
+
+        results_text = ui._get_results_text()
+
+        # Find the score segment - should have class:score styling
+        # Score is "0.95" formatted as "0.950"
+        score_segments = [
+            (style, text) for style, text in results_text
+            if "score" in style and "0.950" in text
+        ]
+        assert len(score_segments) == 1, "Score should be styled with class:score"
+
+    def test_results_list_selected_item_preserves_colors(
+        self, mock_config: EmberConfig, sample_search_result: SearchResult
+    ) -> None:
+        """Test that selected item combines selection styling with color styling."""
+        def mock_search_fn(query: Query) -> list[SearchResult]:
+            return [sample_search_result]
+
+        ui = InteractiveSearchUI(
+            search_fn=mock_search_fn,
+            config=mock_config,
+            initial_query="test",
+        )
+
+        ui.session = InteractiveSearchSession(query_text="test", preview_visible=True)
+        ui.session.update_results([sample_search_result], 10.0)
+        ui.session.selected_index = 0  # First item is selected
+
+        results_text = ui._get_results_text()
+
+        # Find the selected segments - should have class:selected combined with other styles
+        selected_segments = [
+            (style, text) for style, text in results_text
+            if "selected" in style
+        ]
+        # All segments for the selected item should include 'selected'
+        assert len(selected_segments) > 0, "Selected item should have class:selected"
+
+        # Verify colored segments also have selection styling
+        selected_symbol = [
+            (style, text) for style, text in results_text
+            if "selected" in style and "symbol" in style
+        ]
+        assert len(selected_symbol) == 1, "Selected symbol should have both class:selected and class:symbol"
+
+    def test_results_list_unselected_item_no_selection_style(
+        self, mock_config: EmberConfig, sample_search_result: SearchResult
+    ) -> None:
+        """Test that unselected items don't have selection styling."""
+        # Create a second result
+        content2 = "def another_func(): pass"
+        chunk2 = Chunk(
+            id="test_chunk_2",
+            project_id="test_project",
+            path=Path("other.py"),
+            lang="py",
+            symbol="another_func",
+            start_line=10,
+            end_line=10,
+            content=content2,
+            content_hash=Chunk.compute_content_hash(content2),
+            file_hash="file_hash_789",
+            tree_sha="xyz789",
+            rev="worktree",
+        )
+        result2 = SearchResult(chunk=chunk2, score=0.85, rank=2)
+
+        def mock_search_fn(query: Query) -> list[SearchResult]:
+            return [sample_search_result, result2]
+
+        ui = InteractiveSearchUI(
+            search_fn=mock_search_fn,
+            config=mock_config,
+            initial_query="test",
+        )
+
+        ui.session = InteractiveSearchSession(query_text="test", preview_visible=True)
+        ui.session.update_results([sample_search_result, result2], 10.0)
+        ui.session.selected_index = 0  # First item selected, second is not
+
+        results_text = ui._get_results_text()
+
+        # Find segments for "other.py" (unselected item)
+        unselected_path_segments = [
+            (style, text) for style, text in results_text
+            if "other.py" in text
+        ]
+        assert len(unselected_path_segments) == 1
+        style, _ = unselected_path_segments[0]
+        # Should have path styling but NOT selected
+        assert "path" in style, "Unselected path should have class:path"
+        assert "selected" not in style, "Unselected item should not have class:selected"
+
+    def test_results_list_handles_result_without_symbol(
+        self, mock_config: EmberConfig
+    ) -> None:
+        """Test that results without symbols don't show symbol styling."""
+        content = "# Just a comment"
+        chunk = Chunk(
+            id="test_chunk_no_symbol",
+            project_id="test_project",
+            path=Path("utils.py"),
+            lang="py",
+            symbol=None,  # No symbol
+            start_line=1,
+            end_line=1,
+            content=content,
+            content_hash=Chunk.compute_content_hash(content),
+            file_hash="file_hash_nosym",
+            tree_sha="nosym123",
+            rev="worktree",
+        )
+        result = SearchResult(chunk=chunk, score=0.75, rank=1)
+
+        def mock_search_fn(query: Query) -> list[SearchResult]:
+            return [result]
+
+        ui = InteractiveSearchUI(
+            search_fn=mock_search_fn,
+            config=mock_config,
+            initial_query="test",
+        )
+
+        ui.session = InteractiveSearchSession(query_text="test", preview_visible=True)
+        ui.session.update_results([result], 10.0)
+        ui.session.selected_index = 0
+
+        results_text = ui._get_results_text()
+
+        # Should still have path styling
+        path_segments = [
+            (style, text) for style, text in results_text
+            if "path" in style and "utils.py" in text
+        ]
+        assert len(path_segments) == 1, "Path should still be styled"
+
+        # Should NOT have any symbol styling (since no symbol)
+        symbol_segments = [
+            (style, text) for style, text in results_text
+            if "symbol" in style
+        ]
+        assert len(symbol_segments) == 0, "No symbol styling when symbol is None"
+
+    def test_results_list_scores_hidden_when_disabled(
+        self, mock_config: EmberConfig, sample_search_result: SearchResult
+    ) -> None:
+        """Test that scores are not shown when show_scores is False."""
+        def mock_search_fn(query: Query) -> list[SearchResult]:
+            return [sample_search_result]
+
+        ui = InteractiveSearchUI(
+            search_fn=mock_search_fn,
+            config=mock_config,
+            initial_query="test",
+            show_scores=False,  # Disable scores
+        )
+
+        ui.session = InteractiveSearchSession(query_text="test", preview_visible=True)
+        ui.session.update_results([sample_search_result], 10.0)
+        ui.session.selected_index = 0
+
+        results_text = ui._get_results_text()
+
+        # Should NOT have score segments
+        score_segments = [
+            (style, text) for style, text in results_text
+            if "score" in style
+        ]
+        assert len(score_segments) == 0, "No score styling when show_scores=False"
+
+        # Full text should not contain the score value
+        full_text = "".join(text for _, text in results_text)
+        assert "0.950" not in full_text, "Score value should not appear"

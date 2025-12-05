@@ -124,6 +124,9 @@ class EmberColors:
     def get_prompt_toolkit_style() -> dict[str, str]:
         """Get style dictionary for prompt_toolkit Style.from_dict().
 
+        Uses ANSI color names instead of hex codes so colors adapt to the
+        user's terminal theme (Solarized, Dracula, etc.).
+
         Returns:
             Dictionary mapping style class names to style definitions.
 
@@ -132,15 +135,15 @@ class EmberColors:
             style = Style.from_dict(EmberColors.get_prompt_toolkit_style())
         """
         return {
-            "separator": f"fg:{EmberColors.SEPARATOR_HEX}",
-            "selected": f"bg:{EmberColors.SELECTED_BG_HEX}",
-            "dimmed": f"fg:{EmberColors.DIMMED_HEX}",
-            "score": f"fg:{EmberColors.SCORE_HEX}",
-            "path": f"fg:{EmberColors.PATH_HEX}",
-            "symbol": f"fg:{EmberColors.SYMBOL_HEX}",
+            "separator": "fg:ansibrightblack",
+            "selected": "reverse",  # Swap fg/bg - works with any theme
+            "dimmed": "fg:ansibrightblack",
+            "score": "fg:ansibrightblack",
+            "path": "fg:ansimagenta bold",
+            "symbol": "fg:ansired bold",
             "status": "bold",
-            "rank": f"fg:{EmberColors.RANK_HEX}",
-            "error": f"fg:{EmberColors.ERROR_HEX}",
+            "rank": "fg:ansigreen bold",
+            "error": "fg:ansired",
         }
 
     @staticmethod

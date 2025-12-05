@@ -335,10 +335,16 @@ class InteractiveSearchUI:
         return [("", "")]
 
     def _get_results_text(self) -> list[tuple[str, str]]:
-        """Get formatted results text.
+        """Get formatted results text with color hierarchy.
 
         Returns:
             List of (style, text) tuples for formatted text.
+            Each result line is broken into styled segments:
+            - Path: class:path (magenta)
+            - Line range: class:dimmed (gray)
+            - Symbol: class:symbol (red bold)
+            - Score: class:score (dim)
+            - Selected items get class:selected combined with other styles
         """
         if not self.session.query_text:
             return [("", "Type to search...")]
@@ -356,21 +362,39 @@ class InteractiveSearchUI:
         lines: list[tuple[str, str]] = []
 
         for idx, result in enumerate(self.session.current_results):
-            style = "class:selected" if idx == self.session.selected_index else ""
+            is_selected = idx == self.session.selected_index
+            base_style = "class:selected " if is_selected else ""
 
-            # Format: path:lines (symbol) | score
             chunk = result.chunk
-            path = chunk.path
+            path = str(chunk.path)
             line_range = f"{chunk.start_line}-{chunk.end_line}"
-            symbol = f" ({chunk.symbol})" if chunk.symbol else ""
 
-            result_text = f"  {path}:{line_range}{symbol}"
+            # Build styled segments for this result line
+            # Leading indent
+            lines.append((base_style.strip(), "  "))
 
-            if self.show_scores:
-                score = f" │ {result.score:.3f}" if result.score else ""
-                result_text += score
+            # Path (magenta)
+            lines.append((f"{base_style}class:path", path))
 
-            lines.append((style, result_text + "\n"))
+            # Colon separator
+            lines.append((f"{base_style}class:dimmed", ":"))
+
+            # Line range (dimmed)
+            lines.append((f"{base_style}class:dimmed", line_range))
+
+            # Symbol if present (red bold)
+            if chunk.symbol:
+                lines.append((f"{base_style}class:dimmed", " ("))
+                lines.append((f"{base_style}class:symbol", chunk.symbol))
+                lines.append((f"{base_style}class:dimmed", ")"))
+
+            # Score if enabled (dim)
+            if self.show_scores and result.score:
+                lines.append((f"{base_style}class:dimmed", " │ "))
+                lines.append((f"{base_style}class:score", f"{result.score:.3f}"))
+
+            # Newline at end
+            lines.append((base_style.strip(), "\n"))
 
         return lines
 
