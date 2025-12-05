@@ -140,6 +140,7 @@ class EmberColors:
             "symbol": f"fg:{EmberColors.SYMBOL_HEX}",
             "status": "bold",
             "rank": f"fg:{EmberColors.RANK_HEX}",
+            "error": f"fg:{EmberColors.ERROR_HEX}",
         }
 
     @staticmethod

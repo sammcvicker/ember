@@ -34,6 +34,7 @@ class InteractiveSearchSession:
     search_mode: str = "hybrid"  # hybrid, bm25, vector
     preview_visible: bool = True
     last_search_time_ms: float = 0.0
+    error_message: str | None = None
 
     def update_query(self, text: str) -> None:
         """Update the query text.
@@ -54,6 +55,17 @@ class InteractiveSearchSession:
         self.current_results = results
         self.last_search_time_ms = time_ms
         self.selected_index = 0  # Reset selection when results change
+        self.error_message = None  # Clear error on successful search
+
+    def set_error(self, message: str) -> None:
+        """Set an error message.
+
+        Args:
+            message: Error message to display.
+        """
+        self.error_message = message
+        self.current_results = []  # Clear results on error
+        self.last_search_time_ms = 0.0
 
     def select_next(self, wrap: bool = True) -> None:
         """Move to next result.

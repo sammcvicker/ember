@@ -1,7 +1,8 @@
-"""Unit tests for interactive search UI preview pane syntax highlighting.
+"""Unit tests for interactive search UI.
 
-Tests that the preview pane in InteractiveSearchUI applies syntax highlighting
-using the render_syntax_highlighted() infrastructure when enabled via config.
+Tests for:
+- Preview pane syntax highlighting
+- Error handling when search functions fail
 """
 
 from pathlib import Path
@@ -259,3 +260,132 @@ class TestInteractiveSearchUIPreviewHighlighting:
         assert len(preview_text) > 0
         # Verify we got formatted text (list of tuples)
         assert all(isinstance(item, tuple) and len(item) == 2 for item in preview_text)
+
+
+class TestInteractiveSearchSession:
+    """Tests for InteractiveSearchSession error handling."""
+
+    def test_set_error_stores_message(self) -> None:
+        """Test that set_error stores the error message."""
+        session = InteractiveSearchSession(query_text="test")
+        session.set_error("Connection failed")
+
+        assert session.error_message == "Connection failed"
+
+    def test_set_error_clears_results(self) -> None:
+        """Test that set_error clears any existing results."""
+        session = InteractiveSearchSession(query_text="test")
+        # First add some results
+        chunk = Chunk(
+            id="test",
+            project_id="test",
+            path=Path("test.py"),
+            lang="py",
+            symbol=None,
+            start_line=1,
+            end_line=5,
+            content="test content",
+            content_hash=Chunk.compute_content_hash("test content"),
+            file_hash="test_hash",
+            tree_sha="abc123",
+            rev="worktree",
+        )
+        session.update_results([SearchResult(chunk=chunk, score=0.9, rank=1)], 100.0)
+        assert session.current_results is not None
+        assert len(session.current_results) == 1
+
+        # Then set an error
+        session.set_error("Something went wrong")
+
+        assert session.current_results == []
+        assert session.last_search_time_ms == 0.0
+
+    def test_update_results_clears_error(self) -> None:
+        """Test that update_results clears any existing error."""
+        session = InteractiveSearchSession(query_text="test")
+        session.set_error("Previous error")
+        assert session.error_message == "Previous error"
+
+        # Then update results
+        session.update_results([], 50.0)
+
+        assert session.error_message is None
+
+
+class TestInteractiveSearchUIErrorHandling:
+    """Tests for error handling in the interactive search UI."""
+
+    def test_get_results_text_shows_error_message(
+        self, mock_config: EmberConfig
+    ) -> None:
+        """Test that _get_results_text displays error message when one exists."""
+        def mock_search_fn(query: Query) -> list[SearchResult]:
+            return []
+
+        ui = InteractiveSearchUI(
+            search_fn=mock_search_fn,
+            config=mock_config,
+            initial_query="test query",
+        )
+
+        # Set an error on the session
+        ui.session.set_error("Search error: daemon connection failed")
+
+        # Get results text
+        results_text = ui._get_results_text()
+
+        # Should show error message with error style
+        assert len(results_text) == 1
+        style, text = results_text[0]
+        assert style == "class:error"
+        assert "Search error: daemon connection failed" in text
+
+    def test_get_results_text_shows_no_results_when_no_error(
+        self, mock_config: EmberConfig
+    ) -> None:
+        """Test that _get_results_text shows 'No results found' when no error."""
+        def mock_search_fn(query: Query) -> list[SearchResult]:
+            return []
+
+        ui = InteractiveSearchUI(
+            search_fn=mock_search_fn,
+            config=mock_config,
+            initial_query="test query",
+        )
+
+        # No error set, but empty results
+        ui.session.update_results([], 10.0)
+
+        # Get results text
+        results_text = ui._get_results_text()
+
+        # Should show "No results found"
+        assert len(results_text) == 1
+        style, text = results_text[0]
+        assert style == ""
+        assert "No results found" in text
+
+    def test_error_message_takes_priority_over_empty_results(
+        self, mock_config: EmberConfig
+    ) -> None:
+        """Test that error message is shown instead of 'No results found'."""
+        def mock_search_fn(query: Query) -> list[SearchResult]:
+            return []
+
+        ui = InteractiveSearchUI(
+            search_fn=mock_search_fn,
+            config=mock_config,
+            initial_query="test query",
+        )
+
+        # Set error (which clears results)
+        ui.session.set_error("Database error")
+
+        # Get results text
+        results_text = ui._get_results_text()
+
+        # Should show error, not "No results found"
+        assert len(results_text) == 1
+        style, text = results_text[0]
+        assert "Database error" in text
+        assert "No results found" not in text
