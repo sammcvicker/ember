@@ -113,9 +113,19 @@ def _create_embedder(config, show_progress: bool = True):
         )
     else:
         # Use direct mode (fallback or explicit config)
-        from ember.adapters.local_models.jina_embedder import JinaCodeEmbedder
+        # Select embedder based on config.index.model
+        model_name = config.index.model.lower()
 
-        return JinaCodeEmbedder()
+        if model_name in ("minilm", "all-minilm-l6-v2"):
+            from ember.adapters.local_models.minilm_embedder import MiniLMEmbedder
+
+            return MiniLMEmbedder()
+        else:
+            # Default to Jina code embedder for any other value
+            # including "local-default-code-embed", "jina-code-v2", etc.
+            from ember.adapters.local_models.jina_embedder import JinaCodeEmbedder
+
+            return JinaCodeEmbedder()
 
 
 def get_ember_repo_root() -> tuple[Path, Path]:
