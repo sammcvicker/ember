@@ -531,34 +531,6 @@ class TestInteractiveSearchUIResultsListColorSeparation:
         ]
         assert len(line_range_segments) == 1, "Line range should be styled with class:dimmed"
 
-    def test_results_list_has_dimmed_score(
-        self, mock_config: EmberConfig, sample_search_result: SearchResult
-    ) -> None:
-        """Test that scores have class:score styling (dimmed)."""
-        def mock_search_fn(query: Query) -> list[SearchResult]:
-            return [sample_search_result]
-
-        ui = InteractiveSearchUI(
-            search_fn=mock_search_fn,
-            config=mock_config,
-            initial_query="test",
-            show_scores=True,
-        )
-
-        ui.session = InteractiveSearchSession(query_text="test", preview_visible=True)
-        ui.session.update_results([sample_search_result], 10.0)
-        ui.session.selected_index = 0
-
-        results_text = ui._get_results_text()
-
-        # Find the score segment - should have class:score styling
-        # Score is "0.95" formatted as "0.950"
-        score_segments = [
-            (style, text) for style, text in results_text
-            if "score" in style and "0.950" in text
-        ]
-        assert len(score_segments) == 1, "Score should be styled with class:score"
-
     def test_results_list_selected_item_preserves_colors(
         self, mock_config: EmberConfig, sample_search_result: SearchResult
     ) -> None:
@@ -691,10 +663,10 @@ class TestInteractiveSearchUIResultsListColorSeparation:
         ]
         assert len(symbol_segments) == 0, "No symbol styling when symbol is None"
 
-    def test_results_list_scores_hidden_when_disabled(
+    def test_results_list_does_not_show_scores(
         self, mock_config: EmberConfig, sample_search_result: SearchResult
     ) -> None:
-        """Test that scores are not shown when show_scores is False."""
+        """Test that scores are not shown in the results list."""
         def mock_search_fn(query: Query) -> list[SearchResult]:
             return [sample_search_result]
 
@@ -702,7 +674,6 @@ class TestInteractiveSearchUIResultsListColorSeparation:
             search_fn=mock_search_fn,
             config=mock_config,
             initial_query="test",
-            show_scores=False,  # Disable scores
         )
 
         ui.session = InteractiveSearchSession(query_text="test", preview_visible=True)
@@ -711,13 +682,6 @@ class TestInteractiveSearchUIResultsListColorSeparation:
 
         results_text = ui._get_results_text()
 
-        # Should NOT have score segments
-        score_segments = [
-            (style, text) for style, text in results_text
-            if "score" in style
-        ]
-        assert len(score_segments) == 0, "No score styling when show_scores=False"
-
-        # Full text should not contain the score value
+        # Full text should not contain score values
         full_text = "".join(text for _, text in results_text)
-        assert "0.950" not in full_text, "Score value should not appear"
+        assert "0.950" not in full_text, "Score value should not appear in results list"

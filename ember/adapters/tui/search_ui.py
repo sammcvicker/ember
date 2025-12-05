@@ -387,11 +387,6 @@ class InteractiveSearchUI:
                 lines.append((base_style.strip(), " "))
                 lines.append((f"{base_style}class:symbol", chunk.symbol))
 
-            # Score if enabled (dim)
-            if self.show_scores and result.score:
-                lines.append((f"{base_style}class:dimmed", " │ "))
-                lines.append((f"{base_style}class:score", f"{result.score:.3f}"))
-
             # Newline at end
             lines.append((base_style.strip(), "\n"))
 
