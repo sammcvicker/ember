@@ -46,7 +46,7 @@ topk = 50
         config_file.write_text(
             """
 [index]
-model = "custom-model"
+model = "minilm"
 chunk = "lines"
 line_window = 200
 line_stride = 150
@@ -78,7 +78,7 @@ theme = "monokai"
         result = provider.load(ember_dir)
 
         # Verify index section
-        assert result.index.model == "custom-model"
+        assert result.index.model == "minilm"
         assert result.index.chunk == "lines"
         assert result.index.line_window == 200
         assert result.index.line_stride == 150

@@ -85,7 +85,11 @@ def _create_embedder(config, show_progress: bool = True):
 
     Raises:
         RuntimeError: If daemon fails to start
+        ValueError: If model name is not recognized
     """
+    # Get the configured model name
+    model_name = config.index.model
+
     if config.model.mode == "daemon":
         # Use daemon mode (default)
         from ember.adapters.daemon.client import DaemonEmbedderClient
@@ -94,7 +98,10 @@ def _create_embedder(config, show_progress: bool = True):
 
         # ALWAYS pre-start daemon before returning client
         # This ensures errors are caught before TUI initialization (#126)
-        daemon_manager = DaemonLifecycle(idle_timeout=config.model.daemon_timeout)
+        daemon_manager = DaemonLifecycle(
+            idle_timeout=config.model.daemon_timeout,
+            model_name=model_name,
+        )
 
         # If daemon is already running, nothing to do
         if not daemon_manager.is_running():
@@ -110,26 +117,13 @@ def _create_embedder(config, show_progress: bool = True):
             fallback=True,
             auto_start=False,  # Daemon already started above
             daemon_timeout=config.model.daemon_timeout,
+            model_name=model_name,
         )
     else:
         # Use direct mode (fallback or explicit config)
-        # Select embedder based on config.index.model
-        model_name = config.index.model.lower()
+        from ember.adapters.local_models.registry import create_embedder
 
-        if model_name in ("minilm", "all-minilm-l6-v2"):
-            from ember.adapters.local_models.minilm_embedder import MiniLMEmbedder
-
-            return MiniLMEmbedder()
-        elif model_name in ("bge-small", "bge-small-en-v1.5"):
-            from ember.adapters.local_models.bge_embedder import BGESmallEmbedder
-
-            return BGESmallEmbedder()
-        else:
-            # Default to Jina code embedder for any other value
-            # including "local-default-code-embed", "jina-code-v2", etc.
-            from ember.adapters.local_models.jina_embedder import JinaCodeEmbedder
-
-            return JinaCodeEmbedder()
+        return create_embedder(model_name=model_name)
 
 
 def get_ember_repo_root() -> tuple[Path, Path]:

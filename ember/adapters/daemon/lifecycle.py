@@ -25,6 +25,7 @@ class DaemonLifecycle:
         pid_file: Path | None = None,
         log_file: Path | None = None,
         idle_timeout: int = 900,
+        model_name: str | None = None,
     ):
         """Initialize lifecycle manager.
 
@@ -33,12 +34,14 @@ class DaemonLifecycle:
             pid_file: Path to PID file (default: ~/.ember/daemon.pid)
             log_file: Path to log file (default: ~/.ember/daemon.log)
             idle_timeout: Daemon idle timeout in seconds
+            model_name: Embedding model preset or HuggingFace ID
         """
         ember_dir = Path.home() / ".ember"
         self.socket_path = socket_path or (ember_dir / "daemon.sock")
         self.pid_file = pid_file or (ember_dir / "daemon.pid")
         self.log_file = log_file or (ember_dir / "daemon.log")
         self.idle_timeout = idle_timeout
+        self.model_name = model_name
 
         # Ensure ember directory exists
         ember_dir.mkdir(parents=True, exist_ok=True)
@@ -302,6 +305,10 @@ class DaemonLifecycle:
             "--log-level",
             "INFO",
         ]
+
+        # Add model selection if specified
+        if self.model_name:
+            cmd.extend(["--model", self.model_name])
 
         try:
             if foreground:

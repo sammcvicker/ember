@@ -8,20 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Embedding model selection logic with daemon support** (#223)
+  - New model registry (`ember/adapters/local_models/registry.py`) centralizes model selection
+  - Supports user-friendly presets (`jina-code-v2`, `minilm`, `bge-small`) and full HuggingFace IDs
+  - Daemon mode now respects `model` config - can run MiniLM or BGE-small in daemon mode
+  - Config validation rejects unknown model names with helpful error messages
+  - `create_embedder()` factory function for consistent embedder creation
+  - `get_model_info()` and `list_available_models()` for programmatic model discovery
+  - All models (Jina, MiniLM, BGE-small) now work in both daemon and direct modes
+  - Example config: `model = "minilm"` with `mode = "daemon"` for memory-efficient indexing
+
 - **BGE-small retrieval-optimized embedding adapter** (#222)
   - New `BGESmallEmbedder` adapter using `BAAI/bge-small-en-v1.5` (33M params, 384 dims)
   - Uses only ~130MB RAM - good balance between accuracy and resource usage
   - Optimized for retrieval tasks, strong MTEB leaderboard performance
   - 512 token context length (vs 256 for MiniLM)
   - Can be selected via config: `model = "bge-small"` in `.ember/config.toml`
-  - Works in direct mode (`mode = "direct"`) - daemon mode support coming in #223
 
 - **MiniLM lightweight embedding adapter for resource-constrained systems** (#221)
   - New `MiniLMEmbedder` adapter using `sentence-transformers/all-MiniLM-L6-v2` (22M params, 384 dims)
   - Uses only ~100MB RAM vs ~1.6GB for Jina - ideal for Raspberry Pi, CI, older laptops
   - ~5x faster inference than larger models
   - Can be selected via config: `model = "minilm"` in `.ember/config.toml`
-  - Works in direct mode (`mode = "direct"`) - daemon mode support coming in #223
 
 - **Unified sync behavior with visible progress across all commands** (#209)
   - Added `ensure_synced()` helper function as single entry point for sync-before-run
