@@ -7,26 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-- **Suppressed HuggingFace tokenizer fork warning during `ember search`** (#215)
-  - Set `TOKENIZERS_PARALLELISM=false` before loading the embedding model
-  - Also set the variable when spawning the daemon subprocess for belt-and-suspenders safety
-  - Users can override by explicitly setting `TOKENIZERS_PARALLELISM=true` in their environment
-  - Eliminates the distracting "parallelism has already been used" warning message
-
-- **Fixed daemon status showing "PID None" when PID file is missing** (#214)
-  - When daemon is running but PID file is missing/corrupted, status now recovers PID from daemon
-  - Daemon health check now returns server PID, allowing status recovery
-  - Status message now shows "PID unknown" instead of confusing "PID None" as fallback
-  - Added `get_daemon_pid()` helper function to query daemon PID via health check
-
-- **Fixed daemon startup race condition causing "running (PID None)" status** (#216)
-  - When daemon startup timed out (>20s), the process was left running without a PID file
-  - This caused `ember daemon status` to show "running (PID None)"
-  - Now properly terminates unresponsive daemon processes before cleaning up PID file
-  - Prevents orphan daemon processes from causing confusing status reports
-
 ### Added
+- **MiniLM lightweight embedding adapter for resource-constrained systems** (#221)
+  - New `MiniLMEmbedder` adapter using `sentence-transformers/all-MiniLM-L6-v2` (22M params, 384 dims)
+  - Uses only ~100MB RAM vs ~1.6GB for Jina - ideal for Raspberry Pi, CI, older laptops
+  - ~5x faster inference than larger models
+  - Can be selected via config: `model = "minilm"` in `.ember/config.toml`
+  - Works in direct mode (`mode = "direct"`) - daemon mode support coming in #223
+
 - **Unified sync behavior with visible progress across all commands** (#209)
   - Added `ensure_synced()` helper function as single entry point for sync-before-run
   - `ember search` now shows "Syncing index..." message when auto-syncing (previously silent)
@@ -53,6 +41,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Improves developer experience by reducing visual noise when locating symbols
 
 ### Fixed
+- **Suppressed HuggingFace tokenizer fork warning during `ember search`** (#215)
+  - Set `TOKENIZERS_PARALLELISM=false` before loading the embedding model
+  - Also set the variable when spawning the daemon subprocess for belt-and-suspenders safety
+  - Users can override by explicitly setting `TOKENIZERS_PARALLELISM=true` in their environment
+  - Eliminates the distracting "parallelism has already been used" warning message
+
+- **Fixed daemon status showing "PID None" when PID file is missing** (#214)
+  - When daemon is running but PID file is missing/corrupted, status now recovers PID from daemon
+  - Daemon health check now returns server PID, allowing status recovery
+  - Status message now shows "PID unknown" instead of confusing "PID None" as fallback
+  - Added `get_daemon_pid()` helper function to query daemon PID via health check
+
+- **Fixed daemon startup race condition causing "running (PID None)" status** (#216)
+  - When daemon startup timed out (>20s), the process was left running without a PID file
+  - This caused `ember daemon status` to show "running (PID None)"
+  - Now properly terminates unresponsive daemon processes before cleaning up PID file
+  - Prevents orphan daemon processes from causing confusing status reports
+
 - **Error messages in interactive search TUI now wrap instead of truncating** (#206)
   - Long error messages (e.g., "Search error: SQLite objects created in a thread...") were being cut off at terminal width
   - Error messages now display in a dedicated window with `wrap_lines=True`
