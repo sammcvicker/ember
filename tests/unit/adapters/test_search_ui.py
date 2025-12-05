@@ -315,10 +315,10 @@ class TestInteractiveSearchSession:
 class TestInteractiveSearchUIErrorHandling:
     """Tests for error handling in the interactive search UI."""
 
-    def test_get_results_text_shows_error_message(
+    def test_get_error_text_returns_formatted_error(
         self, mock_config: EmberConfig
     ) -> None:
-        """Test that _get_results_text displays error message when one exists."""
+        """Test that _get_error_text returns formatted error message."""
         def mock_search_fn(query: Query) -> list[SearchResult]:
             return []
 
@@ -331,14 +331,58 @@ class TestInteractiveSearchUIErrorHandling:
         # Set an error on the session
         ui.session.set_error("Search error: daemon connection failed")
 
-        # Get results text
-        results_text = ui._get_results_text()
+        # Get error text from dedicated method
+        error_text = ui._get_error_text()
 
         # Should show error message with error style
-        assert len(results_text) == 1
-        style, text = results_text[0]
+        assert len(error_text) == 1
+        style, text = error_text[0]
         assert style == "class:error"
         assert "Search error: daemon connection failed" in text
+
+    def test_get_error_text_returns_empty_when_no_error(
+        self, mock_config: EmberConfig
+    ) -> None:
+        """Test that _get_error_text returns empty when no error exists."""
+        def mock_search_fn(query: Query) -> list[SearchResult]:
+            return []
+
+        ui = InteractiveSearchUI(
+            search_fn=mock_search_fn,
+            config=mock_config,
+            initial_query="test query",
+        )
+
+        # No error set
+        error_text = ui._get_error_text()
+
+        # Should return empty
+        assert error_text == [("", "")]
+
+    def test_get_results_text_does_not_show_error_message(
+        self, mock_config: EmberConfig
+    ) -> None:
+        """Test that _get_results_text does not display error (handled separately)."""
+        def mock_search_fn(query: Query) -> list[SearchResult]:
+            return []
+
+        ui = InteractiveSearchUI(
+            search_fn=mock_search_fn,
+            config=mock_config,
+            initial_query="test query",
+        )
+
+        # Set an error on the session
+        ui.session.set_error("Search error: daemon connection failed")
+
+        # Get results text - should not include error (handled by _get_error_text)
+        results_text = ui._get_results_text()
+
+        # Should show empty or no results message, not the error
+        assert len(results_text) == 1
+        style, text = results_text[0]
+        # Error messages are now shown in a separate window
+        assert "Search error" not in text
 
     def test_get_results_text_shows_no_results_when_no_error(
         self, mock_config: EmberConfig
@@ -365,10 +409,10 @@ class TestInteractiveSearchUIErrorHandling:
         assert style == ""
         assert "No results found" in text
 
-    def test_error_message_takes_priority_over_empty_results(
+    def test_error_message_in_separate_window(
         self, mock_config: EmberConfig
     ) -> None:
-        """Test that error message is shown instead of 'No results found'."""
+        """Test that error message is shown in error window, not results window."""
         def mock_search_fn(query: Query) -> list[SearchResult]:
             return []
 
@@ -381,11 +425,15 @@ class TestInteractiveSearchUIErrorHandling:
         # Set error (which clears results)
         ui.session.set_error("Database error")
 
-        # Get results text
-        results_text = ui._get_results_text()
+        # Error is in error window, not results window
+        error_text = ui._get_error_text()
+        assert len(error_text) == 1
+        style, text = error_text[0]
+        assert "Database error" in text
+        assert style == "class:error"
 
-        # Should show error, not "No results found"
+        # Results window should be empty when error exists
+        results_text = ui._get_results_text()
         assert len(results_text) == 1
         style, text = results_text[0]
-        assert "Database error" in text
         assert "No results found" not in text
