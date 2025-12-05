@@ -473,6 +473,8 @@ class TestDaemonLifecycle:
             patch("subprocess.Popen", return_value=mock_process),
             patch.object(lifecycle, "is_running", return_value=False),
             patch.object(lifecycle, "is_process_alive") as mock_alive,
+            # Mock time.sleep to skip actual waits (avoids 20s timeout delay)
+            patch("ember.adapters.daemon.lifecycle.time.sleep"),
         ):
             # Process dies during ready-wait
             mock_alive.return_value = False
