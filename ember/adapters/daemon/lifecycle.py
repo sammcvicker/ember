@@ -230,14 +230,36 @@ class DaemonLifecycle:
         Raises:
             RuntimeError: With appropriate message based on process state
         """
-        self._cleanup_failed_startup()
         if self.is_process_alive(process.pid):
+            # Process is alive but not responding - terminate it to avoid orphan
+            # This prevents the race condition where:
+            # 1. We delete the PID file
+            # 2. Process eventually becomes ready
+            # 3. Status shows "running (PID None)" because no PID file
+            logger.warning(
+                f"Daemon process {process.pid} not responding after 20s, terminating..."
+            )
+            try:
+                os.kill(process.pid, signal.SIGTERM)
+                # Give process brief time to exit gracefully
+                for _ in range(10):  # Up to 1 second
+                    time.sleep(0.1)
+                    if not self.is_process_alive(process.pid):
+                        break
+                else:
+                    # Force kill if still alive
+                    os.kill(process.pid, signal.SIGKILL)
+            except OSError:
+                pass  # Process already dead
+
+            self._cleanup_failed_startup()
             raise RuntimeError(
                 "Daemon process started but not responding to health checks after 20s. "
-                "This may indicate model loading issues. Check daemon logs at: "
-                f"{self.log_file}"
+                "Process was terminated. This may indicate model loading issues. "
+                f"Check daemon logs at: {self.log_file}"
             )
         else:
+            self._cleanup_failed_startup()
             raise RuntimeError(
                 f"Daemon process {process.pid} exited unexpectedly during startup. "
                 f"Check daemon logs at: {self.log_file}"
