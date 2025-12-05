@@ -363,7 +363,7 @@ class InteractiveSearchUI:
 
         for idx, result in enumerate(self.session.current_results):
             is_selected = idx == self.session.selected_index
-            base_style = "class:selected " if is_selected else ""
+            ul = " underline" if is_selected else ""
 
             chunk = result.chunk
             path = str(chunk.path)
@@ -371,24 +371,21 @@ class InteractiveSearchUI:
 
             # Build styled segments for this result line
             # Leading indent
-            lines.append((base_style.strip(), "  "))
+            lines.append(("", "  "))
 
-            # Path (magenta)
-            lines.append((f"{base_style}class:path", path))
+            # Path (magenta bold)
+            lines.append((f"class:path{ul}", path))
 
-            # Colon separator
-            lines.append((f"{base_style}class:dimmed", ":"))
-
-            # Line range (dimmed)
-            lines.append((f"{base_style}class:dimmed", line_range))
+            # Colon and line range (dim, like ember cat line numbers)
+            lines.append((f"class:line-number{ul}", f":{line_range}"))
 
             # Symbol if present (red bold)
             if chunk.symbol:
-                lines.append((base_style.strip(), " "))
-                lines.append((f"{base_style}class:symbol", chunk.symbol))
+                lines.append(("", " "))
+                lines.append((f"class:symbol{ul}", chunk.symbol))
 
             # Newline at end
-            lines.append((base_style.strip(), "\n"))
+            lines.append(("", "\n"))
 
         return lines
 

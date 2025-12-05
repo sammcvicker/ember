@@ -504,10 +504,10 @@ class TestInteractiveSearchUIResultsListColorSeparation:
         ]
         assert len(path_segments) == 1, "Path should be styled with class:path"
 
-    def test_results_list_has_dimmed_line_range(
+    def test_results_list_has_line_number_styling(
         self, mock_config: EmberConfig, sample_search_result: SearchResult
     ) -> None:
-        """Test that line ranges have class:dimmed styling."""
+        """Test that line ranges have class:line-number styling (matches ember cat)."""
         def mock_search_fn(query: Query) -> list[SearchResult]:
             return [sample_search_result]
 
@@ -523,18 +523,18 @@ class TestInteractiveSearchUIResultsListColorSeparation:
 
         results_text = ui._get_results_text()
 
-        # Find the line range segment - should have class:dimmed styling
-        # Line range is "1-4" for this chunk
+        # Find the line range segment - should have class:line-number styling
+        # Line range is ":1-4" for this chunk
         line_range_segments = [
             (style, text) for style, text in results_text
-            if "dimmed" in style and "1-4" in text
+            if "line-number" in style and ":1-4" in text
         ]
-        assert len(line_range_segments) == 1, "Line range should be styled with class:dimmed"
+        assert len(line_range_segments) == 1, "Line range should be styled with class:line-number"
 
-    def test_results_list_selected_item_preserves_colors(
+    def test_results_list_selected_item_has_underline(
         self, mock_config: EmberConfig, sample_search_result: SearchResult
     ) -> None:
-        """Test that selected item combines selection styling with color styling."""
+        """Test that selected item has underline styling on colored segments."""
         def mock_search_fn(query: Query) -> list[SearchResult]:
             return [sample_search_result]
 
@@ -550,25 +550,24 @@ class TestInteractiveSearchUIResultsListColorSeparation:
 
         results_text = ui._get_results_text()
 
-        # Find the selected segments - should have class:selected combined with other styles
-        selected_segments = [
+        # Find the underlined segments - selected items should have underline
+        underlined_segments = [
             (style, text) for style, text in results_text
-            if "selected" in style
+            if "underline" in style
         ]
-        # All segments for the selected item should include 'selected'
-        assert len(selected_segments) > 0, "Selected item should have class:selected"
+        assert len(underlined_segments) > 0, "Selected item should have underline styling"
 
-        # Verify colored segments also have selection styling
-        selected_symbol = [
+        # Verify symbol has underline
+        underlined_symbol = [
             (style, text) for style, text in results_text
-            if "selected" in style and "symbol" in style and "calculate_sum" in text
+            if "underline" in style and "symbol" in style and "calculate_sum" in text
         ]
-        assert len(selected_symbol) == 1, "Selected symbol should have both class:selected and class:symbol"
+        assert len(underlined_symbol) == 1, "Selected symbol should have underline"
 
-    def test_results_list_unselected_item_no_selection_style(
+    def test_results_list_unselected_item_no_underline(
         self, mock_config: EmberConfig, sample_search_result: SearchResult
     ) -> None:
-        """Test that unselected items don't have selection styling."""
+        """Test that unselected items don't have underline styling."""
         # Create a second result
         content2 = "def another_func(): pass"
         chunk2 = Chunk(
@@ -609,9 +608,9 @@ class TestInteractiveSearchUIResultsListColorSeparation:
         ]
         assert len(unselected_path_segments) == 1
         style, _ = unselected_path_segments[0]
-        # Should have path styling but NOT selected
+        # Should have path styling but NOT underline
         assert "path" in style, "Unselected path should have class:path"
-        assert "selected" not in style, "Unselected item should not have class:selected"
+        assert "underline" not in style, "Unselected item should not have underline"
 
     def test_results_list_handles_result_without_symbol(
         self, mock_config: EmberConfig
