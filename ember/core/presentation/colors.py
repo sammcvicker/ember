@@ -137,7 +137,7 @@ class EmberColors:
         return {
             "separator": "fg:ansibrightblack",
             "dimmed": "fg:ansibrightblack",
-            "line-number": "fg:ansiwhite",  # Dim white, matches ember cat
+            "line-number": "fg:ansibrightblack",  # Gray, matches preview line numbers
             "path": "fg:ansimagenta bold",
             "symbol": "fg:ansired bold",
             "status": "bold",
