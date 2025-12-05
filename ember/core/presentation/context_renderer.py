@@ -93,7 +93,7 @@ class ContextRenderer:
     ) -> None:
         """Render context without syntax highlighting.
 
-        Uses compact ripgrep-style format with dimmed context lines.
+        Uses compact format with symbol-only highlighting.
 
         Args:
             file_lines: All lines from the file.
@@ -104,18 +104,19 @@ class ContextRenderer:
             symbol: Symbol to highlight (if any).
         """
         rank_str = EmberColors.click_rank(f"[{rank}]")
+        # Calculate gutter width to align subsequent lines with first line content
+        # Format: "[N] " where N is the rank number
+        gutter = " " * (len(f"[{rank}]") + 1)
 
         for line_num in range(context_start, context_end + 1):
             line_content = file_lines[line_num - 1]  # Convert to 0-based
+            line_num_str = EmberColors.click_line_number(str(line_num))
+            # Apply symbol highlighting to all lines
+            highlighted_content = highlight_symbol(line_content, symbol)
 
             if line_num == match_line:
                 # Match line: show rank and line number with colon
-                line_num_str = EmberColors.click_line_number(str(line_num))
-                # Apply symbol highlighting if present
-                highlighted_content = highlight_symbol(line_content, symbol)
                 click.echo(f"{rank_str} {line_num_str}:{highlighted_content}")
             else:
-                # Context line: dimmed, with line number and colon, indented
-                line_num_str = EmberColors.click_line_number(str(line_num))
-                dimmed_content = EmberColors.click_dimmed(line_content)
-                click.echo(f"    {line_num_str}:{dimmed_content}")
+                # Context line: indented to align with match line content
+                click.echo(f"{gutter}{line_num_str}:{highlighted_content}")

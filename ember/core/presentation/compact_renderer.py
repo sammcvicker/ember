@@ -58,7 +58,8 @@ class CompactPreviewRenderer:
             settings: Display settings dict (unused, kept for API compatibility).
             repo_root: Repository root path (unused, kept for API compatibility).
         """
-        rank = EmberColors.click_rank(f"[{result.rank}]")
+        rank_text = f"[{result.rank}]"
+        rank = EmberColors.click_rank(rank_text)
         line_num_str = EmberColors.click_line_number(f"{result.chunk.start_line}")
 
         # Always use plain preview with symbol-only highlighting
@@ -68,6 +69,7 @@ class CompactPreviewRenderer:
             result.chunk.symbol,
             rank,
             line_num_str,
+            len(rank_text),
         )
 
     @staticmethod
@@ -96,17 +98,22 @@ class CompactPreviewRenderer:
         symbol: str | None,
         rank: str,
         line_num_str: str,
+        rank_width: int,
     ) -> None:
         """Render preview without syntax highlighting.
 
         Args:
             content: Chunk content to display.
             symbol: Symbol to highlight (if any).
-            rank: Formatted rank string.
+            rank: Formatted rank string (with styling).
             line_num_str: Formatted line number string.
+            rank_width: Width of rank string for gutter alignment.
         """
         content_lines = content.split("\n")
         preview_lines = content_lines[: self.MAX_PREVIEW_LINES]
+        # Calculate gutter width to align subsequent lines with first line content
+        # Format: "[N] " where N is the rank number
+        gutter = " " * (rank_width + 1)
 
         if preview_lines:
             first_line = highlight_symbol(preview_lines[0], symbol)
@@ -114,4 +121,4 @@ class CompactPreviewRenderer:
 
             for line in preview_lines[1:]:
                 highlighted_line = highlight_symbol(line, symbol)
-                click.echo(f"    {highlighted_line}")
+                click.echo(f"{gutter}{highlighted_line}")
