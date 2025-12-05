@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Unified sync behavior with visible progress across all commands** (#209)
+  - Added `ensure_synced()` helper function as single entry point for sync-before-run
+  - `ember search` now shows "Syncing index..." message when auto-syncing (previously silent)
+  - `ember find` continues to show progress bar in human mode, silent in JSON mode
+  - New commands can easily add sync-before-run by calling `ensure_synced()`
+  - Returns `SyncResult` with status information for commands that need it
+  - Deprecated `check_and_auto_sync()` in favor of the new unified helper
+
 ### Changed
 - **Added color separation to `ember search` results list for faster scanning** (#208)
   - File paths are magenta bold (consistent with `ember find`)
