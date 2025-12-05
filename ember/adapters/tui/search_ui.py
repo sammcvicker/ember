@@ -115,6 +115,14 @@ class InteractiveSearchUI:
             wrap_lines=False,
         )
 
+        error_window = Window(
+            content=FormattedTextControl(
+                self._get_error_text,
+                focusable=False,
+            ),
+            wrap_lines=True,
+        )
+
         preview_window = Window(
             content=FormattedTextControl(
                 self._get_preview_text,
@@ -136,6 +144,10 @@ class InteractiveSearchUI:
         def preview_visible() -> bool:
             return self.session.preview_visible
 
+        @Condition
+        def error_visible() -> bool:
+            return self.session.error_message is not None
+
         main_container = HSplit([
             Window(height=Dimension.exact(1), char="─", style="class:separator"),
             VSplit([
@@ -143,6 +155,10 @@ class InteractiveSearchUI:
                 query_window,
             ]),
             Window(height=Dimension.exact(1), char="─", style="class:separator"),
+            ConditionalContainer(
+                error_window,
+                filter=error_visible,
+            ),
             results_window,
             ConditionalContainer(
                 Window(
@@ -308,6 +324,16 @@ class InteractiveSearchUI:
 
         self.current_search_task = asyncio.create_task(search_task())
 
+    def _get_error_text(self) -> list[tuple[str, str]]:
+        """Get formatted error text for display in the error window.
+
+        Returns:
+            List of (style, text) tuples for formatted text.
+        """
+        if self.session.error_message:
+            return [("class:error", self.session.error_message)]
+        return [("", "")]
+
     def _get_results_text(self) -> list[tuple[str, str]]:
         """Get formatted results text.
 
@@ -320,9 +346,9 @@ class InteractiveSearchUI:
         if len(self.session.query_text) < self.min_query_length:
             return [("", f"Type {self.min_query_length - len(self.session.query_text)} more character(s)...")]
 
-        # Show error message if one exists
+        # Error messages are now shown in a separate wrapping window
         if self.session.error_message:
-            return [("class:error", self.session.error_message)]
+            return [("", "")]
 
         if not self.session.current_results:
             return [("", "No results found")]

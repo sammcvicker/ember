@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Error messages in interactive search TUI now wrap instead of truncating** (#206)
+  - Long error messages (e.g., "Search error: SQLite objects created in a thread...") were being cut off at terminal width
+  - Error messages now display in a dedicated window with `wrap_lines=True`
+  - Wrapping respects terminal width while maintaining red error styling
+
 - **Fixed SQLite thread safety error in interactive search** (#204)
   - Interactive search (`ember search`) was failing with "SQLite objects created in a thread can only be used in that same thread"
   - Added `check_same_thread=False` to SQLite connections in FTS, vector search, and chunk repository adapters
