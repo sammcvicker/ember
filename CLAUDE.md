@@ -23,18 +23,26 @@
 - Clean architecture with ports/adapters ✅
 - 82% test coverage ✅
 
-**Known Issues:** None! All tech debt resolved.
+**Known Issues:**
+- #216 - Daemon fails to start but status shows running (race condition suspected)
+- #214 - Daemon status shows "PID None" when running
+- #215 - HuggingFace tokenizer fork warning during search
 
-**Current Focus:** Feature development or user-requested improvements
+**Current Focus:** Daemon reliability fixes
 
 ---
 
 ## 🎯 NEXT STEPS
 
-No open issues! Options:
+**Priority: Fix daemon issues (#214, #215, #216)**
+
+These three issues are related to daemon startup reliability:
+1. **#216** - Root cause investigation needed - daemon reports failure but is actually running
+2. **#214** - Status shows "PID None" - need daemon to report its own PID
+3. **#215** - Tokenizer fork warning - set TOKENIZERS_PARALLELISM=false before fork
+
+After daemon fixes:
 1. **Release v1.2.0** - Bundle recent improvements into a release
-2. **New features** - Wait for user requests or feature ideas
-3. **Performance** - Further optimization opportunities
 
 **Recently Completed (v1.2.0 work):**
 - Unified sync-before-run behavior with visible progress (#209)
