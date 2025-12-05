@@ -589,7 +589,7 @@ class TestInteractiveSearchUIResultsListColorSeparation:
         # Verify colored segments also have selection styling
         selected_symbol = [
             (style, text) for style, text in results_text
-            if "selected" in style and "symbol" in style
+            if "selected" in style and "symbol" in style and "calculate_sum" in text
         ]
         assert len(selected_symbol) == 1, "Selected symbol should have both class:selected and class:symbol"
 

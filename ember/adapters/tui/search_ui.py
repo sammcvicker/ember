@@ -384,9 +384,8 @@ class InteractiveSearchUI:
 
             # Symbol if present (red bold)
             if chunk.symbol:
-                lines.append((f"{base_style}class:dimmed", " ("))
+                lines.append((base_style.strip(), " "))
                 lines.append((f"{base_style}class:symbol", chunk.symbol))
-                lines.append((f"{base_style}class:dimmed", ")"))
 
             # Score if enabled (dim)
             if self.show_scores and result.score:

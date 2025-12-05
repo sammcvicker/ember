@@ -136,9 +136,9 @@ class EmberColors:
         """
         return {
             "separator": "fg:ansibrightblack",
-            "selected": "reverse",  # Swap fg/bg - works with any theme
+            "selected": "underline",
             "dimmed": "fg:ansibrightblack",
-            "score": "fg:ansibrightblack",
+            "score": "fg:ansigreen",
             "path": "fg:ansimagenta bold",
             "symbol": "fg:ansired bold",
             "status": "bold",
