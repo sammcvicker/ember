@@ -26,7 +26,7 @@ from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
 from prompt_toolkit.layout.layout import Layout
 from prompt_toolkit.styles import Style
 
-from ember.core.presentation.colors import EmberColors, render_syntax_highlighted
+from ember.core.presentation.colors import AnsiCodes, EmberColors, render_syntax_highlighted
 from ember.core.retrieval.interactive import InteractiveSearchSession
 from ember.domain.config import EmberConfig
 from ember.domain.entities import Query, SearchResult
@@ -376,8 +376,9 @@ class InteractiveSearchUI:
             # Path (magenta bold)
             lines.append((f"class:path{ul}", path))
 
-            # Colon and line range (dim, like ember cat line numbers)
-            lines.append((f"class:line-number{ul}", f":{line_range}"))
+            # Colon and line range (dim, using same ANSI codes as preview/ember cat)
+            dim_line_range = f"{AnsiCodes.DIM}:{line_range}{AnsiCodes.RESET}"
+            lines.append((ul.strip(), dim_line_range))
 
             # Symbol if present (red bold)
             if chunk.symbol:
