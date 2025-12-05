@@ -175,12 +175,20 @@ class DaemonLifecycle:
             The spawned process
         """
         logger.info("Starting daemon in background...")
+
+        # Set TOKENIZERS_PARALLELISM=false to prevent HuggingFace tokenizer
+        # fork warning. The warning occurs because tokenizers initializes
+        # thread pools that don't survive fork() properly.
+        env = os.environ.copy()
+        env.setdefault("TOKENIZERS_PARALLELISM", "false")
+
         return subprocess.Popen(
             cmd,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,  # Capture stderr to report startup failures
             stdin=subprocess.DEVNULL,
             start_new_session=True,  # Detach from parent
+            env=env,
         )
 
     def _write_pid_file(self, process: subprocess.Popen) -> None:

@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Suppressed HuggingFace tokenizer fork warning during `ember search`** (#215)
+  - Set `TOKENIZERS_PARALLELISM=false` before loading the embedding model
+  - Also set the variable when spawning the daemon subprocess for belt-and-suspenders safety
+  - Users can override by explicitly setting `TOKENIZERS_PARALLELISM=true` in their environment
+  - Eliminates the distracting "parallelism has already been used" warning message
+
 - **Fixed daemon status showing "PID None" when PID file is missing** (#214)
   - When daemon is running but PID file is missing/corrupted, status now recovers PID from daemon
   - Daemon health check now returns server PID, allowing status recovery
