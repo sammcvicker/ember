@@ -300,9 +300,10 @@ class InteractiveSearchUI:
 
             except asyncio.CancelledError:
                 pass
-            except Exception:
-                # Handle search errors
-                self.session.update_results([], 0.0)
+            except Exception as e:
+                # Extract meaningful error message
+                error_msg = str(e) if str(e) else type(e).__name__
+                self.session.set_error(f"Search error: {error_msg}")
                 self.app.invalidate()
 
         self.current_search_task = asyncio.create_task(search_task())
@@ -318,6 +319,10 @@ class InteractiveSearchUI:
 
         if len(self.session.query_text) < self.min_query_length:
             return [("", f"Type {self.min_query_length - len(self.session.query_text)} more character(s)...")]
+
+        # Show error message if one exists
+        if self.session.error_message:
+            return [("class:error", self.session.error_message)]
 
         if not self.session.current_results:
             return [("", "No results found")]

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Interactive search now displays error messages instead of silently showing "No results found"** (#202)
+  - Added `error_message` field to `InteractiveSearchSession` to track search errors
+  - Added `set_error()` method to capture error state and clear stale results
+  - Search exceptions now display meaningful error messages in red (e.g., "Search error: daemon connection failed")
+  - Added "error" style to prompt_toolkit color palette
+  - Added 6 new tests for error handling behavior
+
 ### Changed
 - **Refactored ResultPresenter into focused components (SRP compliance)** (#182)
   - Extracted `JsonResultFormatter` for JSON serialization and cache formatting
