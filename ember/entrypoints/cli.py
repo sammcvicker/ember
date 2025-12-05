@@ -120,6 +120,10 @@ def _create_embedder(config, show_progress: bool = True):
             from ember.adapters.local_models.minilm_embedder import MiniLMEmbedder
 
             return MiniLMEmbedder()
+        elif model_name in ("bge-small", "bge-small-en-v1.5"):
+            from ember.adapters.local_models.bge_embedder import BGESmallEmbedder
+
+            return BGESmallEmbedder()
         else:
             # Default to Jina code embedder for any other value
             # including "local-default-code-embed", "jina-code-v2", etc.

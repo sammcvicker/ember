@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **BGE-small retrieval-optimized embedding adapter** (#222)
+  - New `BGESmallEmbedder` adapter using `BAAI/bge-small-en-v1.5` (33M params, 384 dims)
+  - Uses only ~130MB RAM - good balance between accuracy and resource usage
+  - Optimized for retrieval tasks, strong MTEB leaderboard performance
+  - 512 token context length (vs 256 for MiniLM)
+  - Can be selected via config: `model = "bge-small"` in `.ember/config.toml`
+  - Works in direct mode (`mode = "direct"`) - daemon mode support coming in #223
+
 - **MiniLM lightweight embedding adapter for resource-constrained systems** (#221)
   - New `MiniLMEmbedder` adapter using `sentence-transformers/all-MiniLM-L6-v2` (22M params, 384 dims)
   - Uses only ~100MB RAM vs ~1.6GB for Jina - ideal for Raspberry Pi, CI, older laptops
