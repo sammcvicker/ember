@@ -137,7 +137,6 @@ class EmberColors:
         return {
             "separator": "fg:ansibrightblack",
             "dimmed": "fg:ansibrightblack",
-            "line-number": "",  # Uses terminal default, we add 'dim' inline
             "path": "fg:ansimagenta bold",
             "symbol": "fg:ansired bold",
             "status": "bold",

@@ -504,12 +504,10 @@ class TestInteractiveSearchUIResultsListColorSeparation:
         ]
         assert len(path_segments) == 1, "Path should be styled with class:path"
 
-    def test_results_list_has_dim_line_numbers(
+    def test_results_list_has_dimmed_line_numbers(
         self, mock_config: EmberConfig, sample_search_result: SearchResult
     ) -> None:
-        """Test that line ranges use ANSI dim codes (matches ember cat/preview)."""
-        from ember.core.presentation.colors import AnsiCodes
-
+        """Test that line ranges use class:dimmed styling."""
         def mock_search_fn(query: Query) -> list[SearchResult]:
             return [sample_search_result]
 
@@ -525,14 +523,12 @@ class TestInteractiveSearchUIResultsListColorSeparation:
 
         results_text = ui._get_results_text()
 
-        # Find the line range segment - should contain ANSI dim codes
+        # Find the line range segment - should have class:dimmed styling
         line_range_segments = [
             (style, text) for style, text in results_text
-            if ":1-4" in text
+            if ":1-4" in text and "dimmed" in style
         ]
-        assert len(line_range_segments) == 1, "Line range should be present"
-        _, text = line_range_segments[0]
-        assert AnsiCodes.DIM in text, "Line range should use ANSI dim code"
+        assert len(line_range_segments) == 1, "Line range should be styled with class:dimmed"
 
     def test_results_list_selected_item_has_underline(
         self, mock_config: EmberConfig, sample_search_result: SearchResult
