@@ -104,21 +104,24 @@ def save_config(config: EmberConfig, path: Path) -> None:
         tomli_w.dump(data, f)
 
 
-def create_default_config_file(path: Path) -> None:
+def create_default_config_file(path: Path, model: str = "local-default-code-embed") -> None:
     """Create a default config.toml file with sensible defaults and comments.
 
     Args:
         path: Destination path for config.toml
+        model: Embedding model preset to use (default: local-default-code-embed)
     """
     # We use a template string to preserve comments and formatting
-    template = """\
+    template = f"""\
 # Ember Configuration
 # Created by: ember init
 # Documentation: https://github.com/kamiwaza-ai/ember
 
 [index]
 # Embedding model to use for vectorization
-model = "local-default-code-embed"
+# Options: jina-code-v2 (best quality, ~1.6GB), bge-small (balanced, ~130MB),
+#          minilm (lightweight, ~100MB), auto (detect hardware)
+model = "{model}"
 
 # Chunking strategy: "symbol" (tree-sitter) or "lines" (sliding window)
 chunk = "symbol"

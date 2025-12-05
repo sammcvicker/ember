@@ -69,6 +69,13 @@ class TestResolveModelName:
         error_msg = str(exc_info.value)
         assert "jina-code-v2" in error_msg or "minilm" in error_msg
 
+    def test_resolve_error_shows_auto_option(self):
+        """Test that error message includes 'auto' as a valid option."""
+        with pytest.raises(ValueError) as exc_info:
+            resolve_model_name("invalid")
+        error_msg = str(exc_info.value)
+        assert "auto" in error_msg
+
 
 class TestCreateEmbedder:
     """Tests for create_embedder function."""

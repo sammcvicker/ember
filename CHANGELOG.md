@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Auto-detect hardware and recommend embedding model during init** (#224)
+  - `ember init` now detects available system RAM and recommends an appropriate model
+  - Shows resource detection output: available RAM, recommended model, and reasoning
+  - Prompts user if recommended model differs from default (jina-code-v2)
+  - New `--model` / `-m` flag to explicitly select model (jina-code-v2, bge-small, minilm, auto)
+  - New `--yes` / `-y` flag to accept recommended model without prompting
+  - `model = "auto"` in config now works: auto-selects based on system resources
+  - New `psutil` dependency for reliable hardware detection
+  - Selection thresholds: >=4GB → jina-code-v2, >=1GB → bge-small, <1GB → minilm
+
 - **Embedding model selection logic with daemon support** (#223)
   - New model registry (`ember/adapters/local_models/registry.py`) centralizes model selection
   - Supports user-friendly presets (`jina-code-v2`, `minilm`, `bge-small`) and full HuggingFace IDs

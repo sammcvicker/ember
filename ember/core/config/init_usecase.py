@@ -19,10 +19,12 @@ class InitRequest:
     Attributes:
         repo_root: Absolute path to repository root (where .ember/ will be created)
         force: If True, reinitialize even if .ember/ already exists
+        model: Embedding model preset to use (default: local-default-code-embed)
     """
 
     repo_root: Path
     force: bool = False
+    model: str = "local-default-code-embed"
 
 
 @dataclass
@@ -95,7 +97,7 @@ class InitUseCase:
         ember_dir.mkdir(parents=True, exist_ok=True)
 
         # Create config.toml with defaults
-        create_default_config_file(config_path)
+        create_default_config_file(config_path, model=request.model)
 
         # Initialize database with schema
         self._db_initializer.init_database(db_path)
