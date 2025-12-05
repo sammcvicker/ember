@@ -11,6 +11,9 @@ from unittest.mock import patch
 import pytest
 
 from ember.adapters.fs.local import LocalFileSystem
+from ember.core.presentation.compact_renderer import CompactPreviewRenderer
+from ember.core.presentation.context_renderer import ContextRenderer
+from ember.core.presentation.json_formatter import JsonResultFormatter
 from ember.core.presentation.result_presenter import ResultPresenter
 from ember.domain.config import DisplayConfig, EmberConfig
 
@@ -78,6 +81,24 @@ def presenter():
 def mock_presenter():
     """Create a ResultPresenter with a mock FileSystem."""
     return ResultPresenter(MockFileSystem())
+
+
+@pytest.fixture
+def compact_renderer():
+    """Create a CompactPreviewRenderer with LocalFileSystem."""
+    return CompactPreviewRenderer(LocalFileSystem())
+
+
+@pytest.fixture
+def context_renderer():
+    """Create a ContextRenderer with LocalFileSystem."""
+    return ContextRenderer(LocalFileSystem())
+
+
+@pytest.fixture
+def json_formatter():
+    """Create a JsonResultFormatter with LocalFileSystem."""
+    return JsonResultFormatter(LocalFileSystem())
 
 
 class TestDisplaySettingsExtraction:
@@ -187,7 +208,7 @@ class TestPreviewRendering:
         result = MockSearchResult()
         settings = {"use_highlighting": False, "theme": "ansi"}
 
-        with patch("ember.core.presentation.result_presenter.click") as mock_click:
+        with patch("ember.core.presentation.compact_renderer.click") as mock_click:
             mock_presenter._render_compact_preview(result, settings, None)
 
             # Verify click.echo was called
@@ -199,7 +220,7 @@ class TestPreviewRendering:
         result = MockSearchResult(chunk=chunk)
         settings = {"use_highlighting": False, "theme": "ansi"}
 
-        with patch("ember.core.presentation.result_presenter.click") as mock_click:
+        with patch("ember.core.presentation.compact_renderer.click") as mock_click:
             mock_presenter._render_compact_preview(result, settings, None)
 
             # Should have 3 calls: first line with rank, 2 additional preview lines
@@ -218,7 +239,7 @@ class TestContextRendering:
         result = MockSearchResult(chunk=chunk)
         settings = {"use_highlighting": False, "theme": "ansi"}
 
-        with patch("ember.core.presentation.result_presenter.click") as mock_click:
+        with patch("ember.core.presentation.context_renderer.click") as mock_click:
             presenter._render_with_context(result, 2, tmp_path, settings)
 
             # Should show: 2 lines before (8, 9), match line (10), 2 lines after (11, 12)
@@ -240,11 +261,15 @@ class TestFormatHumanOutput:
         result1 = MockSearchResult(chunk=MockChunk(path=Path("a.py"), start_line=1), rank=1)
         result2 = MockSearchResult(chunk=MockChunk(path=Path("a.py"), start_line=10), rank=2)
 
-        with patch("ember.core.presentation.result_presenter.click") as mock_click:
+        with (
+            patch("ember.core.presentation.result_presenter.click") as presenter_click,
+            patch("ember.core.presentation.compact_renderer.click") as compact_click,
+        ):
             mock_presenter.format_human_output([result1, result2])
 
             # Should have called echo multiple times (file header + results)
-            assert mock_click.echo.call_count > 2
+            total_calls = presenter_click.echo.call_count + compact_click.echo.call_count
+            assert total_calls > 2
 
     def test_format_human_output_with_context(self, tmp_path, presenter):
         """Context flag shows surrounding lines."""
@@ -254,7 +279,10 @@ class TestFormatHumanOutput:
         chunk = MockChunk(path=Path("test.py"), start_line=3, end_line=3)
         result = MockSearchResult(chunk=chunk)
 
-        with patch("ember.core.presentation.result_presenter.click"):
+        with (
+            patch("ember.core.presentation.result_presenter.click"),
+            patch("ember.core.presentation.context_renderer.click"),
+        ):
             # Should not raise
             presenter.format_human_output([result], context=1, repo_root=tmp_path)
 
@@ -268,13 +296,18 @@ class TestFormatHumanOutput:
         result1 = MockSearchResult(chunk=chunk1, rank=1)
         result2 = MockSearchResult(chunk=chunk2, rank=2)
 
-        with patch("ember.core.presentation.result_presenter.click") as mock_click:
+        with (
+            patch("ember.core.presentation.result_presenter.click") as presenter_click,
+            patch("ember.core.presentation.context_renderer.click") as context_click,
+        ):
             presenter.format_human_output([result1, result2], context=1, repo_root=tmp_path)
 
             # Check that blank lines are added between results (echo called with empty string)
-            calls = [c[0][0] if c[0] else "" for c in mock_click.echo.call_args_list]
+            presenter_calls = [c[0][0] if c[0] else "" for c in presenter_click.echo.call_args_list]
+            context_calls = [c[0][0] if c[0] else "" for c in context_click.echo.call_args_list]
+            all_calls = presenter_calls + context_calls
             # At least one blank line should exist between the two results
-            assert "" in calls or mock_click.echo.call_count > 5
+            assert "" in all_calls or len(all_calls) > 5
 
 
 class TestSerializeForCache:
@@ -406,7 +439,7 @@ class TestRenderWithContextEdgeCases:
         result = MockSearchResult(chunk=chunk)
         settings = {"use_highlighting": False, "theme": "ansi"}
 
-        with patch("ember.core.presentation.result_presenter.click") as mock_click:
+        with patch("ember.core.presentation.context_renderer.click") as mock_click:
             presenter._render_with_context(result, 1, tmp_path, settings)
 
             # Should show warning message
@@ -423,8 +456,8 @@ class TestRenderWithContextEdgeCases:
         settings = {"use_highlighting": True, "theme": "ansi"}
 
         with (
-            patch("ember.core.presentation.result_presenter.click"),
-            patch("ember.core.presentation.result_presenter.render_syntax_highlighted") as mock_highlight,
+            patch("ember.core.presentation.context_renderer.click"),
+            patch("ember.core.presentation.context_renderer.render_syntax_highlighted") as mock_highlight,
         ):
             mock_highlight.return_value = "highlighted code"
             presenter._render_with_context(result, 1, tmp_path, settings)
@@ -446,8 +479,8 @@ class TestRenderCompactPreviewEdgeCases:
         settings = {"use_highlighting": True, "theme": "ansi"}
 
         with (
-            patch("ember.core.presentation.result_presenter.click"),
-            patch("ember.core.presentation.result_presenter.render_syntax_highlighted") as mock_highlight,
+            patch("ember.core.presentation.compact_renderer.click"),
+            patch("ember.core.presentation.compact_renderer.render_syntax_highlighted") as mock_highlight,
         ):
             mock_highlight.return_value = "line1\nline2\nline3"
             presenter._render_compact_preview(result, settings, tmp_path)
@@ -461,7 +494,7 @@ class TestRenderCompactPreviewEdgeCases:
         result = MockSearchResult(chunk=chunk)
         settings = {"use_highlighting": True, "theme": "ansi"}
 
-        with patch("ember.core.presentation.result_presenter.click") as mock_click:
+        with patch("ember.core.presentation.compact_renderer.click") as mock_click:
             # Should not raise, should fall back to chunk content
             presenter._render_compact_preview(result, settings, tmp_path)
             assert mock_click.echo.called
@@ -532,8 +565,8 @@ class TestRenderCompactPreviewLineExtraction:
         settings = {"use_highlighting": True, "theme": "ansi"}
 
         with (
-            patch("ember.core.presentation.result_presenter.click") as mock_click,
-            patch("ember.core.presentation.result_presenter.render_syntax_highlighted") as mock_highlight,
+            patch("ember.core.presentation.compact_renderer.click"),
+            patch("ember.core.presentation.compact_renderer.render_syntax_highlighted") as mock_highlight,
         ):
             mock_highlight.return_value = "line3\nline4\nline5"
             presenter._render_compact_preview(result, settings, tmp_path)
@@ -552,8 +585,8 @@ class TestRenderCompactPreviewLineExtraction:
         settings = {"use_highlighting": True, "theme": "ansi"}
 
         with (
-            patch("ember.core.presentation.result_presenter.click"),
-            patch("ember.core.presentation.result_presenter.render_syntax_highlighted") as mock_highlight,
+            patch("ember.core.presentation.compact_renderer.click"),
+            patch("ember.core.presentation.compact_renderer.render_syntax_highlighted") as mock_highlight,
         ):
             mock_highlight.return_value = "line1\nline2\nline3"
             presenter._render_compact_preview(result, settings, tmp_path)
@@ -569,8 +602,8 @@ class TestRenderCompactPreviewLineExtraction:
         settings = {"use_highlighting": True, "theme": "ansi"}
 
         with (
-            patch("ember.core.presentation.result_presenter.click"),
-            patch("ember.core.presentation.result_presenter.render_syntax_highlighted") as mock_highlight,
+            patch("ember.core.presentation.compact_renderer.click"),
+            patch("ember.core.presentation.compact_renderer.render_syntax_highlighted") as mock_highlight,
         ):
             mock_highlight.return_value = "line3"
             presenter._render_compact_preview(result, settings, tmp_path)
@@ -586,8 +619,8 @@ class TestRenderCompactPreviewLineExtraction:
         settings = {"use_highlighting": True, "theme": "ansi"}
 
         with (
-            patch("ember.core.presentation.result_presenter.click"),
-            patch("ember.core.presentation.result_presenter.render_syntax_highlighted") as mock_highlight,
+            patch("ember.core.presentation.compact_renderer.click"),
+            patch("ember.core.presentation.compact_renderer.render_syntax_highlighted") as mock_highlight,
         ):
             # Should only include first 3 lines
             mock_highlight.return_value = "line1\nline2\nline3"
@@ -608,7 +641,7 @@ class TestRenderCompactPreviewLineExtraction:
         result = MockSearchResult(chunk=chunk)
         settings = {"use_highlighting": True, "theme": "ansi"}
 
-        with patch("ember.core.presentation.result_presenter.click") as mock_click:
+        with patch("ember.core.presentation.compact_renderer.click") as mock_click:
             # Should fall back to chunk content
             presenter._render_compact_preview(result, settings, tmp_path)
             # Should still call echo (fallback path)
@@ -631,3 +664,97 @@ class TestFileReadingEdgeCases:
 
         lines = presenter._read_file_lines(test_file)
         assert lines is None
+
+
+# === New tests for extracted components ===
+
+
+class TestJsonResultFormatter:
+    """Tests for JsonResultFormatter component."""
+
+    def test_serialize_for_cache_static_method(self):
+        """Serialize works as static method."""
+        result = MockSearchResult()
+        output = JsonResultFormatter.serialize_for_cache("test query", [result])
+
+        assert output["query"] == "test query"
+        assert len(output["results"]) == 1
+
+    def test_format_output_without_context(self, json_formatter):
+        """Format output without context."""
+        result = MockSearchResult()
+        json_str = json_formatter.format_output([result])
+
+        import json
+        parsed = json.loads(json_str)
+
+        assert len(parsed) == 1
+        assert "context" not in parsed[0]
+
+    def test_get_context_method(self, tmp_path, json_formatter):
+        """Get context returns proper structure."""
+        test_file = tmp_path / "test.py"
+        test_file.write_text("line1\nline2\nline3\n")
+
+        chunk = MockChunk(path=Path("test.py"), start_line=2, end_line=2)
+        result = MockSearchResult(chunk=chunk)
+
+        context = json_formatter._get_context(result, 1, tmp_path)
+
+        assert context is not None
+        assert "before" in context
+        assert "chunk" in context
+        assert "after" in context
+
+
+class TestCompactPreviewRenderer:
+    """Tests for CompactPreviewRenderer component."""
+
+    def test_max_preview_lines_constant(self):
+        """MAX_PREVIEW_LINES is set to 3."""
+        assert CompactPreviewRenderer.MAX_PREVIEW_LINES == 3
+
+    def test_safe_get_lines_static_method(self):
+        """_safe_get_lines works as static method."""
+        lines = ["a", "b", "c", "d"]
+        result = CompactPreviewRenderer._safe_get_lines(lines, 2, 3)
+        assert result == ["b", "c"]
+
+    def test_render_without_repo_root(self, compact_renderer):
+        """Render falls back to content when no repo_root."""
+        result = MockSearchResult()
+        settings = {"use_highlighting": False, "theme": "ansi"}
+
+        with patch("ember.core.presentation.compact_renderer.click") as mock_click:
+            compact_renderer.render(result, settings, None)
+            assert mock_click.echo.called
+
+
+class TestContextRenderer:
+    """Tests for ContextRenderer component."""
+
+    def test_render_file_not_found(self, tmp_path, context_renderer):
+        """Render shows warning when file not found."""
+        chunk = MockChunk(path=Path("nonexistent.py"), start_line=1, end_line=1)
+        result = MockSearchResult(chunk=chunk)
+        settings = {"use_highlighting": False, "theme": "ansi"}
+
+        with patch("ember.core.presentation.context_renderer.click") as mock_click:
+            context_renderer.render(result, 1, tmp_path, settings)
+            # Check for warning call
+            calls = [str(c) for c in mock_click.echo.call_args_list]
+            assert any("Warning" in str(c) for c in calls)
+
+    def test_render_plain_context_format(self, tmp_path, context_renderer):
+        """Render without highlighting uses plain format."""
+        test_file = tmp_path / "test.py"
+        test_file.write_text("line1\nline2\nline3\nline4\nline5\n")
+
+        chunk = MockChunk(path=Path("test.py"), start_line=3, end_line=3)
+        result = MockSearchResult(chunk=chunk)
+        settings = {"use_highlighting": False, "theme": "ansi"}
+
+        with patch("ember.core.presentation.context_renderer.click") as mock_click:
+            context_renderer.render(result, 1, tmp_path, settings)
+            # Should have 3 lines (1 before, match, 1 after)
+            assert mock_click.echo.call_count == 3
