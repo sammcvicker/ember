@@ -522,3 +522,100 @@ end
     # Check for methods
     method_symbols = {c.symbol for c in chunks}
     assert "initialize" in method_symbols or "add" in method_symbols
+
+
+def test_tree_sitter_typescript_interfaces():
+    """Test tree-sitter extracts TypeScript interfaces."""
+    chunker = TreeSitterChunker()
+    content = """interface User {
+    name: string;
+    email: string;
+    readonly id: number;
+}
+
+interface Admin extends User {
+    role: string;
+    permissions: string[];
+}
+"""
+
+    chunks = chunker.chunk_file(content, Path("types.ts"), "ts")
+
+    # Should extract 2 interfaces
+    assert len(chunks) == 2
+
+    # Find User interface
+    user_chunks = [c for c in chunks if c.symbol == "User"]
+    assert len(user_chunks) == 1
+    assert "interface User" in user_chunks[0].content
+    assert user_chunks[0].start_line == 1
+    assert user_chunks[0].lang == "ts"
+
+    # Find Admin interface (extends User)
+    admin_chunks = [c for c in chunks if c.symbol == "Admin"]
+    assert len(admin_chunks) == 1
+    assert "interface Admin extends User" in admin_chunks[0].content
+
+
+def test_tree_sitter_typescript_generic_interfaces():
+    """Test tree-sitter extracts TypeScript generic interfaces."""
+    chunker = TreeSitterChunker()
+    content = """interface Container<T> {
+    value: T;
+    getValue(): T;
+}
+
+interface KeyValuePair<K, V> {
+    key: K;
+    value: V;
+}
+
+interface Response<T = any> {
+    data: T;
+    status: number;
+}
+"""
+
+    chunks = chunker.chunk_file(content, Path("generics.ts"), "ts")
+
+    # Should extract 3 generic interfaces
+    assert len(chunks) == 3
+
+    # Check symbols
+    symbols = {c.symbol for c in chunks}
+    assert "Container" in symbols
+    assert "KeyValuePair" in symbols
+    assert "Response" in symbols
+
+    # Verify generic syntax is preserved in content
+    container_chunk = [c for c in chunks if c.symbol == "Container"][0]
+    assert "interface Container<T>" in container_chunk.content
+
+
+def test_tree_sitter_typescript_mixed_definitions():
+    """Test tree-sitter extracts interfaces alongside classes and functions."""
+    chunker = TreeSitterChunker()
+    content = """interface UserData {
+    name: string;
+    age: number;
+}
+
+class User implements UserData {
+    constructor(public name: string, public age: number) {}
+}
+
+function createUser(data: UserData): User {
+    return new User(data.name, data.age);
+}
+"""
+
+    chunks = chunker.chunk_file(content, Path("user.ts"), "ts")
+
+    # Should extract interface, class, and function
+    assert len(chunks) >= 3
+
+    # Check all types are present
+    symbols = {c.symbol for c in chunks}
+    assert "UserData" in symbols  # interface
+    assert "User" in symbols  # class
+    assert "createUser" in symbols  # function
