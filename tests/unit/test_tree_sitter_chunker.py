@@ -1669,3 +1669,515 @@ function outsideNamespace() {
     assert "outsideNamespace" in symbols
     # Depending on query, namespace contents may or may not be extracted
     # The key is it doesn't crash
+
+
+# =============================================================================
+# Go Comprehensive Test Coverage (Issue #232)
+# =============================================================================
+
+
+def test_tree_sitter_go_struct_definitions():
+    """Test tree-sitter extracts Go struct definitions."""
+    chunker = TreeSitterChunker()
+    content = """package models
+
+type User struct {
+    ID    int
+    Name  string
+    Email string
+}
+
+type Address struct {
+    Street  string
+    City    string
+    Country string
+}
+
+type Empty struct{}
+"""
+
+    chunks = chunker.chunk_file(content, Path("models.go"), "go")
+
+    # Should extract 3 struct definitions
+    symbols = {c.symbol for c in chunks}
+    assert "User" in symbols
+    assert "Address" in symbols
+    assert "Empty" in symbols
+
+    # Verify content
+    user_chunk = [c for c in chunks if c.symbol == "User"][0]
+    assert "type User struct" in user_chunk.content
+    assert "ID    int" in user_chunk.content
+
+
+def test_tree_sitter_go_interface_definitions():
+    """Test tree-sitter extracts Go interface definitions."""
+    chunker = TreeSitterChunker()
+    content = """package io
+
+type Reader interface {
+    Read(p []byte) (n int, err error)
+}
+
+type Writer interface {
+    Write(p []byte) (n int, err error)
+}
+
+type ReadWriter interface {
+    Reader
+    Writer
+}
+
+type Stringer interface {
+    String() string
+}
+"""
+
+    chunks = chunker.chunk_file(content, Path("io.go"), "go")
+
+    # Should extract 4 interface definitions
+    symbols = {c.symbol for c in chunks}
+    assert "Reader" in symbols
+    assert "Writer" in symbols
+    assert "ReadWriter" in symbols
+    assert "Stringer" in symbols
+
+    # Verify content
+    reader_chunk = [c for c in chunks if c.symbol == "Reader"][0]
+    assert "type Reader interface" in reader_chunk.content
+    assert "Read(p []byte)" in reader_chunk.content
+
+
+def test_tree_sitter_go_methods_on_structs():
+    """Test tree-sitter extracts Go methods defined on structs."""
+    chunker = TreeSitterChunker()
+    content = """package models
+
+type User struct {
+    Name string
+    Age  int
+}
+
+func (u User) GetName() string {
+    return u.Name
+}
+
+func (u *User) SetName(name string) {
+    u.Name = name
+}
+
+func (u User) IsAdult() bool {
+    return u.Age >= 18
+}
+"""
+
+    chunks = chunker.chunk_file(content, Path("user.go"), "go")
+
+    # Should extract struct and methods
+    symbols = {c.symbol for c in chunks}
+    assert "User" in symbols
+    assert "GetName" in symbols
+    assert "SetName" in symbols
+    assert "IsAdult" in symbols
+
+
+def test_tree_sitter_go_mixed_definitions():
+    """Test tree-sitter extracts mixed Go definitions (functions, structs, interfaces)."""
+    chunker = TreeSitterChunker()
+    content = """package service
+
+type Config struct {
+    Host string
+    Port int
+}
+
+type Service interface {
+    Start() error
+    Stop() error
+}
+
+func NewConfig(host string, port int) *Config {
+    return &Config{Host: host, Port: port}
+}
+
+type Server struct {
+    config *Config
+}
+
+func (s *Server) Start() error {
+    return nil
+}
+
+func (s *Server) Stop() error {
+    return nil
+}
+
+func main() {
+    cfg := NewConfig("localhost", 8080)
+    _ = cfg
+}
+"""
+
+    chunks = chunker.chunk_file(content, Path("service.go"), "go")
+
+    symbols = {c.symbol for c in chunks}
+    # Structs
+    assert "Config" in symbols
+    assert "Server" in symbols
+    # Interface
+    assert "Service" in symbols
+    # Functions
+    assert "NewConfig" in symbols
+    assert "main" in symbols
+    # Methods
+    assert "Start" in symbols
+    assert "Stop" in symbols
+
+
+def test_tree_sitter_go_embedded_interfaces():
+    """Test tree-sitter extracts Go interfaces with embedded types."""
+    chunker = TreeSitterChunker()
+    content = """package io
+
+type Reader interface {
+    Read(p []byte) (n int, err error)
+}
+
+type Closer interface {
+    Close() error
+}
+
+type ReadCloser interface {
+    Reader
+    Closer
+}
+"""
+
+    chunks = chunker.chunk_file(content, Path("embedded.go"), "go")
+
+    symbols = {c.symbol for c in chunks}
+    assert "Reader" in symbols
+    assert "Closer" in symbols
+    assert "ReadCloser" in symbols
+
+
+def test_tree_sitter_go_generic_types():
+    """Test tree-sitter extracts Go generic types (Go 1.18+)."""
+    chunker = TreeSitterChunker()
+    content = """package generic
+
+type Container[T any] struct {
+    Value T
+}
+
+type Pair[K comparable, V any] struct {
+    Key   K
+    Value V
+}
+
+func (c *Container[T]) Get() T {
+    return c.Value
+}
+
+func NewContainer[T any](value T) *Container[T] {
+    return &Container[T]{Value: value}
+}
+"""
+
+    chunks = chunker.chunk_file(content, Path("generic.go"), "go")
+
+    symbols = {c.symbol for c in chunks}
+    assert "Container" in symbols
+    assert "Pair" in symbols
+    assert "Get" in symbols
+    assert "NewContainer" in symbols
+
+
+# =============================================================================
+# Rust Comprehensive Test Coverage (Issue #232)
+# =============================================================================
+
+
+def test_tree_sitter_rust_struct_definitions():
+    """Test tree-sitter extracts Rust struct definitions."""
+    chunker = TreeSitterChunker()
+    content = """pub struct User {
+    pub id: u64,
+    pub name: String,
+    email: String,
+}
+
+struct Point {
+    x: f64,
+    y: f64,
+}
+
+pub struct Empty;
+
+struct Tuple(i32, i32);
+"""
+
+    chunks = chunker.chunk_file(content, Path("models.rs"), "rs")
+
+    # Should extract struct definitions
+    symbols = {c.symbol for c in chunks}
+    assert "User" in symbols
+    assert "Point" in symbols
+    assert "Empty" in symbols
+    assert "Tuple" in symbols
+
+    # Verify content
+    user_chunk = [c for c in chunks if c.symbol == "User"][0]
+    assert "pub struct User" in user_chunk.content
+
+
+def test_tree_sitter_rust_enum_definitions():
+    """Test tree-sitter extracts Rust enum definitions."""
+    chunker = TreeSitterChunker()
+    content = """pub enum Status {
+    Active,
+    Inactive,
+    Pending,
+}
+
+enum Color {
+    Red,
+    Green,
+    Blue,
+    Custom(u8, u8, u8),
+}
+
+pub enum Option<T> {
+    Some(T),
+    None,
+}
+
+enum Message {
+    Quit,
+    Move { x: i32, y: i32 },
+    Write(String),
+    ChangeColor(Color),
+}
+"""
+
+    chunks = chunker.chunk_file(content, Path("enums.rs"), "rs")
+
+    # Should extract enum definitions
+    symbols = {c.symbol for c in chunks}
+    assert "Status" in symbols
+    assert "Color" in symbols
+    assert "Option" in symbols
+    assert "Message" in symbols
+
+    # Verify content
+    status_chunk = [c for c in chunks if c.symbol == "Status"][0]
+    assert "pub enum Status" in status_chunk.content
+    assert "Active" in status_chunk.content
+
+
+def test_tree_sitter_rust_trait_definitions():
+    """Test tree-sitter extracts Rust trait definitions."""
+    chunker = TreeSitterChunker()
+    content = """pub trait Display {
+    fn fmt(&self, f: &mut Formatter) -> Result<(), Error>;
+}
+
+trait Clone {
+    fn clone(&self) -> Self;
+}
+
+pub trait Iterator {
+    type Item;
+    fn next(&mut self) -> Option<Self::Item>;
+}
+
+trait Default {
+    fn default() -> Self;
+}
+"""
+
+    chunks = chunker.chunk_file(content, Path("traits.rs"), "rs")
+
+    # Should extract trait definitions
+    symbols = {c.symbol for c in chunks}
+    assert "Display" in symbols
+    assert "Clone" in symbols
+    assert "Iterator" in symbols
+    assert "Default" in symbols
+
+    # Verify content
+    display_chunk = [c for c in chunks if c.symbol == "Display"][0]
+    assert "pub trait Display" in display_chunk.content
+
+
+def test_tree_sitter_rust_impl_blocks():
+    """Test tree-sitter extracts Rust impl blocks."""
+    chunker = TreeSitterChunker()
+    content = """struct User {
+    name: String,
+}
+
+impl User {
+    pub fn new(name: String) -> Self {
+        User { name }
+    }
+
+    pub fn get_name(&self) -> &str {
+        &self.name
+    }
+}
+
+impl Default for User {
+    fn default() -> Self {
+        User { name: String::new() }
+    }
+}
+"""
+
+    chunks = chunker.chunk_file(content, Path("impl.rs"), "rs")
+
+    # Should extract struct and impl blocks
+    symbols = {c.symbol for c in chunks}
+    assert "User" in symbols
+    # Functions inside impl should also be extracted
+    assert "new" in symbols
+    assert "get_name" in symbols
+    assert "default" in symbols
+
+
+def test_tree_sitter_rust_mixed_definitions():
+    """Test tree-sitter extracts mixed Rust definitions."""
+    chunker = TreeSitterChunker()
+    content = """pub struct Config {
+    host: String,
+    port: u16,
+}
+
+pub enum Environment {
+    Development,
+    Production,
+}
+
+pub trait Configurable {
+    fn configure(&mut self, config: &Config);
+}
+
+impl Config {
+    pub fn new(host: String, port: u16) -> Self {
+        Config { host, port }
+    }
+}
+
+pub fn create_config() -> Config {
+    Config::new("localhost".to_string(), 8080)
+}
+
+fn main() {
+    let config = create_config();
+    println!("{:?}", config);
+}
+"""
+
+    chunks = chunker.chunk_file(content, Path("mixed.rs"), "rs")
+
+    symbols = {c.symbol for c in chunks}
+    # Struct
+    assert "Config" in symbols
+    # Enum
+    assert "Environment" in symbols
+    # Trait
+    assert "Configurable" in symbols
+    # Functions
+    assert "new" in symbols
+    assert "create_config" in symbols
+    assert "main" in symbols
+
+
+def test_tree_sitter_rust_generic_structs():
+    """Test tree-sitter extracts Rust generic struct definitions."""
+    chunker = TreeSitterChunker()
+    content = """pub struct Container<T> {
+    value: T,
+}
+
+struct Pair<K, V> {
+    key: K,
+    value: V,
+}
+
+pub struct Result<T, E> {
+    ok: Option<T>,
+    err: Option<E>,
+}
+
+impl<T> Container<T> {
+    pub fn new(value: T) -> Self {
+        Container { value }
+    }
+
+    pub fn get(&self) -> &T {
+        &self.value
+    }
+}
+"""
+
+    chunks = chunker.chunk_file(content, Path("generics.rs"), "rs")
+
+    symbols = {c.symbol for c in chunks}
+    assert "Container" in symbols
+    assert "Pair" in symbols
+    assert "Result" in symbols
+    assert "new" in symbols
+    assert "get" in symbols
+
+
+def test_tree_sitter_rust_trait_bounds():
+    """Test tree-sitter extracts Rust traits with bounds."""
+    chunker = TreeSitterChunker()
+    content = """pub trait Comparable: PartialEq + PartialOrd {
+    fn compare(&self, other: &Self) -> Ordering;
+}
+
+trait Debug: Display {
+    fn debug(&self) -> String;
+}
+
+pub trait Iterator<T>
+where
+    T: Clone,
+{
+    fn next(&mut self) -> Option<T>;
+}
+"""
+
+    chunks = chunker.chunk_file(content, Path("bounded.rs"), "rs")
+
+    symbols = {c.symbol for c in chunks}
+    assert "Comparable" in symbols
+    assert "Debug" in symbols
+    assert "Iterator" in symbols
+
+
+def test_tree_sitter_rust_async_functions():
+    """Test tree-sitter extracts Rust async functions."""
+    chunker = TreeSitterChunker()
+    content = """async fn fetch_user(id: u64) -> Result<User, Error> {
+    let user = db.get_user(id).await?;
+    Ok(user)
+}
+
+pub async fn process_data(data: Vec<u8>) -> Vec<u8> {
+    data.iter().map(|x| x * 2).collect()
+}
+
+fn sync_function() -> i32 {
+    42
+}
+"""
+
+    chunks = chunker.chunk_file(content, Path("async.rs"), "rs")
+
+    symbols = {c.symbol for c in chunks}
+    assert "fetch_user" in symbols
+    assert "process_data" in symbols
+    assert "sync_function" in symbols

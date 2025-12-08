@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Go struct and interface extraction** (#232)
+  - TreeSitter now extracts Go struct definitions: `type User struct { ... }`
+  - TreeSitter now extracts Go interface definitions: `type Reader interface { ... }`
+  - Works with generic types (Go 1.18+): `type Container[T any] struct { ... }`
+  - Works with embedded interfaces: `type ReadWriter interface { Reader; Writer }`
+  - Comprehensive test coverage for Go constructs (6 new test cases)
+
+- **Rust struct, enum, and trait extraction** (#232)
+  - TreeSitter now extracts Rust struct definitions: `struct User { ... }`, `struct Empty;`, `struct Tuple(i32, i32);`
+  - TreeSitter now extracts Rust enum definitions: `enum Status { Active, Inactive }`
+  - TreeSitter now extracts Rust trait definitions: `trait Display { ... }`
+  - Works with generic types: `struct Container<T> { ... }`, `trait Iterator<T> { ... }`
+  - Works with trait bounds: `trait Comparable: PartialEq + PartialOrd { ... }`
+  - Comprehensive test coverage for Rust constructs (8 new test cases)
+
 - **Comprehensive TypeScript TreeSitter test coverage** (#231)
   - Added 18 new test cases for TypeScript code extraction, bringing total to 40+ TS-related tests
   - Test coverage now matches Python's depth across all major TypeScript constructs
