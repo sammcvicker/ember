@@ -72,6 +72,8 @@ class LanguageRegistry:
                 name: (property_identifier) @method.name) @method.def
             (class_declaration
                 name: (type_identifier) @class.name) @class.def
+            (interface_declaration
+                name: (type_identifier) @interface.name) @interface.def
             (arrow_function) @arrow.def
         """,
         ),
@@ -87,6 +89,8 @@ class LanguageRegistry:
                 name: (property_identifier) @method.name) @method.def
             (class_declaration
                 name: (type_identifier) @class.name) @class.def
+            (interface_declaration
+                name: (type_identifier) @interface.name) @interface.def
             (arrow_function) @arrow.def
         """,
         ),

@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **TypeScript interface extraction support** (#227)
+  - TreeSitter now extracts TypeScript `interface` declarations as semantic chunks
+  - Works with generic interfaces: `interface Foo<T>`, `interface KeyValuePair<K, V>`
+  - Works with extended interfaces: `interface Admin extends User`
+  - Interfaces have proper symbol names for search (e.g., "User", "Admin")
+  - Also added to TSX files for React TypeScript projects
+
 - **Global config fallback with `ember config` command group** (#225)
   - Config loading now supports a two-tier system: local (.ember/config.toml) and global (~/.config/ember/config.toml)
   - Local config overrides global config on a section-by-section basis
