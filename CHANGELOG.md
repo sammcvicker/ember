@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **TypeScript/JavaScript export statement handling** (#230)
+  - TreeSitter correctly captures exported functions, classes, interfaces, and type aliases
+  - Exported declarations include the `export` keyword in chunk content
+  - Comprehensive test coverage for all export patterns:
+    - `export function processData()` - named function exports
+    - `export class UserService` - class exports
+    - `export const handler = () => {}` - arrow function exports
+    - `export default class App` - default exports
+    - `export interface Config` - interface exports
+    - `export type Status = ...` - type alias exports
+  - Works across TypeScript (.ts), JavaScript (.js), TSX (.tsx), and JSX (.jsx) files
+
 - **Named arrow function extraction for TypeScript/JavaScript** (#229)
   - TreeSitter now extracts named arrow functions with proper symbol names
   - Supports all assignment patterns: `const foo = () => {}`, `let bar = () => {}`, `var baz = () => {}`
