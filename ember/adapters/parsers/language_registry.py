@@ -76,7 +76,14 @@ class LanguageRegistry:
                 name: (type_identifier) @interface.name) @interface.def
             (type_alias_declaration
                 name: (type_identifier) @type.name) @type.def
-            (arrow_function) @arrow.def
+            (lexical_declaration
+                (variable_declarator
+                    name: (identifier) @arrow.name
+                    value: (arrow_function))) @arrow.def
+            (variable_declaration
+                (variable_declarator
+                    name: (identifier) @arrow.name
+                    value: (arrow_function))) @arrow.def
         """,
         ),
         LanguageConfig(
@@ -95,7 +102,14 @@ class LanguageRegistry:
                 name: (type_identifier) @interface.name) @interface.def
             (type_alias_declaration
                 name: (type_identifier) @type.name) @type.def
-            (arrow_function) @arrow.def
+            (lexical_declaration
+                (variable_declarator
+                    name: (identifier) @arrow.name
+                    value: (arrow_function))) @arrow.def
+            (variable_declaration
+                (variable_declarator
+                    name: (identifier) @arrow.name
+                    value: (arrow_function))) @arrow.def
         """,
         ),
         LanguageConfig(
@@ -109,8 +123,15 @@ class LanguageRegistry:
             (method_definition
                 name: (property_identifier) @method.name) @method.def
             (class_declaration
-                name: (identifier) @class.name) @class.def
-            (arrow_function) @arrow.def
+                name: (type_identifier) @class.name) @class.def
+            (lexical_declaration
+                (variable_declarator
+                    name: (identifier) @arrow.name
+                    value: (arrow_function))) @arrow.def
+            (variable_declaration
+                (variable_declarator
+                    name: (identifier) @arrow.name
+                    value: (arrow_function))) @arrow.def
         """,
         ),
         LanguageConfig(
@@ -124,8 +145,15 @@ class LanguageRegistry:
             (method_definition
                 name: (property_identifier) @method.name) @method.def
             (class_declaration
-                name: (identifier) @class.name) @class.def
-            (arrow_function) @arrow.def
+                name: (type_identifier) @class.name) @class.def
+            (lexical_declaration
+                (variable_declarator
+                    name: (identifier) @arrow.name
+                    value: (arrow_function))) @arrow.def
+            (variable_declaration
+                (variable_declarator
+                    name: (identifier) @arrow.name
+                    value: (arrow_function))) @arrow.def
         """,
         ),
         LanguageConfig(

@@ -727,3 +727,173 @@ function Button({ title, children }: Props) {
     assert "Props" in symbols
     assert "ButtonVariant" in symbols
     assert "Button" in symbols
+
+
+def test_tree_sitter_typescript_named_arrow_functions():
+    """Test tree-sitter extracts TypeScript named arrow functions."""
+    chunker = TreeSitterChunker()
+    content = """const handleClick = () => {
+    console.log('clicked');
+};
+
+const fetchUser = async (id: string) => {
+    return api.get(id);
+};
+
+let processData = (data: any) => {
+    return data.map(x => x * 2);
+};
+
+// Regular function for comparison
+function regularFunc() {
+    return 42;
+}
+"""
+
+    chunks = chunker.chunk_file(content, Path("handlers.ts"), "ts")
+
+    # Check symbols
+    symbols = {c.symbol for c in chunks}
+    assert "handleClick" in symbols
+    assert "fetchUser" in symbols
+    assert "processData" in symbols
+    assert "regularFunc" in symbols
+
+
+def test_tree_sitter_typescript_named_arrow_function_content():
+    """Test tree-sitter extracts full content of named arrow functions."""
+    chunker = TreeSitterChunker()
+    content = """const handleClick = () => {
+    console.log('clicked');
+};
+"""
+
+    chunks = chunker.chunk_file(content, Path("handlers.ts"), "ts")
+
+    # Should extract the named arrow function
+    assert len(chunks) == 1
+    assert chunks[0].symbol == "handleClick"
+    assert "const handleClick" in chunks[0].content
+    assert "console.log" in chunks[0].content
+
+
+def test_tree_sitter_typescript_typed_arrow_functions():
+    """Test tree-sitter extracts arrow functions with explicit type annotations."""
+    chunker = TreeSitterChunker()
+    content = """const handler: Handler = () => {
+    console.log('handled');
+};
+
+const callback: (x: number) => number = (x) => x * 2;
+"""
+
+    chunks = chunker.chunk_file(content, Path("typed.ts"), "ts")
+
+    symbols = {c.symbol for c in chunks}
+    assert "handler" in symbols
+    assert "callback" in symbols
+
+
+def test_tree_sitter_typescript_arrow_functions_mixed():
+    """Test tree-sitter extracts arrow functions alongside other definitions."""
+    chunker = TreeSitterChunker()
+    content = """interface User {
+    name: string;
+}
+
+type Handler = () => void;
+
+const handleClick = () => {
+    console.log('click');
+};
+
+function regularFunction() {
+    return 42;
+}
+
+class MyClass {
+    method() {
+        return 1;
+    }
+}
+"""
+
+    chunks = chunker.chunk_file(content, Path("mixed.ts"), "ts")
+
+    symbols = {c.symbol for c in chunks}
+    assert "User" in symbols  # interface
+    assert "Handler" in symbols  # type alias
+    assert "handleClick" in symbols  # named arrow function
+    assert "regularFunction" in symbols  # function
+    assert "MyClass" in symbols  # class
+
+
+def test_tree_sitter_javascript_named_arrow_functions():
+    """Test tree-sitter extracts JavaScript named arrow functions."""
+    chunker = TreeSitterChunker()
+    content = """const handleClick = () => {
+    console.log('clicked');
+};
+
+const fetchData = async () => {
+    return fetch('/api/data');
+};
+
+var legacyHandler = () => {
+    console.log('legacy');
+};
+"""
+
+    chunks = chunker.chunk_file(content, Path("handlers.js"), "js")
+
+    symbols = {c.symbol for c in chunks}
+    assert "handleClick" in symbols
+    assert "fetchData" in symbols
+    assert "legacyHandler" in symbols
+
+
+def test_tree_sitter_tsx_named_arrow_functions():
+    """Test tree-sitter extracts TSX named arrow functions (React components)."""
+    chunker = TreeSitterChunker()
+    content = """const Button = () => {
+    return <button>Click me</button>;
+};
+
+const Card = ({ title, children }) => {
+    return (
+        <div className="card">
+            <h2>{title}</h2>
+            {children}
+        </div>
+    );
+};
+"""
+
+    chunks = chunker.chunk_file(content, Path("components.tsx"), "tsx")
+
+    symbols = {c.symbol for c in chunks}
+    assert "Button" in symbols
+    assert "Card" in symbols
+
+
+def test_tree_sitter_jsx_named_arrow_functions():
+    """Test tree-sitter extracts JSX named arrow functions (React components)."""
+    chunker = TreeSitterChunker()
+    content = """const Button = () => {
+    return <button>Click me</button>;
+};
+
+const List = ({ items }) => {
+    return (
+        <ul>
+            {items.map(item => <li>{item}</li>)}
+        </ul>
+    );
+};
+"""
+
+    chunks = chunker.chunk_file(content, Path("components.jsx"), "jsx")
+
+    symbols = {c.symbol for c in chunks}
+    assert "Button" in symbols
+    assert "List" in symbols
