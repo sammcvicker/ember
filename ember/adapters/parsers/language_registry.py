@@ -166,6 +166,14 @@ class LanguageRegistry:
                 name: (identifier) @func.name) @func.def
             (method_declaration
                 name: (field_identifier) @method.name) @method.def
+            (type_declaration
+                (type_spec
+                    name: (type_identifier) @struct.name
+                    type: (struct_type))) @struct.def
+            (type_declaration
+                (type_spec
+                    name: (type_identifier) @interface.name
+                    type: (interface_type))) @interface.def
         """,
         ),
         LanguageConfig(
@@ -177,6 +185,12 @@ class LanguageRegistry:
             (function_item
                 name: (identifier) @func.name) @func.def
             (impl_item) @impl.def
+            (struct_item
+                name: (type_identifier) @struct.name) @struct.def
+            (enum_item
+                name: (type_identifier) @enum.name) @enum.def
+            (trait_item
+                name: (type_identifier) @trait.name) @trait.def
         """,
         ),
         LanguageConfig(
