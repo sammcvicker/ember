@@ -897,3 +897,273 @@ const List = ({ items }) => {
     symbols = {c.symbol for c in chunks}
     assert "Button" in symbols
     assert "List" in symbols
+
+
+def test_tree_sitter_typescript_export_function():
+    """Test tree-sitter extracts exported TypeScript functions."""
+    chunker = TreeSitterChunker()
+    content = """export function processData(data: Data): Result {
+    return transform(data);
+}
+
+export async function fetchUser(id: string): Promise<User> {
+    return api.get(id);
+}
+"""
+
+    chunks = chunker.chunk_file(content, Path("api.ts"), "ts")
+
+    # Should extract 2 exported functions
+    assert len(chunks) == 2
+
+    symbols = {c.symbol for c in chunks}
+    assert "processData" in symbols
+    assert "fetchUser" in symbols
+
+    # Verify content includes export keyword
+    process_chunk = [c for c in chunks if c.symbol == "processData"][0]
+    assert "export function processData" in process_chunk.content
+
+
+def test_tree_sitter_typescript_export_class():
+    """Test tree-sitter extracts exported TypeScript classes."""
+    chunker = TreeSitterChunker()
+    content = """export class UserService {
+    getUser(id: string) {
+        return this.users.find(u => u.id === id);
+    }
+}
+
+export class AdminService extends UserService {
+    deleteUser(id: string) {
+        // admin only
+    }
+}
+"""
+
+    chunks = chunker.chunk_file(content, Path("services.ts"), "ts")
+
+    # Should extract classes and methods
+    symbols = {c.symbol for c in chunks}
+    assert "UserService" in symbols
+    assert "AdminService" in symbols
+
+    # Verify export is in content
+    user_service = [c for c in chunks if c.symbol == "UserService"][0]
+    assert "export class UserService" in user_service.content
+
+
+def test_tree_sitter_typescript_export_const():
+    """Test tree-sitter extracts exported const arrow functions."""
+    chunker = TreeSitterChunker()
+    content = """export const handler = () => {
+    console.log('handled');
+};
+
+export const fetchData = async (url: string) => {
+    return fetch(url);
+};
+
+export const API_VERSION = '2.0';
+"""
+
+    chunks = chunker.chunk_file(content, Path("utils.ts"), "ts")
+
+    # Should extract arrow functions (not plain constants)
+    symbols = {c.symbol for c in chunks}
+    assert "handler" in symbols
+    assert "fetchData" in symbols
+    # API_VERSION is a plain constant, not a function - may or may not be extracted
+
+
+def test_tree_sitter_typescript_export_default_class():
+    """Test tree-sitter extracts default exported TypeScript classes."""
+    chunker = TreeSitterChunker()
+    content = """export default class App {
+    render() {
+        return null;
+    }
+}
+"""
+
+    chunks = chunker.chunk_file(content, Path("App.ts"), "ts")
+
+    # Should extract the default exported class
+    symbols = {c.symbol for c in chunks}
+    assert "App" in symbols
+
+    app_chunk = [c for c in chunks if c.symbol == "App"][0]
+    assert "export default class App" in app_chunk.content
+
+
+def test_tree_sitter_typescript_export_interface():
+    """Test tree-sitter extracts exported TypeScript interfaces."""
+    chunker = TreeSitterChunker()
+    content = """export interface Config {
+    name: string;
+    version: number;
+}
+
+export interface ExtendedConfig extends Config {
+    debug: boolean;
+}
+"""
+
+    chunks = chunker.chunk_file(content, Path("config.ts"), "ts")
+
+    # Should extract 2 exported interfaces
+    assert len(chunks) == 2
+
+    symbols = {c.symbol for c in chunks}
+    assert "Config" in symbols
+    assert "ExtendedConfig" in symbols
+
+    # Verify export is in content
+    config_chunk = [c for c in chunks if c.symbol == "Config"][0]
+    assert "export interface Config" in config_chunk.content
+
+
+def test_tree_sitter_typescript_export_type():
+    """Test tree-sitter extracts exported TypeScript type aliases."""
+    chunker = TreeSitterChunker()
+    content = """export type Status = 'active' | 'inactive' | 'pending';
+
+export type Handler<T> = (event: T) => void;
+
+export type UserWithRole = User & { role: string };
+"""
+
+    chunks = chunker.chunk_file(content, Path("types.ts"), "ts")
+
+    # Should extract 3 exported type aliases
+    assert len(chunks) == 3
+
+    symbols = {c.symbol for c in chunks}
+    assert "Status" in symbols
+    assert "Handler" in symbols
+    assert "UserWithRole" in symbols
+
+    # Verify export is in content
+    status_chunk = [c for c in chunks if c.symbol == "Status"][0]
+    assert "export type Status" in status_chunk.content
+
+
+def test_tree_sitter_typescript_mixed_exports():
+    """Test tree-sitter extracts mixed exported and non-exported definitions."""
+    chunker = TreeSitterChunker()
+    content = """export interface User {
+    id: string;
+    name: string;
+}
+
+interface InternalData {
+    secret: string;
+}
+
+export type UserId = string;
+
+type InternalType = number;
+
+export function getUser(id: UserId): User {
+    return { id, name: 'Test' };
+}
+
+function internalHelper() {
+    return 42;
+}
+
+export class UserService {
+    findUser(id: string) { return null; }
+}
+
+class InternalService {
+    doSomething() { return null; }
+}
+
+export const handler = () => console.log('handled');
+
+const internalHandler = () => console.log('internal');
+"""
+
+    chunks = chunker.chunk_file(content, Path("mixed.ts"), "ts")
+
+    # Should extract both exported and non-exported definitions
+    symbols = {c.symbol for c in chunks}
+
+    # Exported items
+    assert "User" in symbols
+    assert "UserId" in symbols
+    assert "getUser" in symbols
+    assert "UserService" in symbols
+    assert "handler" in symbols
+
+    # Non-exported items should also be extracted
+    assert "InternalData" in symbols
+    assert "InternalType" in symbols
+    assert "internalHelper" in symbols
+    assert "InternalService" in symbols
+    assert "internalHandler" in symbols
+
+
+def test_tree_sitter_tsx_exports():
+    """Test tree-sitter extracts exports from TSX files."""
+    chunker = TreeSitterChunker()
+    content = """export interface ButtonProps {
+    label: string;
+    onClick: () => void;
+}
+
+export type ButtonVariant = 'primary' | 'secondary';
+
+export const Button = ({ label, onClick }: ButtonProps) => {
+    return <button onClick={onClick}>{label}</button>;
+};
+
+export function Card({ children }: { children: React.ReactNode }) {
+    return <div className="card">{children}</div>;
+}
+
+export default class App {
+    render() {
+        return <div>Hello</div>;
+    }
+}
+"""
+
+    chunks = chunker.chunk_file(content, Path("components.tsx"), "tsx")
+
+    symbols = {c.symbol for c in chunks}
+    assert "ButtonProps" in symbols
+    assert "ButtonVariant" in symbols
+    assert "Button" in symbols
+    assert "Card" in symbols
+    assert "App" in symbols
+
+
+def test_tree_sitter_javascript_exports():
+    """Test tree-sitter extracts exports from JavaScript files."""
+    chunker = TreeSitterChunker()
+    content = """export function processData(data) {
+    return data.map(x => x * 2);
+}
+
+export class DataService {
+    fetch() { return []; }
+}
+
+export const handler = () => {
+    console.log('handled');
+};
+
+export default function main() {
+    return 'main';
+}
+"""
+
+    chunks = chunker.chunk_file(content, Path("utils.js"), "js")
+
+    symbols = {c.symbol for c in chunks}
+    assert "processData" in symbols
+    assert "DataService" in symbols
+    assert "handler" in symbols
+    assert "main" in symbols
