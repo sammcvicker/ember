@@ -168,10 +168,10 @@ model = "broken"
         # Should log warning
         assert "Failed to parse config.toml" in caplog.text
 
-    def test_load_config_with_unknown_keys_raises_type_error(
-        self, provider: TomlConfigProvider, tmp_path: Path
+    def test_load_config_with_unknown_keys_returns_defaults(
+        self, provider: TomlConfigProvider, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """Test that unknown keys in config raise TypeError (not caught)."""
+        """Test that unknown keys in config fall back to defaults gracefully."""
         ember_dir = tmp_path / ".ember"
         ember_dir.mkdir()
         config_file = ember_dir / "config.toml"
@@ -183,12 +183,16 @@ unknown_future_key = "ignored"
 """
         )
 
-        # Unknown keys raise TypeError which is NOT caught by the exception handler
-        # This documents current behavior - TypeError propagates up
-        with pytest.raises(TypeError) as exc_info:
-            provider.load(ember_dir)
+        # Unknown keys cause TypeError which is now caught and logged
+        result = provider.load(ember_dir)
 
-        assert "unknown_future_key" in str(exc_info.value)
+        # Should return defaults
+        default = EmberConfig.default()
+        assert result == default
+
+        # Should log warning about the invalid config
+        assert "Invalid config values" in caplog.text
+        assert "unknown_future_key" in caplog.text
 
 
 class TestPartialConfig:

@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Global config fallback with `ember config` command group** (#225)
+  - Config loading now supports a two-tier system: local (.ember/config.toml) and global (~/.config/ember/config.toml)
+  - Local config overrides global config on a section-by-section basis
+  - Global config location: `~/.config/ember/config.toml` (Linux/macOS), `%APPDATA%/ember/config.toml` (Windows)
+  - Respects `XDG_CONFIG_HOME` environment variable on Linux/macOS
+  - New `ember config` command group with subcommands:
+    - `ember config show` - Display config locations and effective merged settings
+    - `ember config edit [--global]` - Open config in your editor (creates if missing)
+    - `ember config path [--global|--local]` - Print paths for scripting
+  - Use cases: consistent settings across multiple repos, organization-wide defaults
+
 - **Auto-detect hardware and recommend embedding model during init** (#224)
   - `ember init` now detects available system RAM and recommends an appropriate model
   - Shows resource detection output: available RAM, recommended model, and reasoning
