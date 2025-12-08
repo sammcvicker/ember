@@ -814,18 +814,12 @@ def find(
 
 
 @cli.command()
-@click.argument("initial_query", type=str, required=False, default="")
-@click.option(
-    "--path",
-    "path_filter",
-    type=str,
-    help="Limit search to directory path. Cannot be used with --in.",
-)
+@click.argument("path", type=str, required=False, default=None)
 @click.option(
     "--in",
     "file_pattern",
     type=str,
-    help="Filter by glob pattern (e.g., '*.py'). Cannot be used with --path.",
+    help="Filter by glob pattern (e.g., '*.py'). Cannot be used with PATH argument.",
 )
 @click.option(
     "--lang",
@@ -860,8 +854,7 @@ def find(
 @handle_cli_errors("search")
 def search(
     ctx: click.Context,
-    initial_query: str,
-    path_filter: str | None,
+    path: str | None,
     file_pattern: str | None,
     lang_filter: str | None,
     topk: int | None,
@@ -875,9 +868,43 @@ def search(
     keyboard navigation, preview pane, and direct file opening.
 
     Can be run from any subdirectory within the repository.
+
+    If PATH is provided, searches only within that path (relative to current directory).
+    Examples:
+        ember search              # Search entire repo
+        ember search .            # Search current directory subtree
+        ember search src/         # Search src/ subtree
+        ember search tests        # Search tests/ subtree
     """
     repo_root, ember_dir = get_ember_repo_root()
     db_path = ember_dir / "index.db"
+
+    # Handle path argument: convert from CWD-relative to repo-relative glob
+    path_filter: str | None = None
+    if path is not None:
+        # Convert path argument to absolute, then to relative from repo root
+        cwd = Path.cwd().resolve()
+        path_abs = (cwd / path).resolve()
+
+        # Check if path is within repo
+        try:
+            path_rel_to_repo = path_abs.relative_to(repo_root)
+        except ValueError:
+            path_not_in_repo_error(path)
+
+        # Check for mutually exclusive filter options
+        if file_pattern:
+            raise EmberCliError(
+                f"Cannot use both PATH argument ('{path}') and --in filter ('{file_pattern}')",
+                hint="Use PATH to search a directory subtree, OR --in for glob patterns, but not both",
+            )
+
+        # Create glob pattern for this path subtree
+        path_filter = f"{path_rel_to_repo}/**" if path_rel_to_repo != Path(".") else "*/**"
+
+    # Convert file_pattern to path_filter format
+    if file_pattern:
+        path_filter = f"**/{file_pattern}"
 
     # Load config
     from ember.adapters.config.toml_config_provider import TomlConfigProvider
@@ -888,17 +915,6 @@ def search(
     # Use config default for topk if not specified
     if topk is None:
         topk = config.search.topk
-
-    # Check for mutually exclusive filter options
-    if path_filter and file_pattern:
-        raise EmberCliError(
-            f"Cannot use both --path ('{path_filter}') and --in ('{file_pattern}')",
-            hint="Use --path to search a directory, OR --in for glob patterns, but not both",
-        )
-
-    # Convert file_pattern to path_filter format
-    if file_pattern:
-        path_filter = f"**/{file_pattern}"
 
     # Auto-sync unless disabled
     # Use ensure_synced with interactive_mode=True to show "Syncing..." status
@@ -942,7 +958,7 @@ def search(
     ui = InteractiveSearchUI(
         search_fn=search_fn,
         config=config,
-        initial_query=initial_query,
+        initial_query="",  # Always start with empty query, user types interactively
         topk=topk,
         path_filter=path_filter,
         lang_filter=lang_filter,
