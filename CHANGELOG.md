@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Named arrow function extraction for TypeScript/JavaScript** (#229)
+  - TreeSitter now extracts named arrow functions with proper symbol names
+  - Supports all assignment patterns: `const foo = () => {}`, `let bar = () => {}`, `var baz = () => {}`
+  - Works with async arrow functions: `const fetch = async () => {}`
+  - Works with typed arrows: `const handler: Handler = () => {}`
+  - Applies to TypeScript (.ts), JavaScript (.js), TSX (.tsx), and JSX (.jsx) files
+  - Arrow functions now appear in search results with their variable names instead of "unnamed"
+
 - **TypeScript type alias extraction support** (#228)
   - TreeSitter now extracts TypeScript `type` alias declarations as semantic chunks
   - Simple type aliases: `type UserId = string`
