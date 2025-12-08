@@ -1178,6 +1178,175 @@ def status(ctx: click.Context) -> None:
             click.echo(f"  Model: {model_name}")
 
 
+# Configuration management commands
+@cli.group()
+def config() -> None:
+    """Manage Ember configuration files.
+
+    Ember uses a two-tier configuration system:
+    - Local: .ember/config.toml (repo-specific settings)
+    - Global: ~/.config/ember/config.toml (user defaults)
+
+    Local settings override global settings. Missing values use built-in defaults.
+    """
+    pass
+
+
+@config.command(name="show")
+@click.option(
+    "--global", "-g", "show_global", is_flag=True, help="Show global config location"
+)
+@click.option(
+    "--local", "-l", "show_local", is_flag=True, help="Show local config location"
+)
+@click.pass_context
+def config_show(
+    ctx: click.Context, show_global: bool, show_local: bool
+) -> None:
+    """Show configuration file locations and current settings.
+
+    By default shows both locations. Use --global or --local to show specific one.
+    """
+    from ember.adapters.config.toml_config_provider import TomlConfigProvider
+    from ember.shared.config_io import get_global_config_path
+
+    global_path = get_global_config_path()
+
+    # Try to find local config if we're in a repo
+    local_path = None
+    try:
+        _, ember_dir = get_ember_repo_root()
+        local_path = ember_dir / "config.toml"
+    except Exception:
+        pass  # Not in a repo, local config doesn't apply
+
+    show_both = not show_global and not show_local
+
+    if show_global or show_both:
+        click.echo(f"Global config: {global_path}")
+        if global_path.exists():
+            click.echo(f"  Status: {click.style('exists', fg='green')}")
+        else:
+            click.echo(f"  Status: {click.style('not created', fg='yellow')}")
+
+    if show_local or show_both:
+        if local_path:
+            click.echo(f"Local config:  {local_path}")
+            if local_path.exists():
+                click.echo(f"  Status: {click.style('exists', fg='green')}")
+            else:
+                click.echo(f"  Status: {click.style('not created', fg='yellow')}")
+        elif show_local:
+            click.echo("Local config: Not in an Ember repository")
+
+    # Show effective config if we're in a repo
+    if (show_both or show_local) and local_path:
+        click.echo("\nEffective configuration (merged):")
+        provider = TomlConfigProvider()
+        try:
+            config = provider.load(local_path.parent)
+            click.echo("  [index]")
+            click.echo(f"    model = {config.index.model}")
+            click.echo(f"    chunk = {config.index.chunk}")
+            click.echo("  [search]")
+            click.echo(f"    topk = {config.search.topk}")
+            click.echo("  [display]")
+            click.echo(f"    theme = {config.display.theme}")
+        except Exception as e:
+            click.echo(f"  Error loading config: {e}")
+
+
+@config.command(name="edit")
+@click.option(
+    "--global", "-g", "edit_global", is_flag=True, help="Edit global config file"
+)
+@click.pass_context
+def config_edit(ctx: click.Context, edit_global: bool) -> None:
+    """Open configuration file in your default editor.
+
+    Opens the local config by default. Use --global to edit global config.
+    Creates the config file if it doesn't exist.
+    """
+    import os
+    import subprocess
+
+    from ember.shared.config_io import create_default_config_file, get_global_config_path
+
+    if edit_global:
+        config_path = get_global_config_path()
+        config_type = "global"
+    else:
+        # Find local config
+        try:
+            _, ember_dir = get_ember_repo_root()
+            config_path = ember_dir / "config.toml"
+            config_type = "local"
+        except Exception as e:
+            raise EmberCliError(
+                "Not in an Ember repository",
+                hint="Use 'ember config edit --global' to edit global config",
+            ) from e
+
+    # Create config file if it doesn't exist
+    if not config_path.exists():
+        click.echo(f"Creating {config_type} config at {config_path}...")
+        create_default_config_file(config_path)
+
+    # Open in editor
+    editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "vi"
+    click.echo(f"Opening {config_path} in {editor}...")
+    try:
+        subprocess.run([editor, str(config_path)], check=True)
+    except subprocess.CalledProcessError as e:
+        raise EmberCliError(
+            f"Editor exited with error: {e.returncode}",
+            hint="Set EDITOR environment variable to change your editor",
+        ) from e
+    except FileNotFoundError as e:
+        raise EmberCliError(
+            f"Editor '{editor}' not found",
+            hint="Set EDITOR environment variable to your preferred editor",
+        ) from e
+
+
+@config.command(name="path")
+@click.option(
+    "--global", "-g", "show_global", is_flag=True, help="Show only global config path"
+)
+@click.option(
+    "--local", "-l", "show_local", is_flag=True, help="Show only local config path"
+)
+def config_path(show_global: bool, show_local: bool) -> None:
+    """Print config file path(s) for use in scripts.
+
+    Outputs bare paths without any decoration, suitable for piping.
+    """
+    from ember.shared.config_io import get_global_config_path
+
+    global_path = get_global_config_path()
+
+    if show_global:
+        click.echo(global_path)
+        return
+
+    if show_local:
+        try:
+            _, ember_dir = get_ember_repo_root()
+            click.echo(ember_dir / "config.toml")
+        except Exception:
+            # Exit silently with no output if not in repo
+            pass
+        return
+
+    # Default: show both
+    click.echo(f"global:{global_path}")
+    try:
+        _, ember_dir = get_ember_repo_root()
+        click.echo(f"local:{ember_dir / 'config.toml'}")
+    except Exception:
+        pass
+
+
 # Daemon management commands
 @cli.group()
 def daemon() -> None:
