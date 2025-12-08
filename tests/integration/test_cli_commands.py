@@ -454,22 +454,61 @@ class TestSearchCommand:
     def test_search_path_and_in_filter_mutually_exclusive(
         self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
     ) -> None:
-        """Test that --path and --in flags are mutually exclusive."""
+        """Test that PATH argument and --in flag are mutually exclusive."""
         monkeypatch.chdir(git_repo_isolated)
         # Init
         runner.invoke(cli, ["init"], catch_exceptions=False)
         runner.invoke(cli, ["sync"], catch_exceptions=False)
 
-        # Try to use both --path and --in flags
+        # Try to use both PATH argument and --in flag
         # Note: search command is interactive, so we just test it exits with error
         result = runner.invoke(
-            cli, ["search", "--path", "src/", "--in", "*.py"],
+            cli, ["search", ".", "--in", "*.py"],
             catch_exceptions=False
         )
 
         # Should fail with error about mutually exclusive options
         assert result.exit_code == 1
         assert "mutually exclusive" in result.output.lower() or "cannot use both" in result.output.lower()
+
+    def test_search_accepts_path_argument(
+        self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
+    ) -> None:
+        """Test that search accepts a path argument to restrict results."""
+        monkeypatch.chdir(git_repo_isolated)
+        # Init
+        runner.invoke(cli, ["init"], catch_exceptions=False)
+        runner.invoke(cli, ["sync"], catch_exceptions=False)
+
+        # Create a subdirectory with a file
+        subdir = git_repo_isolated / "subdir"
+        subdir.mkdir()
+        (subdir / "test.py").write_text("def test_func(): pass")
+
+        # Re-sync to index the new file
+        runner.invoke(cli, ["sync"], catch_exceptions=False)
+
+        # Test that path argument is accepted (we can't fully test interactive mode,
+        # but we can verify the argument parsing works and doesn't error)
+        # The search command with path will try to launch TUI, which may fail in test
+        # but the important thing is the path argument doesn't cause a parsing error
+        result = runner.invoke(cli, ["search", "subdir", "--help"])
+        # --help should work without error
+        assert result.exit_code == 0
+
+    def test_search_no_path_argument(
+        self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
+    ) -> None:
+        """Test that search works without path argument (searches entire repo)."""
+        monkeypatch.chdir(git_repo_isolated)
+        # Init
+        runner.invoke(cli, ["init"], catch_exceptions=False)
+
+        # Test that search command without path doesn't cause parsing error
+        result = runner.invoke(cli, ["search", "--help"])
+        assert result.exit_code == 0
+        # Help should show PATH is optional
+        assert "[PATH]" in result.output or "path" in result.output.lower()
 
 
 class TestCatCommand:

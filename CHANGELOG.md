@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Interactive search now accepts path argument instead of query**
+  - `ember search tests` restricts search to `tests/` directory
+  - `ember search .` restricts search to current directory
+  - `ember search` (no argument) searches entire repository
+  - Query text is now always entered interactively in the TUI
+  - Consistent with `ember find` command behavior for path filtering
+  - `--in` flag for glob patterns still available, but mutually exclusive with PATH argument
+
 ### Added
 - **Go struct and interface extraction** (#232)
   - TreeSitter now extracts Go struct definitions: `type User struct { ... }`
