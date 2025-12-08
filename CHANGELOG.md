@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **TypeScript type alias extraction support** (#228)
+  - TreeSitter now extracts TypeScript `type` alias declarations as semantic chunks
+  - Simple type aliases: `type UserId = string`
+  - Union types: `type Status = 'active' | 'inactive' | 'pending'`
+  - Generic type aliases: `type Handler<T> = (event: T) => void`
+  - Complex mapped/conditional types: `type DeepPartial<T> = { [P in keyof T]?: DeepPartial<T[P]> }`
+  - Type aliases have proper symbol names for search (e.g., "UserId", "Handler")
+  - Also added to TSX files for React TypeScript projects
+
 - **TypeScript interface extraction support** (#227)
   - TreeSitter now extracts TypeScript `interface` declarations as semantic chunks
   - Works with generic interfaces: `interface Foo<T>`, `interface KeyValuePair<K, V>`

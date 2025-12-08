@@ -619,3 +619,111 @@ function createUser(data: UserData): User {
     assert "UserData" in symbols  # interface
     assert "User" in symbols  # class
     assert "createUser" in symbols  # function
+
+
+def test_tree_sitter_typescript_type_aliases():
+    """Test tree-sitter extracts TypeScript type aliases."""
+    chunker = TreeSitterChunker()
+    content = """type UserId = string;
+
+type Status = 'active' | 'inactive' | 'pending';
+
+type Handler<T> = (event: T) => void;
+"""
+
+    chunks = chunker.chunk_file(content, Path("types.ts"), "ts")
+
+    # Should extract 3 type aliases
+    assert len(chunks) == 3
+
+    # Check symbols
+    symbols = {c.symbol for c in chunks}
+    assert "UserId" in symbols
+    assert "Status" in symbols
+    assert "Handler" in symbols
+
+    # Verify content
+    userid_chunk = [c for c in chunks if c.symbol == "UserId"][0]
+    assert "type UserId = string" in userid_chunk.content
+    assert userid_chunk.lang == "ts"
+
+
+def test_tree_sitter_typescript_complex_type_aliases():
+    """Test tree-sitter extracts complex TypeScript type aliases."""
+    chunker = TreeSitterChunker()
+    content = """type Nullable<T> = T | null;
+
+type DeepPartial<T> = {
+    [P in keyof T]?: DeepPartial<T[P]>;
+};
+
+type AsyncResult<T, E = Error> = Promise<
+    | { success: true; data: T }
+    | { success: false; error: E }
+>;
+"""
+
+    chunks = chunker.chunk_file(content, Path("utils.ts"), "ts")
+
+    # Should extract 3 complex type aliases
+    assert len(chunks) == 3
+
+    symbols = {c.symbol for c in chunks}
+    assert "Nullable" in symbols
+    assert "DeepPartial" in symbols
+    assert "AsyncResult" in symbols
+
+
+def test_tree_sitter_typescript_type_aliases_mixed():
+    """Test tree-sitter extracts type aliases alongside interfaces and functions."""
+    chunker = TreeSitterChunker()
+    content = """interface User {
+    id: string;
+    name: string;
+}
+
+type UserId = string;
+
+type UserWithRole = User & { role: string };
+
+function getUser(id: UserId): User {
+    return { id, name: 'Unknown' };
+}
+"""
+
+    chunks = chunker.chunk_file(content, Path("user.ts"), "ts")
+
+    # Should extract interface, type aliases, and function
+    assert len(chunks) >= 4
+
+    symbols = {c.symbol for c in chunks}
+    assert "User" in symbols  # interface
+    assert "UserId" in symbols  # type alias
+    assert "UserWithRole" in symbols  # type alias
+    assert "getUser" in symbols  # function
+
+
+def test_tree_sitter_tsx_type_aliases():
+    """Test tree-sitter extracts type aliases from TSX files."""
+    chunker = TreeSitterChunker()
+    content = """type Props = {
+    title: string;
+    children: React.ReactNode;
+};
+
+type ButtonVariant = 'primary' | 'secondary' | 'danger';
+
+function Button({ title, children }: Props) {
+    return <button>{children}</button>;
+}
+"""
+
+    chunks = chunker.chunk_file(content, Path("Button.tsx"), "tsx")
+
+    # Should extract type aliases and function
+    assert len(chunks) >= 3
+
+    symbols = {c.symbol for c in chunks}
+    assert "Props" in symbols
+    assert "ButtonVariant" in symbols
+    assert "Button" in symbols

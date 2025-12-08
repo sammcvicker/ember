@@ -74,6 +74,8 @@ class LanguageRegistry:
                 name: (type_identifier) @class.name) @class.def
             (interface_declaration
                 name: (type_identifier) @interface.name) @interface.def
+            (type_alias_declaration
+                name: (type_identifier) @type.name) @type.def
             (arrow_function) @arrow.def
         """,
         ),
@@ -91,6 +93,8 @@ class LanguageRegistry:
                 name: (type_identifier) @class.name) @class.def
             (interface_declaration
                 name: (type_identifier) @interface.name) @interface.def
+            (type_alias_declaration
+                name: (type_identifier) @type.name) @type.def
             (arrow_function) @arrow.def
         """,
         ),
