@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Comprehensive TypeScript TreeSitter test coverage** (#231)
+  - Added 18 new test cases for TypeScript code extraction, bringing total to 40+ TS-related tests
+  - Test coverage now matches Python's depth across all major TypeScript constructs
+  - New tests cover: async functions, nested classes, generic functions/classes/arrow functions,
+    decorators, malformed code handling, TSX functional/class components, method signatures,
+    computed properties, function overloads, and namespaces
+  - Tests document expected behavior for each TypeScript pattern
+
 - **TypeScript/JavaScript export statement handling** (#230)
   - TreeSitter correctly captures exported functions, classes, interfaces, and type aliases
   - Exported declarations include the `export` keyword in chunk content
