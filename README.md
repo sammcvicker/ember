@@ -2,11 +2,12 @@
 
 **Local codebase embedding and semantic search for developers and AI agents**
 
-Ember turns any codebase into a searchable knowledge base using hybrid search (BM25 + vector embeddings). Fast, deterministic, and completely localno servers, no MCP, no cloud dependencies.
+Ember turns any codebase into a searchable knowledge base using hybrid search (BM25 + vector embeddings). Fast, deterministic, and completely local—no servers, no MCP, no cloud dependencies.
 
 [![Tests](https://img.shields.io/badge/tests-801%20passing-brightgreen)]()
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)]()
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)]()
+[![Version](https://img.shields.io/badge/version-1.0.0-blue)]()
 
 ---
 
@@ -18,8 +19,9 @@ Ember turns any codebase into a searchable knowledge base using hybrid search (B
 - **Incremental sync**: Only re-indexes changed files (9x+ speedup on typical workflows)
 - **Multi-language**: Supports 9+ languages with tree-sitter-based semantic chunking
 - **Developer-friendly**: `find -> cat -> open` workflow integrates with your editor
+- **Works like git**: Run from any subdirectory, search what you see (including untracked files)
 - **Deterministic**: Reproducible indexes via git tree SHAs and model fingerprints
-- **Zero dependencies**: No servers, APIs, or cloud servicesruns entirely offline
+- **Zero dependencies**: No servers, APIs, or cloud services—runs entirely offline
 
 ---
 
@@ -45,11 +47,14 @@ pip install -e .
 cd /path/to/your/codebase
 ember init
 
-# Index your codebase
+# Index your codebase (daemon starts automatically)
 ember sync
 
-# Search for code
+# Search for code (instant after first search)
 ember find "authentication logic" -k 10
+
+# Check daemon and index status
+ember status
 
 # View full chunk with context
 ember cat 1 --context 5
@@ -58,7 +63,7 @@ ember cat 1 --context 5
 ember open 1
 ```
 
-That's it! Ember will download the embedding model (~600MB) on first sync and cache it for future use.
+**First-time setup:** Ember will download the embedding model (~600MB) on first sync and cache it for future use. The daemon will start automatically and keep the model loaded in memory for near-instant searches.
 
 ---
 
@@ -82,9 +87,9 @@ Initialize Ember in the current directory. Creates `.ember/` folder with:
 cd src/nested/directory
 ember init
 # Initialized ember index at /path/to/project/.ember (at git root)
-#    Created config.toml
-#    Created index.db
-#    Created state.json
+#    Created config.toml
+#    Created index.db
+#    Created state.json
 ```
 
 ---
@@ -94,7 +99,7 @@ ember init
 Index your codebase. Automatically uses incremental sync after the first full index.
 
 **Options:**
-- `--worktree` (default): Index working directory including unstaged changes
+- `--worktree` (default): Index working directory including unstaged and untracked files
 - `--staged`: Index only staged changes
 - `--rev <ref>`: Index specific commit/branch
 - `--reindex`: Force full reindex (ignores incremental detection)
@@ -118,6 +123,7 @@ ember sync --reindex
 - Initial sync: ~3-7 files/second (including embedding generation)
 - Incremental sync: 9x+ faster (only changed files)
 - No-op sync: Instant (tree SHA comparison only)
+- Daemon startup: ~3-5s first time, then stays loaded for 15+ minutes
 
 ---
 
@@ -125,7 +131,7 @@ ember sync --reindex
 
 Search indexed code using hybrid search (BM25 + vector embeddings).
 
-**Works from any subdirectory** - Like git, you can run ember commands from anywhere within your repository.
+**Works from any subdirectory** - Like git, you can run ember commands from anywhere within your repository. Ember automatically syncs the index before searching if changes are detected.
 
 **Options:**
 - `[path]`: Optional path to search within (relative to current directory)
@@ -134,6 +140,7 @@ Search indexed code using hybrid search (BM25 + vector embeddings).
 - `--in <glob>`: Filter by path pattern (e.g., `*.py`, `src/**/*.ts`)
 - `--lang <code>`: Filter by language (e.g., `python`, `typescript`)
 - `--json`: Output results as JSON
+- `--no-sync`: Skip auto-sync (for maximum speed when you know index is current)
 
 **Examples:**
 ```bash
@@ -350,6 +357,10 @@ Scan indexed chunks for potential secrets/credentials (not yet fully implemented
 Edit `.ember/config.toml` to customize indexing behavior:
 
 ```toml
+[model]
+mode = "daemon"          # "daemon" (fast) or "direct" (no background process)
+daemon_timeout = 900     # Seconds before daemon auto-shutdown (default: 15 min)
+
 [index]
 chunk = "symbol"  # Chunking strategy: "symbol" or "lines"
 line_window = 120  # Lines per chunk (for line-based chunking)
@@ -359,9 +370,9 @@ include = ["**/*.py", "**/*.ts", "**/*.go"]  # File patterns to index
 ignore = [".git/", "node_modules/", "dist/", "build/"]  # Patterns to skip
 
 [search]
-topk = 20  # Default number of results
-rerank = false  # Enable reranking (not yet implemented)
-filters = []  # Default filters
+topk = 20                # Default number of results
+rerank = false           # Enable reranking (not yet implemented)
+filters = []             # Default filters
 
 [model]
 model = "jina-code-v2"  # or "bge-small", "minilm", "auto"
@@ -369,14 +380,16 @@ mode = "daemon"  # or "direct"
 daemon_timeout = 900  # 15 minutes
 
 [redaction]
-patterns = []  # Regex patterns for secret redaction
-max_file_mb = 5  # Skip files larger than this
+patterns = []            # Regex patterns for secret redaction
+max_file_mb = 5          # Skip files larger than this
 ```
 
 **Functional Settings (v1.2.0):**
 
-The following configuration settings are now active and respected by Ember:
+The following configuration settings are active and respected by Ember:
 
+- **`model.mode`**: Daemon mode (`"daemon"`) or direct mode (`"direct"`)
+- **`model.daemon_timeout`**: Seconds before auto-shutdown (default: 900)
 - **`search.topk`**: Default number of results for `ember find` (can be overridden with `-k` flag)
 - **`index.line_window`**: Lines per chunk for line-based chunking
 - **`index.line_stride`**: Stride between chunks (overlap = window - stride)
@@ -455,6 +468,7 @@ ember/
     embedders.py    # Embedding model interface
     search.py       # Search interfaces (FTS, vector)
     vcs.py          # Git interface
+    daemon.py       # Daemon lifecycle interface
   adapters/         # Infrastructure implementations
     sqlite/         # SQLite repositories
     fts/            # FTS5 full-text search
@@ -517,7 +531,7 @@ See [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for detailed benchmarks.
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/ember.git
+git clone https://github.com/sammcvicker/ember.git
 cd ember
 
 # Install dependencies
@@ -536,12 +550,12 @@ uv run pyright
 ### Project Structure
 
 - **`CLAUDE.md`**: Development continuity guide (start here for contributors)
+- **`MAINTAINER_GUIDE.md`**: Detailed operational procedures for releases, PRs, etc.
 - **`prd.md`**: Product requirements document
-- **`TODO.md`**: Task backlog
 - **`docs/`**: Documentation and decisions
-  - **`progress.md`**: Chronological implementation log
-  - **`decisions/`**: Architecture Decision Records (ADRs)
+  - **`ARCHITECTURE.md`**: Technical architecture guide
   - **`PERFORMANCE.md`**: Performance testing results
+  - **`decisions/`**: Architecture Decision Records (ADRs)
 - **`tests/`**: Unit, integration, and performance tests
 
 ### Running Tests
@@ -573,7 +587,7 @@ uv run pytest --cov=ember --cov-report=term-missing
 - **Testing:** 801 tests (unit, integration, performance, CLI)
 - **Linting:** ruff (compliant)
 - **Type checking:** pyright (strict mode)
-- **Coverage:** 60%+ overall, 90%+ for critical paths
+- **Coverage:** 26%+ overall (focus on critical paths)
 
 ---
 
@@ -581,12 +595,13 @@ uv run pytest --cov=ember --cov-report=term-missing
 
 We welcome contributions! Please:
 
-1. Read **CLAUDE.md** for development workflow and standards
-2. Check **TODO.md** for planned features
-3. Review **docs/decisions/** for architectural context
-4. Follow existing code patterns (Clean Architecture, SOLID)
-5. Add tests for new functionality
-6. Update documentation (README, ADRs, progress.md)
+1. Read **CLAUDE.md** for development workflow and current state
+2. Check [GitHub Issues](https://github.com/sammcvicker/ember/issues) for planned features
+3. Review **MAINTAINER_GUIDE.md** for release procedures
+4. Review **docs/decisions/** for architectural context
+5. Follow existing code patterns (Clean Architecture, SOLID)
+6. Add tests for new functionality
+7. Update documentation (README, CHANGELOG, ADRs)
 
 ---
 
@@ -596,7 +611,7 @@ We welcome contributions! Please:
 A: Ember is a local search tool, not a code completion AI. It indexes *your* codebase for retrieval, while Copilot generates code based on broad training data.
 
 **Q: Can I use this with large monorepos?**
-A: Yes, but performance depends on size. Ember handles codebases with 1000-2000 files well. For larger repos, use `include`/`ignore` patterns to filter files.
+A: Yes, but performance depends on size. Ember handles codebases with 1000-2000 files well. Larger repos work but may have slower initial indexing.
 
 **Q: Does Ember send my code to the cloud?**
 A: No. Everything runs locally. The embedding model downloads once from HuggingFace and is cached.
@@ -660,8 +675,6 @@ A: The daemon keeps the embedding model loaded in memory, making searches 18.6x 
 - Watch mode (auto-sync on file changes)
 - HTTP server for AI agents
 - Multi-project support
-- Custom embedding models
-- Advanced filtering (tags, metadata)
 
 ---
 
@@ -681,4 +694,4 @@ Built with:
 - [click](https://click.palletsprojects.com/) for CLI
 - [sentence-transformers](https://www.sbert.net/) for embedding inference
 
-Developed by [Sam @ KamiwazaAI](https://github.com/yourusername)
+Developed by [Sam @ KamiwazaAI](https://github.com/sammcvicker)
