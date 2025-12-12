@@ -672,7 +672,7 @@ A: The daemon keeps the embedding model loaded in memory, making searches 18.6x 
 - Daemon reliability fixes (#214, #215, #216)
 - 801 comprehensive tests (up from 271)
 
-**Future** (see [GitHub Issues](https://github.com/sammcvicker/ember))
+**Future** (see [GitHub Issues](https://github.com/sammcvicker/ember/issues))
 - Export/import bundles
 - Audit command for secrets
 - Include/ignore patterns from config
