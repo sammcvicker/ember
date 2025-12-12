@@ -87,8 +87,9 @@ def _create_embedder(config, show_progress: bool = True):
         RuntimeError: If daemon fails to start
         ValueError: If model name is not recognized
     """
-    # Get the configured model name
+    # Get the configured model name and batch size
     model_name = config.index.model
+    batch_size = config.index.batch_size
 
     if config.model.mode == "daemon":
         # Use daemon mode (default)
@@ -101,6 +102,7 @@ def _create_embedder(config, show_progress: bool = True):
         daemon_manager = DaemonLifecycle(
             idle_timeout=config.model.daemon_timeout,
             model_name=model_name,
+            batch_size=batch_size,
         )
 
         # If daemon is already running, nothing to do
@@ -118,12 +120,13 @@ def _create_embedder(config, show_progress: bool = True):
             auto_start=False,  # Daemon already started above
             daemon_timeout=config.model.daemon_timeout,
             model_name=model_name,
+            batch_size=batch_size,
         )
     else:
         # Use direct mode (fallback or explicit config)
         from ember.adapters.local_models.registry import create_embedder
 
-        return create_embedder(model_name=model_name)
+        return create_embedder(model_name=model_name, batch_size=batch_size)
 
 
 def get_ember_repo_root() -> tuple[Path, Path]:

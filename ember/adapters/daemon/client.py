@@ -164,6 +164,7 @@ class DaemonEmbedderClient:
                 socket_path=self.socket_path,
                 idle_timeout=self.daemon_timeout,
                 model_name=self.model_name,
+                batch_size=self.batch_size,
             )
             self._daemon_start_attempted = True
             return lifecycle.ensure_running()

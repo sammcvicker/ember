@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **CUDA OOM: Dynamic batch sizing with graceful fallback** (#246)
+  - Embedders now automatically retry with smaller batch sizes on CUDA out-of-memory errors
+  - Batch size halves on each OOM error until success or minimum (1) reached
+  - Clear logging when batch size is reduced (e.g., "CUDA out of memory. Reducing batch size from 32 to 16")
+  - Calls `torch.cuda.empty_cache()` between retries to free GPU memory
+  - New `batch_size` config option in `[index]` section (default: 32)
+  - Users with limited GPU VRAM can configure lower initial batch sizes
+  - Applied to all embedders: Jina, MiniLM, BGE-small
+
 ### Changed
 - **Config system refactored with global + local inheritance** (#252)
   - Model selection is now a machine-level setting in global config (`~/.config/ember/config.toml`)

@@ -332,6 +332,12 @@ def main() -> None:
         help="Embedding model preset or HuggingFace ID",
     )
     parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=32,
+        help="Batch size for embedding (lower values use less GPU memory)",
+    )
+    parser.add_argument(
         "--log-level",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         default="INFO",
@@ -354,6 +360,7 @@ def main() -> None:
         socket_path=args.socket,
         idle_timeout=args.idle_timeout,
         model_name=args.model,
+        model_batch_size=args.batch_size,
     )
     server.run()
 
