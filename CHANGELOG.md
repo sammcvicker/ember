@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+*No changes yet*
+
+## [1.2.0] - 2025-12-12
+
 ### Changed
 - **Interactive search now accepts path argument instead of query**
   - `ember search tests` restricts search to `tests/` directory
@@ -1108,4 +1112,8 @@ Measured on macOS (Apple Silicon):
 
 ---
 
+[1.2.0]: https://github.com/sammcvicker/ember/releases/tag/v1.2.0
+[1.1.0]: https://github.com/sammcvicker/ember/releases/tag/v1.1.0
+[1.0.0]: https://github.com/sammcvicker/ember/releases/tag/v1.0.0
+[0.2.0]: https://github.com/sammcvicker/ember/releases/tag/v0.2.0
 [0.1.0]: https://github.com/sammcvicker/ember/releases/tag/v0.1.0

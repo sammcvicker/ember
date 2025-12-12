@@ -6,9 +6,9 @@
 
 ## 📍 CURRENT STATE
 
-**Status:** v1.1.0 in develop, ready for v1.2.0 release
+**Status:** v1.2.0 released
 **Branch:** `develop` (for ongoing work)
-**Last Release:** v1.1.0
+**Last Release:** v1.2.0 (2025-12-12)
 **Active Milestone:** None - all issues resolved!
 
 **What's Working:**
@@ -19,40 +19,35 @@
 - Functional config system (.ember/config.toml) ✅
 - sqlite-vec for fast vector search (100x speedup) ✅
 - Batch embedding optimization (2-6x faster indexing) ✅
-- Fast test suite (~83s, 591 tests) ✅
+- Fast test suite (~91s, 801 tests) ✅
 - Clean architecture with ports/adapters ✅
 - 82% test coverage ✅
 
 **Known Issues:**
-- #216 - Daemon fails to start but status shows running (race condition suspected)
-- #214 - Daemon status shows "PID None" when running
-- #215 - HuggingFace tokenizer fork warning during search
+- None currently - all issues resolved in v1.2.0!
 
-**Current Focus:** Daemon reliability fixes
+**Current Focus:** Post-release cleanup
 
 ---
 
 ## 🎯 NEXT STEPS
 
-**Priority: Fix daemon issues (#214, #215, #216)**
+**v1.2.0 Released!** (2025-12-12)
 
-These three issues are related to daemon startup reliability:
-1. **#216** - Root cause investigation needed - daemon reports failure but is actually running
-2. **#214** - Status shows "PID None" - need daemon to report its own PID
-3. **#215** - Tokenizer fork warning - set TOKENIZERS_PARALLELISM=false before fork
+Major features included:
+- Interactive search TUI with path filtering
+- Syntax highlighting across all commands
+- Global config with `ember config` command group
+- Multiple embedding models (Jina, MiniLM, BGE-small)
+- Auto-detect hardware and recommend model during init
+- Go/Rust struct, enum, trait extraction via TreeSitter
+- TypeScript improvements (interfaces, type aliases, arrow functions)
+- Daemon reliability fixes (#214, #215, #216)
+- 801 comprehensive tests (up from 271)
 
-After daemon fixes:
-1. **Release v1.2.0** - Bundle recent improvements into a release
-
-**Recently Completed (v1.2.0 work):**
-- Unified sync-before-run behavior with visible progress (#209)
-- Color separation in search results for faster scanning (#208, #212)
-- Simplified find highlighting (#207, #211)
-- Error message wrapping in TUI (#206, #210)
-- SQLite thread safety fix (#204, #205)
-- Search error display (#202, #203)
-- ResultPresenter SRP refactor (#182, #201)
-- All 16 tech debt issues from Dec 2025 audit ✅
+**Next priorities:**
+1. Gather user feedback on v1.2.0
+2. Plan v1.3.0 features (export/import, include/ignore patterns from config)
 
 ---
 
@@ -195,5 +190,5 @@ See `docs/decisions/` for full ADRs:
 
 ---
 
-**Last Updated:** 2025-12-04 (all tech debt resolved, clean state)
+**Last Updated:** 2025-12-12 (v1.2.0 released)
 **Format Version:** 2.2 (Simplified - no backlog)
