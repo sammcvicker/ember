@@ -768,10 +768,11 @@ def find(
     from ember.domain.entities import Query
 
     # Initialize dependencies
-    text_search = SQLiteFTS(db_path)
-    vector_search = SqliteVecAdapter(db_path)
-    chunk_repo = SQLiteChunkRepository(db_path)
+    # Create embedder first to get its dimension for vector search
     embedder = _create_embedder(config)
+    text_search = SQLiteFTS(db_path)
+    vector_search = SqliteVecAdapter(db_path, vector_dim=embedder.dim)
+    chunk_repo = SQLiteChunkRepository(db_path)
 
     # Create search use case
     search_usecase = SearchUseCase(
@@ -937,10 +938,11 @@ def search(
     from ember.domain.entities import Query
 
     # Initialize search dependencies
-    text_search = SQLiteFTS(db_path)
-    vector_search = SqliteVecAdapter(db_path)
-    chunk_repo = SQLiteChunkRepository(db_path)
+    # Create embedder first to get its dimension for vector search
     embedder = _create_embedder(config, show_progress=False)  # No progress for interactive
+    text_search = SQLiteFTS(db_path)
+    vector_search = SqliteVecAdapter(db_path, vector_dim=embedder.dim)
+    chunk_repo = SQLiteChunkRepository(db_path)
 
     # Create search use case
     search_usecase = SearchUseCase(

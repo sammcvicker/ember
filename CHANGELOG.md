@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-*No changes yet*
+### Fixed
+- **SqliteVecAdapter now uses correct embedding dimension** (#249)
+  - `SqliteVecAdapter` was hardcoded to 768 dimensions (Jina), breaking MiniLM and BGE models which use 384 dimensions
+  - `ember find` and `ember search` commands now pass the embedder's dimension to `SqliteVecAdapter`
+  - Non-Jina models (minilm, bge-small) now work correctly with vector search
 
 ## [1.2.0] - 2025-12-12
 
