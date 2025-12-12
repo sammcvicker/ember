@@ -1,6 +1,7 @@
 """Unit tests for TomlConfigProvider adapter."""
 
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -12,6 +13,12 @@ from ember.domain.config import EmberConfig
 def provider() -> TomlConfigProvider:
     """Create a TomlConfigProvider instance."""
     return TomlConfigProvider()
+
+
+def _mock_no_global_config(tmp_path: Path) -> Path:
+    """Get a nonexistent global config path for test isolation."""
+    return tmp_path / "nonexistent_global" / "config.toml"
+
 
 
 class TestLoadValidConfig:
@@ -129,11 +136,19 @@ class TestLoadMissingConfig:
     def test_load_missing_directory_returns_defaults(
         self, provider: TomlConfigProvider, tmp_path: Path
     ) -> None:
-        """Test that missing ember directory returns default configuration."""
+        """Test that missing ember directory returns default configuration.
+
+        This test must mock global config to isolate from user's actual config.
+        """
         ember_dir = tmp_path / ".ember"
         # Directory does NOT exist
+        nonexistent_global = tmp_path / "nonexistent_global" / "config.toml"
 
-        result = provider.load(ember_dir)
+        with patch(
+            "ember.adapters.config.toml_config_provider.get_global_config_path",
+            return_value=nonexistent_global,
+        ):
+            result = provider.load(ember_dir)
 
         # Should return defaults
         assert isinstance(result, EmberConfig)
@@ -226,13 +241,21 @@ topk = 999
     def test_load_empty_config_returns_defaults(
         self, provider: TomlConfigProvider, tmp_path: Path
     ) -> None:
-        """Test that empty config file returns defaults."""
+        """Test that empty config file returns defaults.
+
+        This test must mock global config to isolate from user's actual config.
+        """
         ember_dir = tmp_path / ".ember"
         ember_dir.mkdir()
         config_file = ember_dir / "config.toml"
         config_file.write_text("")
+        nonexistent_global = tmp_path / "nonexistent_global" / "config.toml"
 
-        result = provider.load(ember_dir)
+        with patch(
+            "ember.adapters.config.toml_config_provider.get_global_config_path",
+            return_value=nonexistent_global,
+        ):
+            result = provider.load(ember_dir)
 
         # Should return defaults (empty config = all defaults)
         default = EmberConfig.default()

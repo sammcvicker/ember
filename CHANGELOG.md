@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Config system refactored with global + local inheritance** (#252)
+  - Model selection is now a machine-level setting in global config (`~/.config/ember/config.toml`)
+  - Project configs (`.ember/config.toml`) are now minimal and override global settings
+  - `ember init` creates global config on first run (with hardware-detected model)
+  - `ember init` creates minimal project config (only repo-specific overrides)
+  - Prevents model mismatch errors when same repo is used on different machines
+  - Existing projects continue to work (full project configs still override everything)
+
 ### Fixed
 - **SqliteVecAdapter now uses correct embedding dimension** (#249)
   - `SqliteVecAdapter` was hardcoded to 768 dimensions (Jina), breaking MiniLM and BGE models which use 384 dimensions

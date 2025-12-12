@@ -464,6 +464,12 @@ def init(ctx: click.Context, force: bool, model: str | None, yes: bool) -> None:
     try:
         response = use_case.execute(request)
 
+        # Report global config creation first (if this is first run)
+        if response.global_config_created and not quiet:
+            click.echo(f"Created global config at {response.global_config_path}")
+            click.echo(f"  ✓ Using model: {selected_model}")
+            click.echo("")
+
         # Report success
         if response.was_reinitialized:
             click.echo(f"Reinitialized existing ember index at {response.ember_dir}")
@@ -474,7 +480,9 @@ def init(ctx: click.Context, force: bool, model: str | None, yes: bool) -> None:
             click.echo(f"  ✓ Created {response.config_path.name}")
             click.echo(f"  ✓ Created {response.db_path.name}")
             click.echo(f"  ✓ Created {response.state_path.name}")
-            click.echo(f"  ✓ Using model: {selected_model}")
+            if not response.global_config_created:
+                # Only show model here if we didn't already show it above
+                click.echo(f"  ✓ Using model: {selected_model} (from global config)")
             click.echo("\nNext: Run 'ember sync' to index your codebase")
 
     except FileExistsError as e:
@@ -1257,21 +1265,40 @@ def config_show(
         elif show_local:
             click.echo("Local config: Not in an Ember repository")
 
-    # Show effective config if we're in a repo
-    if (show_both or show_local) and local_path:
-        click.echo("\nEffective configuration (merged):")
-        provider = TomlConfigProvider()
-        try:
-            config = provider.load(local_path.parent)
-            click.echo("  [index]")
-            click.echo(f"    model = {config.index.model}")
-            click.echo(f"    chunk = {config.index.chunk}")
-            click.echo("  [search]")
-            click.echo(f"    topk = {config.search.topk}")
-            click.echo("  [display]")
-            click.echo(f"    theme = {config.display.theme}")
-        except Exception as e:
-            click.echo(f"  Error loading config: {e}")
+    # Show effective config if we're in a repo or showing global-only
+    if show_both or show_local or show_global:
+        if local_path and (show_both or show_local):
+            click.echo("\nEffective configuration (merged global + local):")
+            provider = TomlConfigProvider()
+            try:
+                config = provider.load(local_path.parent)
+                _display_config_summary(config)
+            except Exception as e:
+                click.echo(f"  Error loading config: {e}")
+        elif show_global and global_path.exists():
+            # Show global config only when explicitly requested
+            click.echo("\nGlobal configuration:")
+            from ember.shared.config_io import load_config
+            try:
+                config = load_config(global_path)
+                _display_config_summary(config)
+            except Exception as e:
+                click.echo(f"  Error loading config: {e}")
+
+
+def _display_config_summary(config: "EmberConfig") -> None:  # noqa: F821
+    """Display a summary of config settings."""
+    click.echo("  [index]")
+    click.echo(f"    model = {config.index.model}")
+    click.echo(f"    chunk = {config.index.chunk}")
+    click.echo("  [model]")
+    click.echo(f"    mode = {config.model.mode}")
+    click.echo(f"    daemon_timeout = {config.model.daemon_timeout}")
+    click.echo("  [search]")
+    click.echo(f"    topk = {config.search.topk}")
+    click.echo("  [display]")
+    click.echo(f"    theme = {config.display.theme}")
+    click.echo(f"    syntax_highlighting = {config.display.syntax_highlighting}")
 
 
 @config.command(name="edit")
@@ -1288,7 +1315,11 @@ def config_edit(ctx: click.Context, edit_global: bool) -> None:
     import os
     import subprocess
 
-    from ember.shared.config_io import create_default_config_file, get_global_config_path
+    from ember.shared.config_io import (
+        create_global_config_file,
+        create_minimal_project_config,
+        get_global_config_path,
+    )
 
     if edit_global:
         config_path = get_global_config_path()
@@ -1308,7 +1339,10 @@ def config_edit(ctx: click.Context, edit_global: bool) -> None:
     # Create config file if it doesn't exist
     if not config_path.exists():
         click.echo(f"Creating {config_type} config at {config_path}...")
-        create_default_config_file(config_path)
+        if edit_global:
+            create_global_config_file(config_path)
+        else:
+            create_minimal_project_config(config_path)
 
     # Open in editor
     editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "vi"

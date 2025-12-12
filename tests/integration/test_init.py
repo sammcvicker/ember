@@ -6,9 +6,11 @@ config file generation, and state initialization.
 
 import sqlite3
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
+from ember.adapters.config.toml_config_provider import TomlConfigProvider
 from ember.adapters.sqlite.initializer import SqliteDatabaseInitializer
 from ember.core.config.init_usecase import InitRequest, InitUseCase
 from ember.shared.config_io import load_config
@@ -23,10 +25,17 @@ def db_initializer() -> SqliteDatabaseInitializer:
 
 def test_init_creates_all_files(tmp_path: Path, db_initializer: SqliteDatabaseInitializer) -> None:
     """Test that init creates all required files and directories."""
-    # Execute init
-    use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
-    request = InitRequest(repo_root=tmp_path, force=False)
-    response = use_case.execute(request)
+    # Use a temp global config path to avoid affecting real global config
+    temp_global_path = tmp_path / "global_config" / "ember" / "config.toml"
+
+    with patch(
+        "ember.core.config.init_usecase.get_global_config_path",
+        return_value=temp_global_path,
+    ):
+        # Execute init
+        use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
+        request = InitRequest(repo_root=tmp_path, force=False)
+        response = use_case.execute(request)
 
     # Verify directory structure
     assert response.ember_dir.exists()
@@ -38,40 +47,74 @@ def test_init_creates_all_files(tmp_path: Path, db_initializer: SqliteDatabaseIn
     assert response.db_path.exists()
     assert response.state_path.exists()
 
+    # Verify global config was created
+    assert response.global_config_created
+    assert response.global_config_path == temp_global_path
+    assert temp_global_path.exists()
+
     # Verify was_reinitialized is False for new init
     assert not response.was_reinitialized
 
 
 def test_init_config_is_valid_toml(tmp_path: Path, db_initializer: SqliteDatabaseInitializer) -> None:
-    """Test that created config.toml is valid and loadable."""
-    use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
-    request = InitRequest(repo_root=tmp_path)
-    response = use_case.execute(request)
+    """Test that created config files are valid and loadable.
 
-    # Load and verify config
-    config = load_config(response.config_path)
+    Init now creates:
+    - A minimal project config (.ember/config.toml)
+    - A global config (~/.config/ember/config.toml) on first run
+    """
+    # Use a temp global config path to avoid affecting real global config
+    temp_global_path = tmp_path / "global_config" / "ember" / "config.toml"
 
-    # Check index section
-    assert config.index.model == "local-default-code-embed"
-    assert config.index.chunk == "symbol"
-    assert config.index.line_window == 120
-    assert "**/*.py" in config.index.include
-    assert ".git/" in config.index.ignore
+    with patch(
+        "ember.core.config.init_usecase.get_global_config_path",
+        return_value=temp_global_path,
+    ):
+        use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
+        request = InitRequest(repo_root=tmp_path)
+        response = use_case.execute(request)
 
-    # Check search section
-    assert config.search.topk == 20
-    assert config.search.rerank is False
+    # Verify global config was created
+    assert response.global_config_created
+    assert temp_global_path.exists()
 
-    # Check redaction section
-    assert len(config.redaction.patterns) > 0
-    assert config.redaction.max_file_mb == 5
+    # Load and verify global config has all defaults
+    global_config = load_config(temp_global_path)
+    assert global_config.index.model == "local-default-code-embed"
+    assert global_config.index.chunk == "symbol"
+    assert global_config.index.line_window == 120
+    assert "**/*.py" in global_config.index.include
+    assert ".git/" in global_config.index.ignore
+    assert global_config.search.topk == 20
+    assert global_config.search.rerank is False
+
+    # Load and verify project config is minimal (relies on defaults)
+    # Use TomlConfigProvider to get merged config
+    with patch(
+        "ember.adapters.config.toml_config_provider.get_global_config_path",
+        return_value=temp_global_path,
+    ):
+        provider = TomlConfigProvider()
+        merged_config = provider.load(response.ember_dir)
+
+    # Merged config should have all values from global config
+    assert merged_config.index.model == "local-default-code-embed"
+    assert merged_config.index.chunk == "symbol"
+    assert merged_config.search.topk == 20
 
 
 def test_init_creates_valid_database_schema(tmp_path: Path, db_initializer: SqliteDatabaseInitializer) -> None:
     """Test that SQLite database has correct schema."""
-    use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
-    request = InitRequest(repo_root=tmp_path)
-    response = use_case.execute(request)
+    # Use a temp global config path to avoid affecting real global config
+    temp_global_path = tmp_path / "global_config" / "ember" / "config.toml"
+
+    with patch(
+        "ember.core.config.init_usecase.get_global_config_path",
+        return_value=temp_global_path,
+    ):
+        use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
+        request = InitRequest(repo_root=tmp_path)
+        response = use_case.execute(request)
 
     # Connect to database and check schema
     conn = sqlite3.connect(response.db_path)
@@ -104,9 +147,16 @@ def test_init_creates_valid_database_schema(tmp_path: Path, db_initializer: Sqli
 
 def test_init_creates_valid_state_json(tmp_path: Path, db_initializer: SqliteDatabaseInitializer) -> None:
     """Test that state.json is created with correct initial values."""
-    use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
-    request = InitRequest(repo_root=tmp_path)
-    response = use_case.execute(request)
+    # Use a temp global config path to avoid affecting real global config
+    temp_global_path = tmp_path / "global_config" / "ember" / "config.toml"
+
+    with patch(
+        "ember.core.config.init_usecase.get_global_config_path",
+        return_value=temp_global_path,
+    ):
+        use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
+        request = InitRequest(repo_root=tmp_path)
+        response = use_case.execute(request)
 
     # Load and verify state
     state = load_state(response.state_path)
@@ -120,46 +170,69 @@ def test_init_creates_valid_state_json(tmp_path: Path, db_initializer: SqliteDat
 
 def test_init_fails_if_ember_dir_exists(tmp_path: Path, db_initializer: SqliteDatabaseInitializer) -> None:
     """Test that init fails if .ember/ already exists without --force."""
-    # First init
-    use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
-    request = InitRequest(repo_root=tmp_path, force=False)
-    use_case.execute(request)
+    # Use a temp global config path to avoid affecting real global config
+    temp_global_path = tmp_path / "global_config" / "ember" / "config.toml"
 
-    # Second init without force should fail
-    with pytest.raises(FileExistsError, match="already exists"):
+    with patch(
+        "ember.core.config.init_usecase.get_global_config_path",
+        return_value=temp_global_path,
+    ):
+        # First init
+        use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
+        request = InitRequest(repo_root=tmp_path, force=False)
         use_case.execute(request)
+
+        # Second init without force should fail
+        with pytest.raises(FileExistsError, match="already exists"):
+            use_case.execute(request)
 
 
 def test_init_force_reinitializes(tmp_path: Path, db_initializer: SqliteDatabaseInitializer) -> None:
     """Test that init --force reinitializes existing .ember/ directory."""
-    use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
+    # Use a temp global config path to avoid affecting real global config
+    temp_global_path = tmp_path / "global_config" / "ember" / "config.toml"
 
-    # First init
-    request1 = InitRequest(repo_root=tmp_path, force=False)
-    response1 = use_case.execute(request1)
-    assert not response1.was_reinitialized
+    with patch(
+        "ember.core.config.init_usecase.get_global_config_path",
+        return_value=temp_global_path,
+    ):
+        use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
 
-    # Modify config to verify it gets replaced
-    config_path = response1.config_path
-    original_content = config_path.read_text()
-    config_path.write_text("# Modified")
+        # First init
+        request1 = InitRequest(repo_root=tmp_path, force=False)
+        response1 = use_case.execute(request1)
+        assert not response1.was_reinitialized
+        assert response1.global_config_created  # First run creates global config
 
-    # Second init with force
-    request2 = InitRequest(repo_root=tmp_path, force=True)
-    response2 = use_case.execute(request2)
-    assert response2.was_reinitialized
+        # Modify config to verify it gets replaced
+        config_path = response1.config_path
+        original_content = config_path.read_text()
+        config_path.write_text("# Modified")
 
-    # Verify config was replaced
-    new_content = config_path.read_text()
-    assert new_content == original_content
-    assert "# Modified" not in new_content
+        # Second init with force
+        request2 = InitRequest(repo_root=tmp_path, force=True)
+        response2 = use_case.execute(request2)
+        assert response2.was_reinitialized
+        assert not response2.global_config_created  # Global config already exists
+
+        # Verify config was replaced
+        new_content = config_path.read_text()
+        assert new_content == original_content
+        assert "# Modified" not in new_content
 
 
 def test_init_database_has_fts5_triggers(tmp_path: Path, db_initializer: SqliteDatabaseInitializer) -> None:
     """Test that FTS5 triggers are created for automatic indexing."""
-    use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
-    request = InitRequest(repo_root=tmp_path)
-    response = use_case.execute(request)
+    # Use a temp global config path to avoid affecting real global config
+    temp_global_path = tmp_path / "global_config" / "ember" / "config.toml"
+
+    with patch(
+        "ember.core.config.init_usecase.get_global_config_path",
+        return_value=temp_global_path,
+    ):
+        use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
+        request = InitRequest(repo_root=tmp_path)
+        response = use_case.execute(request)
 
     conn = sqlite3.connect(response.db_path)
     cursor = conn.cursor()
@@ -173,3 +246,78 @@ def test_init_database_has_fts5_triggers(tmp_path: Path, db_initializer: SqliteD
     assert "chunks_au" in triggers  # After update
 
     conn.close()
+
+
+def test_init_with_custom_model(tmp_path: Path, db_initializer: SqliteDatabaseInitializer) -> None:
+    """Test that init with custom model sets it in global config."""
+    temp_global_path = tmp_path / "global_config" / "ember" / "config.toml"
+
+    with patch(
+        "ember.core.config.init_usecase.get_global_config_path",
+        return_value=temp_global_path,
+    ):
+        use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
+        request = InitRequest(repo_root=tmp_path, model="jina-code-v2")
+        response = use_case.execute(request)
+
+    # Global config should have the custom model
+    global_config = load_config(temp_global_path)
+    assert global_config.index.model == "jina-code-v2"
+
+    # Project config should be minimal (no model set)
+    project_content = response.config_path.read_text()
+    assert "model =" not in project_content or project_content.count("# model") > 0
+
+
+def test_init_respects_existing_global_config(
+    tmp_path: Path, db_initializer: SqliteDatabaseInitializer
+) -> None:
+    """Test that init doesn't overwrite existing global config."""
+    temp_global_path = tmp_path / "global_config" / "ember" / "config.toml"
+
+    # Create existing global config
+    temp_global_path.parent.mkdir(parents=True)
+    temp_global_path.write_text('[index]\nmodel = "minilm"\n')
+
+    with patch(
+        "ember.core.config.init_usecase.get_global_config_path",
+        return_value=temp_global_path,
+    ):
+        use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
+        request = InitRequest(repo_root=tmp_path, model="jina-code-v2")
+        response = use_case.execute(request)
+
+    # Global config should NOT be overwritten
+    assert not response.global_config_created
+    global_config = load_config(temp_global_path)
+    assert global_config.index.model == "minilm"  # Original value preserved
+
+
+def test_project_config_overrides_global(
+    tmp_path: Path, db_initializer: SqliteDatabaseInitializer
+) -> None:
+    """Test that project config overrides global config values."""
+    temp_global_path = tmp_path / "global_config" / "ember" / "config.toml"
+
+    with patch(
+        "ember.core.config.init_usecase.get_global_config_path",
+        return_value=temp_global_path,
+    ):
+        use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
+        request = InitRequest(repo_root=tmp_path, model="jina-code-v2")
+        response = use_case.execute(request)
+
+    # Now add a project-specific override
+    project_config = response.config_path
+    project_config.write_text('[index]\nmodel = "bge-small"\n')
+
+    # Load merged config
+    with patch(
+        "ember.adapters.config.toml_config_provider.get_global_config_path",
+        return_value=temp_global_path,
+    ):
+        provider = TomlConfigProvider()
+        merged_config = provider.load(response.ember_dir)
+
+    # Project config should override global
+    assert merged_config.index.model == "bge-small"
