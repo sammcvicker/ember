@@ -1394,7 +1394,10 @@ def start(ctx: click.Context, foreground: bool) -> None:
         # Foreground mode uses direct lifecycle management
         from ember.adapters.daemon.lifecycle import DaemonLifecycle
 
-        lifecycle = DaemonLifecycle(idle_timeout=config.model.daemon_timeout)
+        lifecycle = DaemonLifecycle(
+            idle_timeout=config.model.daemon_timeout,
+            model_name=config.index.model,
+        )
 
         if lifecycle.is_running():
             click.echo("✓ Daemon is already running")
@@ -1413,7 +1416,10 @@ def start(ctx: click.Context, foreground: bool) -> None:
         from ember.adapters.daemon.lifecycle import DaemonLifecycle
 
         quiet = ctx.obj.get("quiet", False)
-        daemon_manager = DaemonLifecycle(idle_timeout=config.model.daemon_timeout)
+        daemon_manager = DaemonLifecycle(
+            idle_timeout=config.model.daemon_timeout,
+            model_name=config.index.model,
+        )
         if ensure_daemon_with_progress(daemon_manager, quiet=quiet):
             if not quiet:
                 click.echo("✓ Daemon started successfully")
@@ -1446,11 +1452,21 @@ def stop() -> None:
 
 
 @daemon.command()
-def restart() -> None:
+@click.pass_context
+def restart(ctx: click.Context) -> None:
     """Restart the daemon server."""
+    from ember.adapters.config.toml_config_provider import TomlConfigProvider
     from ember.adapters.daemon.lifecycle import DaemonLifecycle
 
-    lifecycle = DaemonLifecycle()
+    # Load config to get model name
+    repo_root, ember_dir = get_ember_repo_root()
+    config_provider = TomlConfigProvider()
+    config = config_provider.load(ember_dir)
+
+    lifecycle = DaemonLifecycle(
+        idle_timeout=config.model.daemon_timeout,
+        model_name=config.index.model,
+    )
     click.echo("Restarting daemon...")
 
     if lifecycle.restart():
