@@ -392,6 +392,68 @@ def test_chunking_failure_preserves_existing_chunks(
 
 
 @pytest.mark.slow
+def test_chunking_failure_logs_warning_and_tracks_stats(
+    indexing_usecase: IndexingUseCase, git_repo: Path, db_path: Path, caplog
+) -> None:
+    """Test that chunking failures are logged with warning level and tracked in stats.
+
+    This is a regression test for issue #144: when chunking fails, the error
+    message should be logged and failures should be tracked in IndexResponse.
+    """
+    import logging
+
+    caplog.set_level(logging.WARNING)
+
+    # Initial sync - index successfully
+    request1 = IndexRequest(repo_root=git_repo, force_reindex=True)
+    response1 = indexing_usecase.execute(request1)
+    assert response1.success
+
+    # Mock the chunk_usecase to fail for math.py
+    from ember.core.chunking.chunk_usecase import ChunkFileResponse
+
+    original_execute = indexing_usecase.chunk_usecase.execute
+
+    def mock_chunk_execute(request):
+        if "math.py" in str(request.path):
+            return ChunkFileResponse(
+                chunks=[],
+                strategy="tree-sitter",
+                success=False,
+                error="Simulated parsing error: unexpected token",
+            )
+        return original_execute(request)
+
+    indexing_usecase.chunk_usecase.execute = mock_chunk_execute
+    caplog.clear()
+
+    # Re-index with force to trigger chunking failure
+    request2 = IndexRequest(repo_root=git_repo, force_reindex=True)
+    response2 = indexing_usecase.execute(request2)
+
+    # Should still succeed overall
+    assert response2.success
+
+    # CRITICAL: Verify files_failed is tracked in response
+    assert hasattr(response2, "files_failed"), "IndexResponse should have files_failed field"
+    assert response2.files_failed == 1, f"Expected 1 failed file, got {response2.files_failed}"
+
+    # CRITICAL: Verify warning was logged with file path and error message
+    warning_messages = [
+        record.message for record in caplog.records if record.levelno == logging.WARNING
+    ]
+    assert any("math.py" in msg for msg in warning_messages), (
+        f"Expected warning mentioning math.py, got: {warning_messages}"
+    )
+    assert any("Simulated parsing error" in msg for msg in warning_messages), (
+        f"Expected warning with error message, got: {warning_messages}"
+    )
+
+    # Restore original method
+    indexing_usecase.chunk_usecase.execute = original_execute
+
+
+@pytest.mark.slow
 def test_index_file_with_unreadable_file(
     indexing_usecase: IndexingUseCase, git_repo: Path, db_path: Path
 ) -> None:

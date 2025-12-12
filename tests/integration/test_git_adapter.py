@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from ember.adapters.git_cmd import GitAdapter
+from tests.conftest import create_git_repo, git_add_and_commit, init_git_repo
 
 
 @pytest.fixture
@@ -18,39 +19,13 @@ def git_repo(tmp_path: Path) -> Path:
     Returns:
         Path to the git repository root.
     """
-    repo = tmp_path / "test_repo"
-    repo.mkdir()
-
-    # Initialize git repo
-    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, timeout=5)
-    subprocess.run(
-        ["git", "config", "user.name", "Test User"],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-        timeout=5,
+    return create_git_repo(
+        tmp_path / "test_repo",
+        files={
+            "file1.txt": "Hello world\n",
+            "file2.py": "print('hello')\n",
+        },
     )
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-        timeout=5,
-    )
-
-    # Create initial commit
-    (repo / "file1.txt").write_text("Hello world\n")
-    (repo / "file2.py").write_text("print('hello')\n")
-    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True, timeout=5)
-    subprocess.run(
-        ["git", "commit", "-m", "Initial commit"],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-        timeout=5,
-    )
-
-    return repo
 
 
 @pytest.fixture
@@ -127,14 +102,7 @@ def test_diff_files_between_commits(git_adapter: GitAdapter, git_repo: Path):
     # Create a new commit with changes
     (git_repo / "file3.txt").write_text("New file\n")
     (git_repo / "file1.txt").write_text("Modified\n")
-    subprocess.run(["git", "add", "."], cwd=git_repo, check=True, capture_output=True, timeout=5)
-    subprocess.run(
-        ["git", "commit", "-m", "Second commit"],
-        cwd=git_repo,
-        check=True,
-        capture_output=True,
-        timeout=5,
-    )
+    git_add_and_commit(git_repo, message="Second commit")
 
     new_tree = git_adapter.get_tree_sha("HEAD")
 
@@ -174,14 +142,7 @@ def test_diff_files_with_deletions(git_adapter: GitAdapter, git_repo: Path):
 
     # Delete a file
     (git_repo / "file1.txt").unlink()
-    subprocess.run(["git", "add", "."], cwd=git_repo, check=True, capture_output=True, timeout=5)
-    subprocess.run(
-        ["git", "commit", "-m", "Delete file"],
-        cwd=git_repo,
-        check=True,
-        capture_output=True,
-        timeout=5,
-    )
+    git_add_and_commit(git_repo, message="Delete file")
 
     new_tree = git_adapter.get_tree_sha("HEAD")
     changes = git_adapter.diff_files(initial_tree, new_tree)
@@ -199,14 +160,7 @@ def test_diff_files_with_renames(git_adapter: GitAdapter, git_repo: Path):
 
     # Rename a file
     (git_repo / "file1.txt").rename(git_repo / "renamed.txt")
-    subprocess.run(["git", "add", "."], cwd=git_repo, check=True, capture_output=True, timeout=5)
-    subprocess.run(
-        ["git", "commit", "-m", "Rename file"],
-        cwd=git_repo,
-        check=True,
-        capture_output=True,
-        timeout=5,
-    )
+    git_add_and_commit(git_repo, message="Rename file")
 
     new_tree = git_adapter.get_tree_sha("HEAD")
     changes = git_adapter.diff_files(initial_tree, new_tree)
@@ -250,21 +204,7 @@ def test_empty_repository_detection(tmp_path: Path):
     repo.mkdir()
 
     # Initialize git repo but don't make any commits
-    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, timeout=5)
-    subprocess.run(
-        ["git", "config", "user.name", "Test User"],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-        timeout=5,
-    )
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-        timeout=5,
-    )
+    init_git_repo(repo)
 
     adapter = GitAdapter(repo)
 
@@ -309,35 +249,10 @@ def test_worktree_tree_sha_restores_index_on_error(git_adapter: GitAdapter, git_
 
 def test_error_messages_include_exit_code(tmp_path: Path):
     """Test that error messages include git exit code and context."""
-    repo = tmp_path / "test_repo"
-    repo.mkdir()
-
-    # Initialize git repo
-    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, timeout=5)
-    subprocess.run(
-        ["git", "config", "user.name", "Test User"],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-        timeout=5,
-    )
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-        timeout=5,
-    )
-
-    # Create a commit
-    (repo / "file.txt").write_text("test\n")
-    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True, timeout=5)
-    subprocess.run(
-        ["git", "commit", "-m", "Initial"],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-        timeout=5,
+    repo = create_git_repo(
+        tmp_path / "test_repo",
+        files={"file.txt": "test\n"},
+        commit_message="Initial",
     )
 
     adapter = GitAdapter(repo)
@@ -366,22 +281,8 @@ def test_list_tracked_files_empty_repo_with_commit(tmp_path: Path):
     repo = tmp_path / "test_repo"
     repo.mkdir()
 
-    # Initialize and create empty commit
-    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True, timeout=5)
-    subprocess.run(
-        ["git", "config", "user.name", "Test User"],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-        timeout=5,
-    )
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"],
-        cwd=repo,
-        check=True,
-        capture_output=True,
-        timeout=5,
-    )
+    # Initialize and create empty commit (special case: --allow-empty)
+    init_git_repo(repo)
     subprocess.run(
         ["git", "commit", "--allow-empty", "-m", "Empty commit"],
         cwd=repo,
@@ -480,3 +381,83 @@ def test_get_worktree_tree_sha_ignores_gitignored_files(
     # Tree SHA should NOT change because file is ignored
     tree_with_ignored = git_adapter.get_worktree_tree_sha()
     assert tree_with_ignored == clean_tree
+
+
+def test_get_worktree_tree_sha_raises_on_index_restoration_failure(
+    git_adapter: GitAdapter, git_repo: Path, monkeypatch
+):
+    """Test that get_worktree_tree_sha raises exception when index restoration fails.
+
+    This ensures users are notified about potential repository corruption rather
+    than silently leaving the index in an inconsistent state.
+    """
+    original_run_git = git_adapter._run_git
+    call_count = {"count": 0}
+
+    def mock_run_git(args, check=True, capture_output=True):
+        call_count["count"] += 1
+        # Let add and write-tree succeed, then fail on read-tree (restoration)
+        if args[0] == "read-tree":
+            raise subprocess.CalledProcessError(1, ["git", "read-tree"], stderr=b"simulated failure")
+        return original_run_git(args, check=check, capture_output=capture_output)
+
+    monkeypatch.setattr(git_adapter, "_run_git", mock_run_git)
+
+    # Should raise RuntimeError about restoration failure
+    with pytest.raises(RuntimeError, match="index restoration failed"):
+        git_adapter.get_worktree_tree_sha()
+
+
+def test_get_worktree_tree_sha_raises_on_reset_failure_in_empty_repo(
+    tmp_path: Path, monkeypatch
+):
+    """Test that get_worktree_tree_sha raises exception when reset fails for empty-index case.
+
+    When there's no index tree (e.g., fresh repo), restoration uses 'git reset'.
+    If that fails, we should raise an exception.
+    """
+    repo = create_git_repo(
+        tmp_path / "fresh_repo",
+        files={"file.txt": "content\n"},
+        commit_message="Initial",
+    )
+
+    adapter = GitAdapter(repo)
+    original_run_git = adapter._run_git
+    first_write_tree = {"done": False}
+
+    def mock_run_git(args, check=True, capture_output=True):
+        # Make the first write-tree fail so index_tree is None
+        if args[0] == "write-tree" and not first_write_tree["done"]:
+            first_write_tree["done"] = True
+            raise subprocess.CalledProcessError(1, ["git", "write-tree"], stderr=b"")
+        # Then fail on reset (restoration)
+        if args[0] == "reset":
+            raise subprocess.CalledProcessError(1, ["git", "reset"], stderr=b"simulated reset failure")
+        return original_run_git(args, check=check, capture_output=capture_output)
+
+    monkeypatch.setattr(adapter, "_run_git", mock_run_git)
+
+    with pytest.raises(RuntimeError, match="index restoration failed"):
+        adapter.get_worktree_tree_sha()
+
+
+def test_get_worktree_tree_sha_error_message_includes_recovery_guidance(
+    git_adapter: GitAdapter, git_repo: Path, monkeypatch
+):
+    """Test that restoration failure error message includes helpful recovery guidance."""
+    original_run_git = git_adapter._run_git
+
+    def mock_run_git(args, check=True, capture_output=True):
+        if args[0] == "read-tree":
+            raise subprocess.CalledProcessError(1, ["git", "read-tree"], stderr=b"simulated failure")
+        return original_run_git(args, check=check, capture_output=capture_output)
+
+    monkeypatch.setattr(git_adapter, "_run_git", mock_run_git)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        git_adapter.get_worktree_tree_sha()
+
+    error_msg = str(exc_info.value).lower()
+    # Should mention git status for verification
+    assert "git status" in error_msg

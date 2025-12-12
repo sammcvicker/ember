@@ -11,6 +11,50 @@ EMPTY_TREE_SHA = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
 logger = logging.getLogger(__name__)
 
+# Git status code mappings for diff-tree output
+# Maps exact status codes to (FileStatus, path_index)
+_EXACT_STATUS_MAP: dict[str, tuple[str, int]] = {
+    "A": ("added", 1),
+    "D": ("deleted", 1),
+    "M": ("modified", 1),
+    "T": ("modified", 1),  # Type change (e.g., file -> submodule)
+}
+
+# Maps status code prefixes to (FileStatus, preferred_path_index)
+# These codes have similarity scores appended (e.g., R100, C050)
+_PREFIX_STATUS_MAP: dict[str, tuple[str, int]] = {
+    "R": ("renamed", 2),  # Rename: prefer new path (index 2)
+    "C": ("added", 2),  # Copy: treat as added, use new path (index 2)
+}
+
+
+def _parse_status_code(parts: list[str]) -> tuple[str, Path] | None:
+    """Parse git status code and extract status and path.
+
+    Args:
+        parts: Split line from git diff-tree output.
+               Format: [status_code, path] or [status_code, old_path, new_path] for renames/copies.
+
+    Returns:
+        Tuple of (FileStatus, Path) or None if status code is unknown.
+    """
+    status_code = parts[0]
+
+    # Check exact matches first
+    if status_code in _EXACT_STATUS_MAP:
+        status, idx = _EXACT_STATUS_MAP[status_code]
+        return (status, Path(parts[idx]))
+
+    # Check prefix matches (R100, C050, etc.)
+    for prefix, (status, preferred_idx) in _PREFIX_STATUS_MAP.items():
+        if status_code.startswith(prefix):
+            # Use preferred index if available, otherwise fall back to index 1
+            idx = preferred_idx if len(parts) > preferred_idx else 1
+            return (status, Path(parts[idx]))
+
+    # Unknown status code
+    return None
+
 
 class GitAdapter:
     """Git VCS adapter using subprocess calls to git CLI."""
@@ -173,20 +217,35 @@ class GitAdapter:
         finally:
             # ALWAYS restore index to previous state, even if exception occurred
             # This prevents leaving the repository in a modified state
+            # CRITICAL: If restoration fails, raise exception to alert user about potential corruption
+            restoration_error: Exception | None = None
+
             if index_tree:
                 try:
                     self._run_git(["read-tree", index_tree])
-                except subprocess.CalledProcessError:
-                    # Log but don't raise - original error is more important
-                    logger.warning(
-                        "Failed to restore index state after computing worktree tree SHA"
+                except subprocess.CalledProcessError as e:
+                    logger.error(
+                        f"CRITICAL: Failed to restore git index state: {e}. "
+                        "Repository may be in an inconsistent state."
                     )
+                    restoration_error = e
             else:
                 # If there was no index, reset it
                 try:
                     self._run_git(["reset"], check=False)
-                except subprocess.CalledProcessError:
-                    logger.warning("Failed to reset index after computing worktree tree SHA")
+                except subprocess.CalledProcessError as e:
+                    logger.error(
+                        f"CRITICAL: Failed to reset git index: {e}. "
+                        "Repository may be in an inconsistent state."
+                    )
+                    restoration_error = e
+
+            if restoration_error:
+                raise RuntimeError(
+                    "Git index restoration failed! Repository may be in an inconsistent state. "
+                    "Please run 'git status' to verify index integrity and consider running "
+                    "'git reset' to restore a clean state."
+                ) from restoration_error
 
     def diff_files(
         self,
@@ -225,44 +284,15 @@ class GitAdapter:
                 if len(parts) < 2:
                     continue
 
-                status_code = parts[0]
-
-                # Map git status codes to our FileStatus
-                if status_code == "A":
-                    status: FileStatus = "added"
-                    path = Path(parts[1])
-                elif status_code == "D":
-                    status = "deleted"
-                    path = Path(parts[1])
-                elif status_code == "M":
-                    status = "modified"
-                    path = Path(parts[1])
-                elif status_code.startswith("R"):  # R100, R090, etc.
-                    status = "renamed"
-                    # For renames, use the new path
-                    path = Path(parts[2]) if len(parts) > 2 else Path(parts[1])
-                elif status_code.startswith("C"):  # Copy
-                    logger.warning(
-                        f"Git status 'C' (copy) detected for path {parts[2] if len(parts) > 2 else '?'}. "
-                        f"Treating as added file."
-                    )
-                    status = "added"
-                    path = Path(parts[2]) if len(parts) > 2 else Path(parts[1])
-                elif status_code == "T":  # Type change (e.g., file -> submodule)
-                    logger.warning(
-                        f"Git status 'T' (type change) detected for path {parts[1]}. "
-                        f"Treating as modified file."
-                    )
-                    status = "modified"
-                    path = Path(parts[1])
-                else:
-                    # Unknown status code - log and skip
+                result = _parse_status_code(parts)
+                if result is None:
                     path_info = parts[1] if len(parts) > 1 else "?"
                     logger.warning(
-                        f"Unknown git status code '{status_code}' for path '{path_info}'. Skipping."
+                        f"Unknown git status code '{parts[0]}' for path '{path_info}'. Skipping."
                     )
                     continue
 
+                status, path = result
                 changes.append((status, path))
 
             return changes

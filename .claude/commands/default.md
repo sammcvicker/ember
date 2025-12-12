@@ -13,11 +13,18 @@ Execute the following steps autonomously, only asking for user confirmation at m
 ### 1. Pick Next Issue
 
 ```bash
-# Find the next open issue in the current milestone (sequential order)
-gh issue list --milestone "1.0.0" --state open --json number,title,labels --limit 20
+# Check for open issues
+gh issue list --state open --json number,title,labels --limit 20
 ```
 
-- Select the lowest numbered open issue (we work sequentially)
+**Priority Order:**
+1. **Bug fixes** - Issues labeled `bug`
+2. **Enhancements** - Issues labeled `enhancement`
+3. **Tech debt** - Issues labeled `tech-debt`
+
+Within each priority level: prefer lowest numbered issue.
+
+- If no open issues exist, inform the user and ask what they'd like to work on
 - If unclear which issue to work on, ask the user
 
 ### 2. Start Issue
@@ -85,16 +92,16 @@ Report to the user:
 - Issue number and title completed
 - PR link
 - Test coverage stats
-- Next issue number
+- Next issue number (if any)
 - Ask if they want to continue with next issue or stop
 
 ## Important Notes
 
 - **Read CLAUDE.md first** to understand current project state
-- **Follow the critical path** - issues are ordered with dependencies in mind
 - **Don't skip steps** - tests, linting, documentation are all required
 - **Commit frequently** during implementation (not just at the end)
 - **Only stop for confirmation** when:
+  - No open issues exist
   - Unclear which issue to work on
   - Multiple valid implementation approaches exist
   - Encountering blocking errors
@@ -118,4 +125,3 @@ Before moving to PR creation, verify:
 - `docs/decisions/` - Architecture Decision Records
 
 Ready to start the workflow!
-

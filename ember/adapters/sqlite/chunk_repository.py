@@ -28,12 +28,14 @@ class SQLiteChunkRepository:
         """Get a database connection with foreign keys enabled.
 
         Reuses an existing connection if available, otherwise creates a new one.
+        Uses check_same_thread=False to allow use from different threads, which
+        is required for interactive search where queries run in a thread executor.
 
         Returns:
             SQLite connection object.
         """
         if self._conn is None:
-            self._conn = sqlite3.connect(self.db_path)
+            self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
             self._conn.execute("PRAGMA foreign_keys = ON")
         return self._conn
 
@@ -42,6 +44,15 @@ class SQLiteChunkRepository:
         if self._conn is not None:
             self._conn.close()
             self._conn = None
+
+    def __enter__(self) -> "SQLiteChunkRepository":
+        """Enter context manager."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
+        """Exit context manager, closing the database connection."""
+        self.close()
+        return False
 
     def add(self, chunk: Chunk) -> None:
         """Add or update a chunk in the repository.
@@ -233,27 +244,18 @@ class SQLiteChunkRepository:
     def delete(self, chunk_id: str) -> None:
         """Delete a chunk by ID.
 
-        Since we don't store chunk_id directly, we need to find it first then delete.
+        Deletes directly using the indexed chunk_id column for efficiency.
 
         Args:
             chunk_id: The chunk identifier to delete.
         """
-        # First find the chunk to get its DB row id
-        chunk = self.get(chunk_id)
-        if chunk is None:
-            return  # Already deleted or doesn't exist
-
         conn = self._get_connection()
         cursor = conn.cursor()
-        path_str = str(chunk.path)
 
-        # Delete by unique constraint fields
+        # Delete directly by chunk_id (which is indexed)
         cursor.execute(
-                """
-                DELETE FROM chunks
-                WHERE tree_sha = ? AND path = ? AND start_line = ? AND end_line = ?
-                """,
-                (chunk.tree_sha, path_str, chunk.start_line, chunk.end_line),
+            "DELETE FROM chunks WHERE chunk_id = ?",
+            (chunk_id,),
         )
         conn.commit()
 

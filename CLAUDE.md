@@ -6,54 +6,48 @@
 
 ## 📍 CURRENT STATE
 
-**Status:** Post-v0.2.0 release, working towards v1.0.0
+**Status:** v1.2.0 released
 **Branch:** `develop` (for ongoing work)
-**Last Release:** v0.2.0 (2025-10-20)
-**Active Milestone:** 1.0.0
-**Theme:** "Be like water" - Remove all friction, make ember feel invisible and natural
+**Last Release:** v1.2.0 (2025-12-12)
+**Active Milestone:** None - all issues resolved!
 
 **What's Working:**
 - Core indexing and search functionality ✅
-- Auto-sync on search (zero-friction workflow) ✅
+- Interactive search TUI (`ember search`) ✅
+- Syntax highlighting (cat, find, search) ✅
+- Auto-sync on search with visible progress ✅
 - Functional config system (.ember/config.toml) ✅
 - sqlite-vec for fast vector search (100x speedup) ✅
 - Batch embedding optimization (2-6x faster indexing) ✅
-- Fast test suite (<10s) ✅
-- Clean, refactored CLI (29% complexity reduction) ✅
-- 125 automated tests passing ✅
+- Fast test suite (~91s, 801 tests) ✅
 - Clean architecture with ports/adapters ✅
+- 82% test coverage ✅
 
-**Current Focus:** Removing friction for 1.0.0 - make ember instant, effortless, and complete
+**Known Issues:**
+- None currently - all issues resolved in v1.2.0!
+
+**Current Focus:** Post-release cleanup
 
 ---
 
-## 🎯 NEXT MILESTONE: v1.0.0 "Be Like Water"
+## 🎯 NEXT STEPS
 
-See [GitHub milestone](https://github.com/sammcvicker/ember/milestone/4) for all issues.
+**v1.2.0 Released!** (2025-12-12)
 
-**Philosophy:** Remove every snag. Make ember feel instant, effortless, and natural - like water flowing through a streambed.
+Major features included:
+- Interactive search TUI with path filtering
+- Syntax highlighting across all commands
+- Global config with `ember config` command group
+- Multiple embedding models (Jina, MiniLM, BGE-small)
+- Auto-detect hardware and recommend model during init
+- Go/Rust struct, enum, trait extraction via TreeSitter
+- TypeScript improvements (interfaces, type aliases, arrow functions)
+- Daemon reliability fixes (#214, #215, #216)
+- 801 comprehensive tests (up from 271)
 
-**Critical Path (High Priority):**
-1. **#46** - Reduce model initialization time (2+ seconds → instant) ⚡ `[performance]`
-   - *Biggest friction point - investigate daemon architecture*
-2. **#43** - Support subdirectories and path-scoped search 📁 `[enhancement]`
-   - *Work from anywhere, like git*
-3. **#47** - Index untracked/unstaged files 📝 `[enhancement]`
-   - *Search what you see, not what's committed*
-
-**Polish & Visibility (Medium Priority):**
-4. **#44** - Fix progress bar jumping 🎨 `[dx, performance]`
-   - *Quick visual win - stable progress display*
-5. **#45** - Add `ember status` command 📊 `[dx, enhancement]`
-   - *Observability: show index state and config*
-
-**Total:** 5 issues, ~25-38 hours effort
-**Outcome:** A tool that feels invisible - fast, complete, and friction-free
-
-**Completed in v0.2.0:**
-- All 11 milestone issues closed ✅
-- All 7 tech debt issues from audit closed ✅
-- Zero open issues at release (clean slate!) ✅
+**Next priorities:**
+1. Gather user feedback on v1.2.0
+2. Plan v1.3.0 features (export/import, include/ignore patterns from config)
 
 ---
 
@@ -68,7 +62,7 @@ See [GitHub milestone](https://github.com/sammcvicker/ember/milestone/4) for all
 cat CLAUDE.md | head -30
 
 # 2. See what needs doing
-gh issue list --state open --milestone "1.0.0"
+gh issue list --state open
 
 # 3. Check branch status
 git status
@@ -79,7 +73,7 @@ git log --oneline -5
 
 ### Work Pattern
 
-1. **Pick issue** from milestone
+1. **Pick issue** from open issues (or create one)
 2. **Create branch** from `develop`: `git checkout -b fix/issue-N-description`
 3. **Work with tests**: Write tests, implement, verify
 4. **Update CHANGELOG.md** under "Unreleased" section
@@ -146,7 +140,7 @@ git checkout -b feat/...   # Create feature branch
 git log --oneline -10      # Recent commits
 
 # GitHub CLI
-gh issue list --milestone "1.0.0"  # Current milestone issues
+gh issue list              # Open issues
 gh pr create --base develop        # PR to develop (NOT main!)
 gh pr merge --squash               # Merge and squash commits
 
@@ -196,5 +190,5 @@ See `docs/decisions/` for full ADRs:
 
 ---
 
-**Last Updated:** 2025-10-21 (v1.0.0 milestone planned - "be like water")
-**Format Version:** 2.0 (Simplified)
+**Last Updated:** 2025-12-12 (v1.2.0 released)
+**Format Version:** 2.2 (Simplified - no backlog)

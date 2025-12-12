@@ -13,6 +13,7 @@ import socket
 import sys
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from ember.adapters.daemon.protocol import (
     ProtocolError,
@@ -21,7 +22,9 @@ from ember.adapters.daemon.protocol import (
     receive_message,
     send_message,
 )
-from ember.adapters.local_models.jina_embedder import JinaCodeEmbedder
+
+if TYPE_CHECKING:
+    from ember.ports.embedders import Embedder
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +36,8 @@ class DaemonServer:
         self,
         socket_path: Path,
         idle_timeout: int = 900,
-        model_max_seq_length: int = 512,
+        model_name: str | None = None,
+        model_max_seq_length: int | None = None,
         model_batch_size: int = 32,
     ):
         """Initialize daemon server.
@@ -41,15 +45,17 @@ class DaemonServer:
         Args:
             socket_path: Path to Unix socket
             idle_timeout: Seconds of inactivity before shutdown (0 = never)
+            model_name: Embedding model name (preset or HuggingFace ID)
             model_max_seq_length: Max sequence length for embedder
             model_batch_size: Batch size for embedder
         """
         self.socket_path = socket_path
         self.idle_timeout = idle_timeout
+        self.model_name = model_name
         self.model_max_seq_length = model_max_seq_length
         self.model_batch_size = model_batch_size
 
-        self.embedder: JinaCodeEmbedder | None = None
+        self.embedder: Embedder | None = None
         self.server_socket: socket.socket | None = None
         self.last_request_time = time.time()
         self.running = False
@@ -67,10 +73,14 @@ class DaemonServer:
 
     def load_model(self) -> None:
         """Load the embedding model (one-time cost)."""
-        logger.info("Loading embedding model...")
+        from ember.adapters.local_models.registry import create_embedder
+
+        model_display = self.model_name or "default (jina-code-v2)"
+        logger.info(f"Loading embedding model: {model_display}...")
         start = time.time()
 
-        self.embedder = JinaCodeEmbedder(
+        self.embedder = create_embedder(
+            model_name=self.model_name,
             max_seq_length=self.model_max_seq_length,
             batch_size=self.model_batch_size,
         )
@@ -78,7 +88,7 @@ class DaemonServer:
         self.embedder.ensure_loaded()
 
         elapsed = time.time() - start
-        logger.info(f"Model loaded in {elapsed:.2f}s")
+        logger.info(f"Model {self.embedder.name} loaded in {elapsed:.2f}s")
 
     def create_socket(self) -> None:
         """Create and bind Unix socket.
@@ -154,8 +164,22 @@ class DaemonServer:
             )
 
     def _handle_health(self, request: Request) -> Response:
-        """Handle health check request."""
-        return Response.success({"status": "ok"}, request_id=request.id)
+        """Handle health check request.
+
+        Returns status and the daemon's PID, which allows clients to recover
+        the PID even if the PID file is missing (#214).
+        """
+        import os
+
+        return Response.success(
+            {
+                "status": "ok",
+                "pid": os.getpid(),
+                "model": self.embedder.name if self.embedder else None,
+                "dim": self.embedder.dim if self.embedder else None,
+            },
+            request_id=request.id,
+        )
 
     def _handle_stats(self, request: Request) -> Response:
         """Handle stats request."""
@@ -244,6 +268,8 @@ class DaemonServer:
             except Exception as e:
                 if self.running:
                     logger.exception(f"Error in server loop: {e}")
+                    # Add backoff to prevent tight loop on persistent errors
+                    time.sleep(0.1)
 
         logger.info("Daemon server stopped")
 
@@ -254,6 +280,11 @@ class DaemonServer:
 
         if self.socket_path.exists():
             self.socket_path.unlink()
+
+        # Release model resources
+        if self.embedder is not None:
+            self.embedder = None
+            logger.debug("Released embedder model reference")
 
         logger.info(f"Cleaned up socket: {self.socket_path}")
 
@@ -295,6 +326,12 @@ def main() -> None:
         help="Idle timeout in seconds (0 = never)",
     )
     parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help="Embedding model preset or HuggingFace ID",
+    )
+    parser.add_argument(
         "--log-level",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         default="INFO",
@@ -316,6 +353,7 @@ def main() -> None:
     server = DaemonServer(
         socket_path=args.socket,
         idle_timeout=args.idle_timeout,
+        model_name=args.model,
     )
     server.run()
 

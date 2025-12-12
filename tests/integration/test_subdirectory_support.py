@@ -4,39 +4,26 @@ Tests that ember commands work correctly when run from subdirectories,
 similar to how git works from anywhere within a repository.
 """
 
-import subprocess
 from pathlib import Path
 
 import pytest
+
+from ember.adapters.sqlite.initializer import SqliteDatabaseInitializer
+from tests.conftest import create_git_repo, init_git_repo
 
 
 @pytest.fixture
 def test_repo_with_subdirs(tmp_path):
     """Create a test repository with nested subdirectories."""
-    repo = tmp_path / "test_repo"
-    repo.mkdir()
-
-    # Create directory structure
-    (repo / "src").mkdir()
-    (repo / "src" / "utils").mkdir()
-    (repo / "tests").mkdir()
-
-    # Create some files
-    (repo / "main.py").write_text("def main(): pass")
-    (repo / "src" / "module.py").write_text("class Foo: pass")
-    (repo / "src" / "utils" / "helpers.py").write_text("def helper(): pass")
-    (repo / "tests" / "test_main.py").write_text("def test_main(): pass")
-
-    # Initialize git repo
-    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
-    subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, check=True)
-    subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=repo, check=True)
-    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "commit", "-m", "Initial commit"], cwd=repo, check=True, capture_output=True
+    return create_git_repo(
+        tmp_path / "test_repo",
+        files={
+            "main.py": "def main(): pass",
+            "src/module.py": "class Foo: pass",
+            "src/utils/helpers.py": "def helper(): pass",
+            "tests/test_main.py": "def test_main(): pass",
+        },
     )
-
-    return repo
 
 
 def test_init_from_subdirectory_finds_git_root(test_repo_with_subdirs):
@@ -56,7 +43,8 @@ def test_init_from_subdirectory_finds_git_root(test_repo_with_subdirs):
     assert repo_root == repo
 
     # Now actually initialize
-    use_case = InitUseCase(version="0.2.0")
+    db_initializer = SqliteDatabaseInitializer()
+    use_case = InitUseCase(db_initializer=db_initializer, version="0.2.0")
     request = InitRequest(repo_root=repo_root, force=False)
     response = use_case.execute(request)
 
@@ -74,7 +62,8 @@ def test_find_ember_root_from_subdirectory(test_repo_with_subdirs):
     # Initialize ember at repo root
     from ember.core.config.init_usecase import InitRequest, InitUseCase
 
-    use_case = InitUseCase(version="0.2.0")
+    db_initializer = SqliteDatabaseInitializer()
+    use_case = InitUseCase(db_initializer=db_initializer, version="0.2.0")
     request = InitRequest(repo_root=repo, force=False)
     use_case.execute(request)
 
@@ -117,7 +106,8 @@ def test_path_scoped_search_from_subdirectory(test_repo_with_subdirs):
     # Initialize and sync
     from ember.core.config.init_usecase import InitRequest, InitUseCase
 
-    use_case = InitUseCase(version="0.2.0")
+    db_initializer = SqliteDatabaseInitializer()
+    use_case = InitUseCase(db_initializer=db_initializer, version="0.2.0")
     request = InitRequest(repo_root=repo, force=False)
     use_case.execute(request)
 
@@ -270,16 +260,9 @@ def test_find_ember_root_respects_git_boundary(tmp_path):
 
     # Create git repo subdirectory without .ember
     git_repo = parent / "my-git-repo"
-    git_repo.mkdir()
-    subprocess.run(["git", "init"], cwd=git_repo, check=True, capture_output=True)
-    subprocess.run(["git", "config", "user.name", "Test"], cwd=git_repo, check=True)
-    subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=git_repo, check=True)
-
-    # Create a file and commit to make it a valid git repo
-    (git_repo / "README.md").write_text("# Test Repo")
-    subprocess.run(["git", "add", "."], cwd=git_repo, check=True, capture_output=True)
-    subprocess.run(
-        ["git", "commit", "-m", "Initial commit"], cwd=git_repo, check=True, capture_output=True
+    create_git_repo(
+        git_repo,
+        files={"README.md": "# Test Repo"},
     )
 
     # CRITICAL: find_ember_root from within git_repo should NOT find parent/.ember
@@ -307,9 +290,7 @@ def test_find_ember_root_works_within_git_repo(tmp_path):
     # Create git repo with .ember at root
     git_repo = tmp_path / "my-repo"
     git_repo.mkdir()
-    subprocess.run(["git", "init"], cwd=git_repo, check=True, capture_output=True)
-    subprocess.run(["git", "config", "user.name", "Test"], cwd=git_repo, check=True)
-    subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=git_repo, check=True)
+    init_git_repo(git_repo)
 
     # Create .ember and some subdirectories
     (git_repo / ".ember").mkdir()
@@ -336,17 +317,13 @@ def test_find_ember_root_nested_git_repos(tmp_path):
     # Create outer repo with .ember
     outer_repo = tmp_path / "outer"
     outer_repo.mkdir()
-    subprocess.run(["git", "init"], cwd=outer_repo, check=True, capture_output=True)
-    subprocess.run(["git", "config", "user.name", "Test"], cwd=outer_repo, check=True)
-    subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=outer_repo, check=True)
+    init_git_repo(outer_repo)
     (outer_repo / ".ember").mkdir()
 
     # Create inner nested git repo without .ember
     inner_repo = outer_repo / "subprojects" / "inner"
     inner_repo.mkdir(parents=True)
-    subprocess.run(["git", "init"], cwd=inner_repo, check=True, capture_output=True)
-    subprocess.run(["git", "config", "user.name", "Test"], cwd=inner_repo, check=True)
-    subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=inner_repo, check=True)
+    init_git_repo(inner_repo)
 
     # From outer repo, should find outer .ember
     assert find_ember_root(outer_repo) == outer_repo

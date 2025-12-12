@@ -18,7 +18,7 @@ from ember.adapters.daemon.protocol import (
 )
 
 if TYPE_CHECKING:
-    from ember.adapters.local_models.jina_embedder import JinaCodeEmbedder
+    from ember.ports.embedders import Embedder
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +45,7 @@ class DaemonEmbedderClient:
         max_seq_length: int = 512,
         batch_size: int = 32,
         daemon_timeout: int = 900,
+        model_name: str | None = None,
     ):
         """Initialize daemon client.
 
@@ -55,6 +56,7 @@ class DaemonEmbedderClient:
             max_seq_length: Max sequence length for fallback embedder
             batch_size: Batch size for fallback embedder
             daemon_timeout: Daemon idle timeout in seconds
+            model_name: Embedding model preset or HuggingFace ID
         """
         self.socket_path = socket_path or (Path.home() / ".ember" / "daemon.sock")
         self.fallback_enabled = fallback
@@ -62,11 +64,16 @@ class DaemonEmbedderClient:
         self.max_seq_length = max_seq_length
         self.batch_size = batch_size
         self.daemon_timeout = daemon_timeout
+        self.model_name = model_name
 
         # Lazy-loaded fallback embedder
-        self._fallback_embedder: JinaCodeEmbedder | None = None
+        self._fallback_embedder: Embedder | None = None
         self._using_fallback = False
         self._daemon_start_attempted = False
+
+        # Cached model info from daemon health check
+        self._cached_model_name: str | None = None
+        self._cached_model_dim: int | None = None
 
     @property
     def name(self) -> str:
@@ -74,46 +81,62 @@ class DaemonEmbedderClient:
         # Use fallback embedder if we've switched to it
         if self._using_fallback and self._fallback_embedder:
             return self._fallback_embedder.name
-        # Otherwise return the Jina model name (same as direct mode)
-        from ember.adapters.local_models.jina_embedder import JinaCodeEmbedder
+        # Use cached value from daemon if available
+        if self._cached_model_name:
+            return self._cached_model_name
+        # Otherwise use model info from registry
+        from ember.adapters.local_models.registry import get_model_info
 
-        return JinaCodeEmbedder.MODEL_NAME
+        info = get_model_info(self.model_name or "jina-code-v2")
+        return info["name"]
 
     @property
     def dim(self) -> int:
         """Embedding dimension."""
         if self._using_fallback and self._fallback_embedder:
             return self._fallback_embedder.dim
-        from ember.adapters.local_models.jina_embedder import JinaCodeEmbedder
+        # Use cached value from daemon if available
+        if self._cached_model_dim:
+            return self._cached_model_dim
+        # Otherwise use model info from registry
+        from ember.adapters.local_models.registry import get_model_info
 
-        return JinaCodeEmbedder.MODEL_DIM
+        info = get_model_info(self.model_name or "jina-code-v2")
+        return info["dim"]
 
     def fingerprint(self) -> str:
         """Unique fingerprint identifying model + config."""
         if self._using_fallback and self._fallback_embedder:
             return self._fallback_embedder.fingerprint()
 
-        # Generate fingerprint matching direct mode
-        from ember.adapters.local_models.jina_embedder import JinaCodeEmbedder
+        # Generate fingerprint matching direct mode using registry
+        from ember.adapters.local_models.registry import create_embedder
 
         # Use a temporary embedder just for fingerprint (doesn't load model)
-        temp_embedder = JinaCodeEmbedder(
-            max_seq_length=self.max_seq_length, batch_size=self.batch_size
+        temp_embedder = create_embedder(
+            model_name=self.model_name,
+            max_seq_length=self.max_seq_length,
+            batch_size=self.batch_size,
         )
         return temp_embedder.fingerprint()
 
-    def _get_fallback_embedder(self) -> "JinaCodeEmbedder":
+    def _get_fallback_embedder(self) -> "Embedder":
         """Get or create fallback embedder.
 
         Returns:
-            JinaCodeEmbedder instance for direct mode
+            Embedder instance for direct mode
         """
         if self._fallback_embedder is None:
-            from ember.adapters.local_models.jina_embedder import JinaCodeEmbedder
+            from ember.adapters.local_models.registry import create_embedder
 
-            logger.info("Creating fallback embedder (direct mode)")
-            self._fallback_embedder = JinaCodeEmbedder(
-                max_seq_length=self.max_seq_length, batch_size=self.batch_size
+            logger.info(
+                f"Creating fallback embedder (direct mode): "
+                f"{self.model_name or 'default'}"
+            )
+            self._fallback_embedder = create_embedder(
+                model_name=self.model_name,
+                max_seq_length=self.max_seq_length,
+                batch_size=self.batch_size,
             )
         return self._fallback_embedder
 
@@ -138,7 +161,9 @@ class DaemonEmbedderClient:
 
             logger.info("Daemon not running, starting...")
             lifecycle = DaemonLifecycle(
-                socket_path=self.socket_path, idle_timeout=self.daemon_timeout
+                socket_path=self.socket_path,
+                idle_timeout=self.daemon_timeout,
+                model_name=self.model_name,
             )
             self._daemon_start_attempted = True
             return lifecycle.ensure_running()
@@ -282,6 +307,52 @@ def is_daemon_running(socket_path: Path | None = None) -> bool:
         return not response.is_error()
     except Exception:
         return False
+    finally:
+        if sock:
+            sock.close()
+
+
+def get_daemon_pid(socket_path: Path | None = None) -> int | None:
+    """Get daemon PID via health check.
+
+    This allows recovering the daemon PID even if the PID file is missing,
+    by querying the daemon directly (#214).
+
+    Args:
+        socket_path: Path to daemon socket (default: ~/.ember/daemon.sock)
+
+    Returns:
+        Daemon PID if running and responding, None otherwise
+    """
+    socket_path = socket_path or (Path.home() / ".ember" / "daemon.sock")
+
+    if not socket_path.exists():
+        return None
+
+    sock = None
+    try:
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.settimeout(2.0)
+        sock.connect(str(socket_path))
+
+        request = Request(method="health", params={})
+        send_message(sock, request)
+
+        response = receive_message(sock, Response)
+
+        if response.is_error():
+            return None
+
+        # Extract PID from health response
+        result = response.result
+        if isinstance(result, dict) and "pid" in result:
+            pid = result["pid"]
+            if isinstance(pid, int):
+                return pid
+
+        return None
+    except Exception:
+        return None
     finally:
         if sock:
             sock.close()

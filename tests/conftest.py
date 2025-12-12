@@ -1,5 +1,6 @@
 """Pytest configuration and shared fixtures."""
 
+import gc
 import subprocess
 import tempfile
 from pathlib import Path
@@ -8,6 +9,155 @@ import pytest
 
 from ember.adapters.sqlite.schema import init_database
 from ember.domain.entities import Chunk
+
+# ============================================================================
+# Git Repository Helpers
+# ============================================================================
+# These helpers consolidate git setup code to avoid duplication across tests.
+# Use these functions in fixtures to create consistent test repositories.
+
+
+def init_git_repo(
+    path: Path,
+    user_name: str = "Test User",
+    user_email: str = "test@example.com",
+) -> None:
+    """Initialize a git repository with user configuration.
+
+    This is the single source of truth for git repository initialization.
+    Use this helper in fixtures instead of inline subprocess calls.
+
+    Args:
+        path: Directory to initialize as a git repository.
+        user_name: Git user.name configuration value.
+        user_email: Git user.email configuration value.
+
+    Raises:
+        subprocess.CalledProcessError: If git commands fail.
+    """
+    subprocess.run(
+        ["git", "init"],
+        cwd=path,
+        check=True,
+        capture_output=True,
+        timeout=5,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", user_name],
+        cwd=path,
+        check=True,
+        capture_output=True,
+        timeout=5,
+    )
+    subprocess.run(
+        ["git", "config", "user.email", user_email],
+        cwd=path,
+        check=True,
+        capture_output=True,
+        timeout=5,
+    )
+
+
+def git_add_and_commit(
+    path: Path,
+    message: str = "Initial commit",
+    add_all: bool = True,
+) -> None:
+    """Stage files and create a git commit.
+
+    Args:
+        path: Git repository root directory.
+        message: Commit message.
+        add_all: If True, stages all files with 'git add .'.
+
+    Raises:
+        subprocess.CalledProcessError: If git commands fail.
+    """
+    if add_all:
+        subprocess.run(
+            ["git", "add", "."],
+            cwd=path,
+            check=True,
+            capture_output=True,
+            timeout=5,
+        )
+    subprocess.run(
+        ["git", "commit", "-m", message],
+        cwd=path,
+        check=True,
+        capture_output=True,
+        timeout=5,
+    )
+
+
+def create_test_files(path: Path, files: dict[str, str]) -> None:
+    """Create multiple files in a directory.
+
+    Args:
+        path: Base directory for file creation.
+        files: Mapping of relative file paths to file contents.
+               Parent directories are created automatically.
+
+    Example:
+        create_test_files(repo, {
+            "main.py": "def main(): pass",
+            "src/utils.py": "def helper(): pass",
+        })
+    """
+    for file_path, content in files.items():
+        full_path = path / file_path
+        full_path.parent.mkdir(parents=True, exist_ok=True)
+        full_path.write_text(content)
+
+
+def create_git_repo(
+    path: Path,
+    files: dict[str, str] | None = None,
+    commit_message: str = "Initial commit",
+    user_name: str = "Test User",
+    user_email: str = "test@example.com",
+) -> Path:
+    """Create a complete git repository with optional files.
+
+    This is a convenience function that combines init_git_repo(),
+    create_test_files(), and git_add_and_commit().
+
+    Args:
+        path: Directory for the repository (created if doesn't exist).
+        files: Optional mapping of file paths to contents.
+        commit_message: Message for the initial commit.
+        user_name: Git user.name configuration.
+        user_email: Git user.email configuration.
+
+    Returns:
+        Path to the repository root.
+    """
+    path.mkdir(parents=True, exist_ok=True)
+    init_git_repo(path, user_name=user_name, user_email=user_email)
+
+    if files:
+        create_test_files(path, files)
+        git_add_and_commit(path, message=commit_message)
+
+    return path
+
+
+@pytest.fixture(autouse=True)
+def cleanup_database_connections():
+    """Automatically clean up database connections after each test.
+
+    This fixture ensures that any unclosed SQLite database connections
+    are properly garbage collected after each test, preventing
+    ResourceWarning messages about unclosed database connections.
+
+    The fixture is autouse=True so it runs automatically for every test.
+    It runs gc.collect() twice to ensure finalizers are called.
+    """
+    yield
+    # Force garbage collection twice to ensure finalizers run
+    # First pass marks objects for collection, second pass runs finalizers
+    gc.collect()
+    gc.collect()
 
 
 @pytest.fixture
@@ -53,14 +203,17 @@ def sample_chunks() -> list[Chunk]:
     """
     chunks = []
     for i in range(5):
+        # Start lines at 1 (1-indexed) to satisfy validation
+        start_line = (i * 10) + 1
+        end_line = start_line + 10
         chunk = Chunk(
             id=f"chunk_{i}",
             project_id="test_project",
             path=Path(f"src/file_{i}.py"),
             lang="py",
             symbol=f"function_{i}",
-            start_line=i * 10,
-            end_line=(i * 10) + 10,
+            start_line=start_line,
+            end_line=end_line,
             content=f"def function_{i}():\n    pass",
             content_hash=Chunk.compute_content_hash(f"def function_{i}():\n    pass"),
             file_hash=f"hash_{i}",
@@ -83,29 +236,10 @@ def git_repo(tmp_path: Path) -> Path:
     Returns:
         Path to the git repository root.
     """
-    repo_root = tmp_path / "test_repo"
-    repo_root.mkdir()
-
-    # Initialize git repo
-    subprocess.run(["git", "init"], cwd=repo_root, check=True, capture_output=True, timeout=5)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"],
-        cwd=repo_root,
-        check=True,
-        capture_output=True,
-        timeout=5,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "Test User"],
-        cwd=repo_root,
-        check=True,
-        capture_output=True,
-        timeout=5,
-    )
-
-    # Create test files
-    math_file = repo_root / "math.py"
-    math_file.write_text("""def add(a, b):
+    return create_git_repo(
+        tmp_path / "test_repo",
+        files={
+            "math.py": """def add(a, b):
     '''Add two numbers.'''
     return a + b
 
@@ -113,25 +247,13 @@ def git_repo(tmp_path: Path) -> Path:
 def multiply(a, b):
     '''Multiply two numbers.'''
     return a * b
-""")
-
-    utils_file = repo_root / "utils.py"
-    utils_file.write_text("""def greet(name):
+""",
+            "utils.py": """def greet(name):
     '''Greet someone.'''
     return f"Hello, {name}!"
-""")
-
-    # Commit files
-    subprocess.run(["git", "add", "."], cwd=repo_root, check=True, capture_output=True, timeout=5)
-    subprocess.run(
-        ["git", "commit", "-m", "Initial commit"],
-        cwd=repo_root,
-        check=True,
-        capture_output=True,
-        timeout=5,
+""",
+        },
     )
-
-    return repo_root
 
 
 @pytest.fixture
@@ -140,6 +262,10 @@ def db_path(tmp_path: Path) -> Path:
 
     Returns:
         Path to the initialized test database.
+
+    Note:
+        Database connection cleanup is handled by the autouse
+        cleanup_database_connections fixture.
     """
     db = tmp_path / "test.db"
     init_database(db)
@@ -165,22 +291,8 @@ def realistic_repo(tmp_path: Path) -> Path:
     repo_path = tmp_path / "realistic_repo"
     repo_path.mkdir()
 
-    # Initialize git repository
-    subprocess.run(["git", "init"], cwd=repo_path, check=True, timeout=5, capture_output=True)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"],
-        cwd=repo_path,
-        check=True,
-        timeout=5,
-        capture_output=True,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "Test User"],
-        cwd=repo_path,
-        check=True,
-        timeout=5,
-        capture_output=True,
-    )
+    # Initialize git repository using shared helper
+    init_git_repo(repo_path)
 
     # Create directory structure
     (repo_path / "src").mkdir()
@@ -1411,14 +1523,7 @@ def is_safe_path(path: str, base_dir: str) -> bool:
 '''
     )
 
-    # Commit all files
-    subprocess.run(["git", "add", "."], cwd=repo_path, check=True, timeout=5, capture_output=True)
-    subprocess.run(
-        ["git", "commit", "-m", "Initial commit with realistic test data"],
-        cwd=repo_path,
-        check=True,
-        timeout=5,
-        capture_output=True,
-    )
+    # Commit all files using shared helper
+    git_add_and_commit(repo_path, message="Initial commit with realistic test data")
 
     return repo_path

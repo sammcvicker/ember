@@ -7,7 +7,7 @@ necessary files: config.toml, index.db, and state.json.
 from dataclasses import dataclass
 from pathlib import Path
 
-from ember.adapters.sqlite.schema import init_database
+from ember.ports.database import DatabaseInitializer
 from ember.shared.config_io import create_default_config_file
 from ember.shared.state_io import create_initial_state
 
@@ -19,10 +19,12 @@ class InitRequest:
     Attributes:
         repo_root: Absolute path to repository root (where .ember/ will be created)
         force: If True, reinitialize even if .ember/ already exists
+        model: Embedding model preset to use (default: local-default-code-embed)
     """
 
     repo_root: Path
     force: bool = False
+    model: str = "local-default-code-embed"
 
 
 @dataclass
@@ -51,12 +53,14 @@ class InitUseCase:
     It's the first command users run when setting up ember in a codebase.
     """
 
-    def __init__(self, version: str = "0.1.0"):
+    def __init__(self, db_initializer: DatabaseInitializer, version: str = "0.1.0"):
         """Initialize the use case.
 
         Args:
+            db_initializer: Database initializer for creating the index database.
             version: Ember version string (for state.json)
         """
+        self._db_initializer = db_initializer
         self.version = version
 
     def execute(self, request: InitRequest) -> InitResponse:
@@ -93,10 +97,10 @@ class InitUseCase:
         ember_dir.mkdir(parents=True, exist_ok=True)
 
         # Create config.toml with defaults
-        create_default_config_file(config_path)
+        create_default_config_file(config_path, model=request.model)
 
-        # Initialize SQLite database with schema
-        init_database(db_path)
+        # Initialize database with schema
+        self._db_initializer.init_database(db_path)
 
         # Create initial state.json
         create_initial_state(state_path, version=self.version)

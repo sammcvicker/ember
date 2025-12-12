@@ -79,3 +79,20 @@ class LocalFileSystem:
         matches = sorted(root.glob(pattern))
         # Ensure all paths are absolute
         return [p.resolve() for p in matches]
+
+    def read_text_lines(self, path: Path) -> list[str] | None:
+        """Read file and return lines as strings.
+
+        Args:
+            path: Absolute path to file.
+
+        Returns:
+            List of lines (without trailing newlines), or None if file
+            doesn't exist or can't be read.
+        """
+        if not path.exists():
+            return None
+        try:
+            return path.read_text(errors="replace").splitlines()
+        except Exception:
+            return None

@@ -72,7 +72,18 @@ class LanguageRegistry:
                 name: (property_identifier) @method.name) @method.def
             (class_declaration
                 name: (type_identifier) @class.name) @class.def
-            (arrow_function) @arrow.def
+            (interface_declaration
+                name: (type_identifier) @interface.name) @interface.def
+            (type_alias_declaration
+                name: (type_identifier) @type.name) @type.def
+            (lexical_declaration
+                (variable_declarator
+                    name: (identifier) @arrow.name
+                    value: (arrow_function))) @arrow.def
+            (variable_declaration
+                (variable_declarator
+                    name: (identifier) @arrow.name
+                    value: (arrow_function))) @arrow.def
         """,
         ),
         LanguageConfig(
@@ -87,7 +98,18 @@ class LanguageRegistry:
                 name: (property_identifier) @method.name) @method.def
             (class_declaration
                 name: (type_identifier) @class.name) @class.def
-            (arrow_function) @arrow.def
+            (interface_declaration
+                name: (type_identifier) @interface.name) @interface.def
+            (type_alias_declaration
+                name: (type_identifier) @type.name) @type.def
+            (lexical_declaration
+                (variable_declarator
+                    name: (identifier) @arrow.name
+                    value: (arrow_function))) @arrow.def
+            (variable_declaration
+                (variable_declarator
+                    name: (identifier) @arrow.name
+                    value: (arrow_function))) @arrow.def
         """,
         ),
         LanguageConfig(
@@ -101,8 +123,15 @@ class LanguageRegistry:
             (method_definition
                 name: (property_identifier) @method.name) @method.def
             (class_declaration
-                name: (identifier) @class.name) @class.def
-            (arrow_function) @arrow.def
+                name: (type_identifier) @class.name) @class.def
+            (lexical_declaration
+                (variable_declarator
+                    name: (identifier) @arrow.name
+                    value: (arrow_function))) @arrow.def
+            (variable_declaration
+                (variable_declarator
+                    name: (identifier) @arrow.name
+                    value: (arrow_function))) @arrow.def
         """,
         ),
         LanguageConfig(
@@ -116,8 +145,15 @@ class LanguageRegistry:
             (method_definition
                 name: (property_identifier) @method.name) @method.def
             (class_declaration
-                name: (identifier) @class.name) @class.def
-            (arrow_function) @arrow.def
+                name: (type_identifier) @class.name) @class.def
+            (lexical_declaration
+                (variable_declarator
+                    name: (identifier) @arrow.name
+                    value: (arrow_function))) @arrow.def
+            (variable_declaration
+                (variable_declarator
+                    name: (identifier) @arrow.name
+                    value: (arrow_function))) @arrow.def
         """,
         ),
         LanguageConfig(
@@ -130,6 +166,14 @@ class LanguageRegistry:
                 name: (identifier) @func.name) @func.def
             (method_declaration
                 name: (field_identifier) @method.name) @method.def
+            (type_declaration
+                (type_spec
+                    name: (type_identifier) @struct.name
+                    type: (struct_type))) @struct.def
+            (type_declaration
+                (type_spec
+                    name: (type_identifier) @interface.name
+                    type: (interface_type))) @interface.def
         """,
         ),
         LanguageConfig(
@@ -141,6 +185,12 @@ class LanguageRegistry:
             (function_item
                 name: (identifier) @func.name) @func.def
             (impl_item) @impl.def
+            (struct_item
+                name: (type_identifier) @struct.name) @struct.def
+            (enum_item
+                name: (type_identifier) @enum.name) @enum.def
+            (trait_item
+                name: (type_identifier) @trait.name) @trait.def
         """,
         ),
         LanguageConfig(

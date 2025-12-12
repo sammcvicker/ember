@@ -163,12 +163,14 @@ class SearchUseCase:
             else:
                 missing_ids.append(chunk_id)
 
-        # Log warning if chunks are missing
+        # Log warning if chunks are missing with recovery guidance
         if missing_ids:
             sample_ids = missing_ids[:5]  # Show first 5 for brevity
             logger.warning(
                 f"Missing {len(missing_ids)} chunks during retrieval. "
                 f"This may indicate index corruption or stale data. "
+                f"Try running 'ember sync --force' to rebuild the index. "
+                f"If the problem persists, please report an issue. "
                 f"Missing IDs: {sample_ids}"
                 + ("..." if len(missing_ids) > 5 else "")
             )

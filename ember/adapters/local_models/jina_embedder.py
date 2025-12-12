@@ -59,6 +59,14 @@ class JinaCodeEmbedder:
             RuntimeError: If model fails to load.
         """
         if self._model is None:
+            # Disable tokenizers parallelism before import to prevent fork warning
+            # when daemon spawns a subprocess. The warning occurs because tokenizers
+            # initializes thread pools which don't survive fork() properly.
+            # Using setdefault allows users to override if needed.
+            import os
+
+            os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+
             # Import here to avoid loading heavy dependencies at module import time
             from sentence_transformers import SentenceTransformer
 

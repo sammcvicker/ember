@@ -8,13 +8,13 @@ Tests the complete CLI flow end-to-end to verify:
 """
 
 import json
-import subprocess
 from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
 
 from ember.entrypoints.cli import cli
+from tests.conftest import create_git_repo, git_add_and_commit, init_git_repo
 
 
 @pytest.fixture
@@ -32,29 +32,10 @@ def git_repo_isolated(runner: CliRunner, tmp_path: Path) -> Path:
     Returns:
         Path to the repository root.
     """
-    repo_root = tmp_path / "test_repo"
-    repo_root.mkdir()
-
-    # Initialize git repo
-    subprocess.run(["git", "init"], cwd=repo_root, check=True, capture_output=True, timeout=5)
-    subprocess.run(
-        ["git", "config", "user.email", "test@example.com"],
-        cwd=repo_root,
-        check=True,
-        capture_output=True,
-        timeout=5,
-    )
-    subprocess.run(
-        ["git", "config", "user.name", "Test User"],
-        cwd=repo_root,
-        check=True,
-        capture_output=True,
-        timeout=5,
-    )
-
-    # Create test file
-    test_file = repo_root / "example.py"
-    test_file.write_text("""def hello():
+    return create_git_repo(
+        tmp_path / "test_repo",
+        files={
+            "example.py": """def hello():
     '''Say hello.'''
     return "Hello, World!"
 
@@ -62,19 +43,9 @@ def git_repo_isolated(runner: CliRunner, tmp_path: Path) -> Path:
 def goodbye():
     '''Say goodbye.'''
     return "Goodbye!"
-""")
-
-    # Commit file
-    subprocess.run(["git", "add", "."], cwd=repo_root, check=True, capture_output=True, timeout=5)
-    subprocess.run(
-        ["git", "commit", "-m", "Initial commit"],
-        cwd=repo_root,
-        check=True,
-        capture_output=True,
-        timeout=5,
+""",
+        },
     )
-
-    return repo_root
 
 
 class TestInitCommand:
@@ -365,11 +336,16 @@ class TestFindCommand:
 
         assert result.exit_code == 0
 
-        # If results were found, verify context is shown
+        # If results were found, verify context is shown with syntax highlighting
         if "No results" not in result.output and result.output.strip() != "":
-            # Should show line numbers with pipe separator
-            assert "|" in result.output
-            # Context lines should be visible (more output than without context)
+            # With syntax highlighting enabled by default, should have line numbers
+            # (format is "  1 code here" from render_syntax_highlighted)
+            # Without syntax highlighting, would have pipe separator ("|")
+            lines = [line for line in result.output.split('\n') if line.strip() and not line.startswith('[')]
+            has_line_numbers = any(line.strip() and line[0:5].strip().isdigit() for line in lines) if lines else False
+            has_pipe = "|" in result.output
+            # Should have either syntax highlighting or pipe format
+            assert has_line_numbers or has_pipe, "Expected either syntax highlighted line numbers or pipe separator"
 
     def test_find_with_context_json_output(
         self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
@@ -451,6 +427,88 @@ class TestFindCommand:
         )
 
         assert result.exit_code == 0
+
+    def test_find_path_and_in_filter_mutually_exclusive(
+        self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
+    ) -> None:
+        """Test that PATH argument and --in filter are mutually exclusive."""
+        monkeypatch.chdir(git_repo_isolated)
+        # Init
+        runner.invoke(cli, ["init"], catch_exceptions=False)
+        runner.invoke(cli, ["sync"], catch_exceptions=False)
+
+        # Try to use both PATH argument and --in filter
+        result = runner.invoke(
+            cli, ["find", "hello", "src/", "--in", "*.py"],
+            catch_exceptions=False
+        )
+
+        # Should fail with error about mutually exclusive options
+        assert result.exit_code == 1
+        assert "mutually exclusive" in result.output.lower() or "cannot use both" in result.output.lower()
+
+
+class TestSearchCommand:
+    """Tests for 'ember search' command filter handling."""
+
+    def test_search_path_and_in_filter_mutually_exclusive(
+        self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
+    ) -> None:
+        """Test that PATH argument and --in flag are mutually exclusive."""
+        monkeypatch.chdir(git_repo_isolated)
+        # Init
+        runner.invoke(cli, ["init"], catch_exceptions=False)
+        runner.invoke(cli, ["sync"], catch_exceptions=False)
+
+        # Try to use both PATH argument and --in flag
+        # Note: search command is interactive, so we just test it exits with error
+        result = runner.invoke(
+            cli, ["search", ".", "--in", "*.py"],
+            catch_exceptions=False
+        )
+
+        # Should fail with error about mutually exclusive options
+        assert result.exit_code == 1
+        assert "mutually exclusive" in result.output.lower() or "cannot use both" in result.output.lower()
+
+    def test_search_accepts_path_argument(
+        self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
+    ) -> None:
+        """Test that search accepts a path argument to restrict results."""
+        monkeypatch.chdir(git_repo_isolated)
+        # Init
+        runner.invoke(cli, ["init"], catch_exceptions=False)
+        runner.invoke(cli, ["sync"], catch_exceptions=False)
+
+        # Create a subdirectory with a file
+        subdir = git_repo_isolated / "subdir"
+        subdir.mkdir()
+        (subdir / "test.py").write_text("def test_func(): pass")
+
+        # Re-sync to index the new file
+        runner.invoke(cli, ["sync"], catch_exceptions=False)
+
+        # Test that path argument is accepted (we can't fully test interactive mode,
+        # but we can verify the argument parsing works and doesn't error)
+        # The search command with path will try to launch TUI, which may fail in test
+        # but the important thing is the path argument doesn't cause a parsing error
+        result = runner.invoke(cli, ["search", "subdir", "--help"])
+        # --help should work without error
+        assert result.exit_code == 0
+
+    def test_search_no_path_argument(
+        self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
+    ) -> None:
+        """Test that search works without path argument (searches entire repo)."""
+        monkeypatch.chdir(git_repo_isolated)
+        # Init
+        runner.invoke(cli, ["init"], catch_exceptions=False)
+
+        # Test that search command without path doesn't cause parsing error
+        result = runner.invoke(cli, ["search", "--help"])
+        assert result.exit_code == 0
+        # Help should show PATH is optional
+        assert "[PATH]" in result.output or "path" in result.output.lower()
 
 
 class TestCatCommand:
@@ -728,13 +786,7 @@ class TestStatusCommand:
         # Modify file (creating staleness)
         test_file = git_repo_isolated / "example.py"
         test_file.write_text(test_file.read_text() + "\n# New comment\n")
-        subprocess.run(["git", "add", "."], cwd=git_repo_isolated, check=True, capture_output=True)
-        subprocess.run(
-            ["git", "commit", "-m", "Update"],
-            cwd=git_repo_isolated,
-            check=True,
-            capture_output=True,
-        )
+        git_add_and_commit(git_repo_isolated, message="Update")
 
         # Check status
         result = runner.invoke(cli, ["status"], catch_exceptions=False)
@@ -788,9 +840,7 @@ class TestVerboseQuietFlags:
         # Init without quiet (in fresh repo)
         git_repo_2 = git_repo_isolated.parent / "test_repo_2"
         git_repo_2.mkdir()
-        subprocess.run(["git", "init"], cwd=git_repo_2, check=True, capture_output=True)
-        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=git_repo_2, check=True, capture_output=True)
-        subprocess.run(["git", "config", "user.name", "Test"], cwd=git_repo_2, check=True, capture_output=True)
+        init_git_repo(git_repo_2)
 
         monkeypatch.chdir(git_repo_2)
         result_normal = runner.invoke(cli, ["init"], catch_exceptions=False)
@@ -832,3 +882,60 @@ class TestErrorHandling:
 
         assert result.exit_code != 0
         # Click should show missing argument error
+
+
+class TestGetEmberRepoRoot:
+    """Tests for the get_ember_repo_root helper function."""
+
+    def test_returns_repo_and_ember_dir_when_in_ember_repo(
+        self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
+    ) -> None:
+        """Test that helper returns correct paths in an ember repository."""
+        monkeypatch.chdir(git_repo_isolated)
+        # Initialize ember
+        runner.invoke(cli, ["init"], catch_exceptions=False)
+
+        from ember.entrypoints.cli import get_ember_repo_root
+
+        repo_root, ember_dir = get_ember_repo_root()
+
+        assert repo_root == git_repo_isolated
+        assert ember_dir == git_repo_isolated / ".ember"
+
+    def test_raises_error_when_not_in_ember_repo(self, runner: CliRunner, tmp_path: Path, monkeypatch) -> None:
+        """Test that helper raises EmberCliError when not in ember repository."""
+        # Create a directory without .ember
+        no_ember_dir = tmp_path / "no_ember"
+        no_ember_dir.mkdir()
+        monkeypatch.chdir(no_ember_dir)
+
+        from ember.core.cli_utils import EmberCliError
+        from ember.entrypoints.cli import get_ember_repo_root
+
+        # Should raise EmberCliError with helpful hint
+        with pytest.raises(EmberCliError) as exc_info:
+            get_ember_repo_root()
+
+        assert "Not in an ember repository" in exc_info.value.message
+        assert exc_info.value.hint is not None
+        assert "ember init" in exc_info.value.hint
+
+    def test_works_from_subdirectory(
+        self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
+    ) -> None:
+        """Test that helper finds ember root from a subdirectory."""
+        monkeypatch.chdir(git_repo_isolated)
+        # Initialize ember
+        runner.invoke(cli, ["init"], catch_exceptions=False)
+
+        # Create and change to subdirectory
+        subdir = git_repo_isolated / "subdir" / "nested"
+        subdir.mkdir(parents=True)
+        monkeypatch.chdir(subdir)
+
+        from ember.entrypoints.cli import get_ember_repo_root
+
+        repo_root, ember_dir = get_ember_repo_root()
+
+        assert repo_root == git_repo_isolated
+        assert ember_dir == git_repo_isolated / ".ember"

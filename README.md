@@ -4,7 +4,7 @@
 
 Ember turns any codebase into a searchable knowledge base using hybrid search (BM25 + vector embeddings). Fast, deterministic, and completely local—no servers, no MCP, no cloud dependencies.
 
-[![Tests](https://img.shields.io/badge/tests-271%20passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-801%20passing-brightgreen)]()
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)]()
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)]()
 [![Version](https://img.shields.io/badge/version-1.0.0-blue)]()
@@ -273,6 +273,34 @@ Configuration:
 
 ---
 
+### `ember config`
+
+Manage Ember configuration with support for local and global settings.
+
+**Commands:**
+```bash
+# Show effective config and file locations
+ember config show
+
+# Edit local config (.ember/config.toml)
+ember config edit
+
+# Edit global config (~/.config/ember/config.toml)
+ember config edit --global
+
+# Print config file paths for scripting
+ember config path
+ember config path --global
+ember config path --local
+```
+
+**Config hierarchy:**
+- Global config: `~/.config/ember/config.toml` (or `$XDG_CONFIG_HOME/ember/config.toml`)
+- Local config: `.ember/config.toml` in your repository
+- Local settings override global settings on a section-by-section basis
+
+---
+
 ### `ember daemon`
 
 Manage the embedding model daemon for instant searches.
@@ -334,11 +362,10 @@ mode = "daemon"          # "daemon" (fast) or "direct" (no background process)
 daemon_timeout = 900     # Seconds before daemon auto-shutdown (default: 15 min)
 
 [index]
-model = "local-default-code-embed"  # Embedding model
-chunk = "symbol"         # Chunking strategy: "symbol" or "lines"
-line_window = 120        # Lines per chunk (for line-based chunking)
-line_stride = 100        # Stride between chunks
-overlap_lines = 15       # Overlap for context preservation
+chunk = "symbol"  # Chunking strategy: "symbol" or "lines"
+line_window = 120  # Lines per chunk (for line-based chunking)
+line_stride = 100  # Stride between chunks
+overlap_lines = 15  # Overlap for context preservation
 include = ["**/*.py", "**/*.ts", "**/*.go"]  # File patterns to index
 ignore = [".git/", "node_modules/", "dist/", "build/"]  # Patterns to skip
 
@@ -347,12 +374,17 @@ topk = 20                # Default number of results
 rerank = false           # Enable reranking (not yet implemented)
 filters = []             # Default filters
 
+[model]
+model = "jina-code-v2"  # or "bge-small", "minilm", "auto"
+mode = "daemon"  # or "direct"
+daemon_timeout = 900  # 15 minutes
+
 [redaction]
 patterns = []            # Regex patterns for secret redaction
 max_file_mb = 5          # Skip files larger than this
 ```
 
-**Functional Settings (v1.0.0):**
+**Functional Settings (v1.2.0):**
 
 The following configuration settings are active and respected by Ember:
 
@@ -361,8 +393,15 @@ The following configuration settings are active and respected by Ember:
 - **`search.topk`**: Default number of results for `ember find` (can be overridden with `-k` flag)
 - **`index.line_window`**: Lines per chunk for line-based chunking
 - **`index.line_stride`**: Stride between chunks (overlap = window - stride)
+- **`model.model`**: Embedding model (`jina-code-v2`, `bge-small`, `minilm`, or `auto`)
 - **`model.mode`**: Daemon mode (`daemon` or `direct`)—daemon provides 18.6x faster searches
 - **`model.daemon_timeout`**: Auto-shutdown timeout in seconds (default: 900 = 15 min)
+
+**Model Selection:**
+- **`jina-code-v2`** (default): Best quality for code search, requires ~4GB RAM
+- **`bge-small`**: Good balance of quality and resources, requires ~1GB RAM
+- **`minilm`**: Lightweight option for low-memory systems, requires ~512MB RAM
+- **`auto`**: Automatically selects based on available system RAM
 
 **Not Yet Implemented:**
 - `index.include` / `index.ignore` patterns (planned for future release)
@@ -545,7 +584,7 @@ uv run pytest --cov=ember --cov-report=term-missing
 
 - **Architecture:** Clean Architecture layers strictly enforced
 - **Type hints:** All public functions fully typed
-- **Testing:** 271 tests (unit, integration, performance, CLI)
+- **Testing:** 801 tests (unit, integration, performance, CLI)
 - **Linting:** ruff (compliant)
 - **Type checking:** pyright (strict mode)
 - **Coverage:** 26%+ overall (focus on critical paths)
@@ -578,7 +617,12 @@ A: Yes, but performance depends on size. Ember handles codebases with 1000-2000 
 A: No. Everything runs locally. The embedding model downloads once from HuggingFace and is cached.
 
 **Q: Can I use a different embedding model?**
-A: Not yet, but this is planned. The architecture supports swapping models via the `Embedder` protocol.
+A: Yes! As of v1.2.0, Ember supports three models:
+- **jina-code-v2** (default): Best quality, ~1.6GB RAM, 768 dimensions
+- **bge-small**: Good balance, ~130MB RAM, 384 dimensions
+- **minilm**: Lightweight, ~100MB RAM, 384 dimensions, 5x faster
+
+Set in config: `model = "minilm"` or use `ember init --model minilm`. Run `ember init` to auto-detect the best model for your hardware.
 
 **Q: What about binary files / images / PDFs?**
 A: Ember only indexes source code files with recognized code extensions (see Configuration section). Binary files, documentation, and data files are automatically skipped during indexing.
@@ -611,6 +655,17 @@ A: The daemon keeps the embedding model loaded in memory, making searches 18.6x 
 **v1.1.0** (2025-11-06) ✅
 - Context flag for `ember find` (-C/--context)
 - Stable hash-based chunk IDs for parallel agent workflows
+
+**v1.2.0** (2025-12-12) ✅
+- Interactive search TUI with path filtering (`ember search [path]`)
+- Syntax highlighting for cat, find, and search preview
+- Global config with `ember config` command group
+- Multiple embedding models: Jina (default), MiniLM (lightweight), BGE-small (balanced)
+- Auto-detect hardware and recommend model during init
+- Go/Rust struct, enum, trait extraction via TreeSitter
+- TypeScript interface, type alias, and arrow function extraction
+- Daemon reliability fixes (#214, #215, #216)
+- 801 comprehensive tests (up from 271)
 
 **Future** (see [GitHub Issues](https://github.com/sammcvicker/ember))
 - Export/import bundles

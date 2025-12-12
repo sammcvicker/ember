@@ -5,11 +5,17 @@ Tests the daemon server, client, and lifecycle management.
 
 
 import signal
+import tempfile
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ember.adapters.daemon.client import DaemonEmbedderClient, is_daemon_running
+from ember.adapters.daemon.client import (
+    DaemonEmbedderClient,
+    get_daemon_pid,
+    is_daemon_running,
+)
 from ember.adapters.daemon.lifecycle import DaemonLifecycle
 from ember.adapters.daemon.protocol import ProtocolError, Request, Response
 from ember.adapters.daemon.server import DaemonServer
@@ -17,8 +23,20 @@ from ember.adapters.daemon.server import DaemonServer
 
 @pytest.fixture
 def temp_socket_path(tmp_path):
-    """Temporary socket path for testing."""
-    return tmp_path / "test-daemon.sock"
+    """Temporary socket path for testing.
+
+    Uses a short base path (/tmp) to avoid AF_UNIX path length limits (~104 chars on macOS).
+    The pytest tmp_path can be too long for Unix domain sockets.
+    """
+    # Create a short temp directory for the socket
+    # Unix sockets have ~104 char limit on macOS, pytest tmp_path can exceed this
+    short_tmp = tempfile.mkdtemp(prefix="emb_", dir="/tmp")
+    socket_path = Path(short_tmp) / "d.sock"  # Keep filename short too
+    yield socket_path
+    # Cleanup
+    if socket_path.exists():
+        socket_path.unlink()
+    Path(short_tmp).rmdir()
 
 
 @pytest.fixture
@@ -158,13 +176,16 @@ class TestDaemonServer:
 
     def test_handle_health_request(self, temp_socket_path):
         """Test health check request handling."""
+        import os
+
         server = DaemonServer(socket_path=temp_socket_path, idle_timeout=0)
 
         request = Request(method="health", params={})
         response = server.handle_request(request)
 
         assert not response.is_error()
-        assert response.result == {"status": "ok"}
+        assert response.result["status"] == "ok"
+        assert response.result["pid"] == os.getpid()
 
     def test_handle_unknown_method(self, temp_socket_path):
         """Test unknown method handling."""
@@ -274,6 +295,61 @@ class TestDaemonLifecycle:
         assert not status["running"]
         assert status["status"] == "stopped"
         assert "not running" in status["message"].lower()
+
+    def test_status_recovers_pid_when_pid_file_missing(
+        self, temp_socket_path, temp_pid_file
+    ):
+        """Test status recovers PID from daemon when PID file is missing (#214).
+
+        This tests the fix for issue #214 where status would show "PID None"
+        when daemon is running but PID file was deleted.
+        """
+        lifecycle = DaemonLifecycle(
+            socket_path=temp_socket_path,
+            pid_file=temp_pid_file,
+        )
+
+        # Mock daemon running but PID file missing
+        with (
+            patch.object(lifecycle, "is_running", return_value=True),
+            patch.object(lifecycle, "get_pid", return_value=None),  # No PID file
+            patch(
+                "ember.adapters.daemon.lifecycle.get_daemon_pid", return_value=12345
+            ) as mock_get_pid,
+        ):
+            status = lifecycle.status()
+
+            # Should have recovered PID from daemon
+            mock_get_pid.assert_called_once_with(temp_socket_path)
+            assert status["running"] is True
+            assert status["pid"] == 12345
+            assert status["status"] == "running"
+            assert "PID 12345" in status["message"]
+
+    def test_status_never_shows_pid_none_when_running(
+        self, temp_socket_path, temp_pid_file
+    ):
+        """Test status never shows 'PID None' when daemon is actually running (#214)."""
+        lifecycle = DaemonLifecycle(
+            socket_path=temp_socket_path,
+            pid_file=temp_pid_file,
+        )
+
+        # Mock daemon running but both PID file and health check fail to get PID
+        with (
+            patch.object(lifecycle, "is_running", return_value=True),
+            patch.object(lifecycle, "get_pid", return_value=None),
+            patch(
+                "ember.adapters.daemon.lifecycle.get_daemon_pid", return_value=None
+            ),
+        ):
+            status = lifecycle.status()
+
+            # Should never show "PID None" - use "unknown" instead
+            assert status["running"] is True
+            assert status["pid"] is None
+            assert "PID None" not in status["message"]
+            assert "unknown" in status["message"].lower()
 
     def test_stop_sigterm_failure_falls_through_to_sigkill(
         self, temp_socket_path, temp_pid_file
@@ -459,6 +535,8 @@ class TestDaemonLifecycle:
             patch("subprocess.Popen", return_value=mock_process),
             patch.object(lifecycle, "is_running", return_value=False),
             patch.object(lifecycle, "is_process_alive") as mock_alive,
+            # Mock time.sleep to skip actual waits (avoids 20s timeout delay)
+            patch("ember.adapters.daemon.lifecycle.time.sleep"),
         ):
             # Process dies during ready-wait
             mock_alive.return_value = False
@@ -472,6 +550,152 @@ class TestDaemonLifecycle:
 
             # PID file should have been cleaned up
             assert not temp_pid_file.exists()
+
+    def test_start_timeout_kills_unresponsive_process(
+        self, temp_socket_path, temp_pid_file, temp_log_file
+    ):
+        """Test that startup timeout terminates unresponsive daemon process (#216).
+
+        This prevents the race condition where:
+        1. Daemon is spawned but takes too long to start (e.g., slow model load)
+        2. Health check times out after 20s
+        3. PID file is deleted but process continues in background
+        4. Process eventually becomes ready
+        5. Status shows "running (PID None)" because no PID file
+
+        The fix: kill the process before deleting PID file.
+        """
+        lifecycle = DaemonLifecycle(
+            socket_path=temp_socket_path,
+            pid_file=temp_pid_file,
+            log_file=temp_log_file,
+        )
+
+        # Create mock process that stays alive but never becomes ready
+        mock_process = MagicMock()
+        mock_process.pid = 12345
+        mock_process.poll.return_value = None  # Still alive
+        mock_process.stderr = None
+
+        with (
+            patch("subprocess.Popen", return_value=mock_process),
+            patch.object(lifecycle, "is_running", return_value=False),  # Never ready
+            patch("ember.adapters.daemon.lifecycle.time.sleep"),  # Skip waits
+            patch("os.kill") as mock_kill,
+            # is_process_alive: True initially (for timeout handler), then False after kill
+            patch.object(lifecycle, "is_process_alive", side_effect=[True, False]),
+            pytest.raises(RuntimeError) as exc_info,
+        ):
+            lifecycle.start(foreground=False)
+
+        # Should raise error about not responding
+        error_msg = str(exc_info.value)
+        assert "not responding to health checks" in error_msg
+        assert "terminated" in error_msg
+
+        # SIGTERM should have been sent to kill the process
+        mock_kill.assert_any_call(12345, signal.SIGTERM)
+
+        # PID file should have been cleaned up
+        assert not temp_pid_file.exists()
+
+    def test_start_instant_failure_closes_stderr(
+        self, temp_socket_path, temp_pid_file, temp_log_file
+    ):
+        """Test that stderr is closed when daemon fails immediately (issue #139)."""
+        lifecycle = DaemonLifecycle(
+            socket_path=temp_socket_path,
+            pid_file=temp_pid_file,
+            log_file=temp_log_file,
+        )
+
+        # Create mock process that exits immediately with error
+        mock_process = MagicMock()
+        mock_process.pid = 12345
+        mock_process.poll.return_value = 1  # Exit code 1 (failure)
+        mock_stderr = MagicMock()
+        mock_stderr.read.return_value = b"Model loading failed"
+        mock_process.stderr = mock_stderr
+
+        with patch("subprocess.Popen", return_value=mock_process):
+            with pytest.raises(RuntimeError):
+                lifecycle.start(foreground=False)
+
+            # stderr should have been closed in the finally block
+            mock_stderr.close.assert_called_once()
+
+    def test_start_pid_write_failure_terminates_process(
+        self, temp_socket_path, temp_log_file, tmp_path
+    ):
+        """Test that PID file write failure terminates spawned process (#152)."""
+        # Use a non-existent directory to cause write failure
+        nonexistent_dir = tmp_path / "nonexistent_dir" / "subdir"
+        pid_file = nonexistent_dir / "daemon.pid"
+
+        lifecycle = DaemonLifecycle(
+            socket_path=temp_socket_path,
+            pid_file=pid_file,
+            log_file=temp_log_file,
+        )
+
+        # Create mock process
+        mock_process = MagicMock()
+        mock_process.pid = 12345
+        mock_process.stderr = None
+
+        with patch("subprocess.Popen", return_value=mock_process):
+            with pytest.raises(RuntimeError) as exc_info:
+                lifecycle.start(foreground=False)
+
+            # Should raise error about PID file
+            error_msg = str(exc_info.value)
+            assert "Failed to write PID file" in error_msg
+
+            # Process should have been terminated to avoid orphan
+            mock_process.terminate.assert_called_once()
+
+    def test_start_pid_written_before_poll_check(
+        self, temp_socket_path, temp_pid_file, temp_log_file
+    ):
+        """Test that PID is written before checking if process died (#152).
+
+        This eliminates the race condition where process could die between
+        alive check and PID write, leaving a stale PID file.
+        """
+        lifecycle = DaemonLifecycle(
+            socket_path=temp_socket_path,
+            pid_file=temp_pid_file,
+            log_file=temp_log_file,
+        )
+
+        # Track when poll() is called relative to PID file
+        poll_called_pid_exists = None
+
+        mock_process = MagicMock()
+        mock_process.pid = 12345
+        mock_process.stderr = None
+
+        def poll_side_effect():
+            nonlocal poll_called_pid_exists
+            # Record whether PID file existed when poll was called
+            poll_called_pid_exists = temp_pid_file.exists()
+            return None  # Process alive
+
+        mock_process.poll.side_effect = poll_side_effect
+
+        # is_running: False initially (so we enter start logic), then True (daemon ready)
+        is_running_calls = [False, True]
+
+        with (
+            patch("subprocess.Popen", return_value=mock_process),
+            patch.object(lifecycle, "is_running", side_effect=is_running_calls),
+        ):
+            lifecycle.start(foreground=False)
+
+            # PID file should have been written BEFORE poll() was called
+            assert poll_called_pid_exists is True, (
+                "PID file should exist before poll() check - race condition!"
+            )
 
 
 class TestEndToEnd:
@@ -546,8 +770,11 @@ class TestEndToEnd:
     @pytest.mark.slow
     def test_client_fallback_on_daemon_failure(self, temp_socket_path):
         """Test client falls back to direct mode when daemon unavailable."""
-        # Create client with fallback enabled
-        client = DaemonEmbedderClient(socket_path=temp_socket_path, fallback=True)
+        # Create client with fallback enabled but auto_start disabled
+        # This ensures the daemon won't be started, forcing fallback
+        client = DaemonEmbedderClient(
+            socket_path=temp_socket_path, fallback=True, auto_start=False
+        )
 
         # Daemon is not running, so should fallback to direct mode
         texts = ["def test():"]
@@ -562,6 +789,44 @@ class TestEndToEnd:
         """Test is_daemon_running helper function."""
         # Should return False when daemon not running
         assert not is_daemon_running(temp_socket_path)
+
+    def test_get_daemon_pid_returns_none_when_not_running(self, temp_socket_path):
+        """Test get_daemon_pid returns None when daemon not running."""
+        assert get_daemon_pid(temp_socket_path) is None
+
+    def test_daemon_startup_failure_raises_before_client_embed(
+        self, temp_socket_path, temp_pid_file, temp_log_file
+    ):
+        """Test that daemon startup failures raise RuntimeError during start().
+
+        This ensures that failures are caught early (before TUI initialization)
+        when _create_embedder() calls daemon_manager.start() in interactive search mode.
+        Related to issue #126.
+        """
+        lifecycle = DaemonLifecycle(
+            socket_path=temp_socket_path,
+            pid_file=temp_pid_file,
+            log_file=temp_log_file,
+        )
+
+        # Mock subprocess.Popen to simulate immediate daemon failure
+        mock_process = MagicMock()
+        mock_process.pid = 12345
+        mock_process.poll.return_value = 1  # Exit code 1 (failure)
+        mock_process.stderr.read.return_value = b"Model loading failed: corrupted file"
+
+        with patch("subprocess.Popen", return_value=mock_process):
+            # start() should raise RuntimeError immediately
+            with pytest.raises(RuntimeError) as exc_info:
+                lifecycle.start(foreground=False)
+
+            # Verify error message contains useful info
+            error_msg = str(exc_info.value)
+            assert "exit code: 1" in error_msg
+            assert "Model loading failed" in error_msg
+
+            # PID file should NOT have been created (failure was instant)
+            assert not temp_pid_file.exists()
 
 
 # Slow tests can be run with: pytest -m slow

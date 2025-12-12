@@ -5,15 +5,25 @@ Command-line interface for Ember code search tool.
 
 import functools
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 import blake3
 import click
 
+from ember.adapters.fs.local import LocalFileSystem
 from ember.core.cli_utils import (
+    EmberCliError,
+    display_content_with_context,
+    display_content_with_highlighting,
     format_result_header,
     load_cached_results,
+    lookup_result_by_hash,
+    lookup_result_from_cache,
+    open_file_in_editor,
+    path_not_in_repo_error,
     progress_context,
+    repo_not_found_error,
     validate_result_index,
 )
 from ember.core.presentation import ResultPresenter
@@ -23,7 +33,8 @@ def handle_cli_errors(command_name: str):
     """Decorator to handle common CLI errors.
 
     Catches RuntimeError and Exception, displaying appropriate messages
-    and showing tracebacks in verbose mode.
+    and showing tracebacks in verbose mode. EmberCliError exceptions
+    are re-raised to use their built-in formatting.
 
     Args:
         command_name: Name of the command for error messages.
@@ -37,17 +48,25 @@ def handle_cli_errors(command_name: str):
         def wrapper(*args, **kwargs):
             try:
                 return func(*args, **kwargs)
+            except EmberCliError:
+                # Let EmberCliError propagate to use its format_message()
+                raise
             except RuntimeError as e:
-                click.echo(f"Error: {e}", err=True)
-                sys.exit(1)
+                # Convert RuntimeError to EmberCliError with generic hint
+                raise EmberCliError(
+                    str(e),
+                    hint="Run with --verbose for more details",
+                ) from e
             except Exception as e:
                 ctx = click.get_current_context()
-                click.echo(f"Unexpected error in {command_name}: {e}", err=True)
                 if ctx.obj.get("verbose", False):
                     import traceback
 
                     traceback.print_exc()
-                sys.exit(1)
+                raise EmberCliError(
+                    f"Unexpected error in {command_name}: {e}",
+                    hint="Run with --verbose for more details",
+                ) from e
 
         return wrapper
 
@@ -63,28 +82,70 @@ def _create_embedder(config, show_progress: bool = True):
 
     Returns:
         Embedder instance (daemon client or direct)
+
+    Raises:
+        RuntimeError: If daemon fails to start
+        ValueError: If model name is not recognized
     """
+    # Get the configured model name
+    model_name = config.index.model
+
     if config.model.mode == "daemon":
         # Use daemon mode (default)
         from ember.adapters.daemon.client import DaemonEmbedderClient
         from ember.adapters.daemon.lifecycle import DaemonLifecycle
         from ember.core.cli_utils import ensure_daemon_with_progress
 
-        # Pre-start daemon with progress feedback
-        if show_progress:
-            daemon_manager = DaemonLifecycle(idle_timeout=config.model.daemon_timeout)
-            ensure_daemon_with_progress(daemon_manager, quiet=False)
+        # ALWAYS pre-start daemon before returning client
+        # This ensures errors are caught before TUI initialization (#126)
+        daemon_manager = DaemonLifecycle(
+            idle_timeout=config.model.daemon_timeout,
+            model_name=model_name,
+        )
+
+        # If daemon is already running, nothing to do
+        if not daemon_manager.is_running():
+            # Use progress UI if requested, otherwise start silently
+            if show_progress:
+                ensure_daemon_with_progress(daemon_manager, quiet=False)
+            else:
+                # Start daemon without progress UI
+                # Let RuntimeError propagate to show clean error before TUI starts
+                daemon_manager.start(foreground=False)
 
         return DaemonEmbedderClient(
             fallback=True,
-            auto_start=not show_progress,  # Only auto-start if we didn't pre-start
+            auto_start=False,  # Daemon already started above
             daemon_timeout=config.model.daemon_timeout,
+            model_name=model_name,
         )
     else:
         # Use direct mode (fallback or explicit config)
-        from ember.adapters.local_models.jina_embedder import JinaCodeEmbedder
+        from ember.adapters.local_models.registry import create_embedder
 
-        return JinaCodeEmbedder()
+        return create_embedder(model_name=model_name)
+
+
+def get_ember_repo_root() -> tuple[Path, Path]:
+    """Get ember repository root or exit with error.
+
+    Finds the ember repository root and .ember directory from the current
+    working directory. If not in an ember repository, raises EmberCliError.
+
+    Returns:
+        Tuple of (repo_root, ember_dir) where:
+        - repo_root: Absolute path to repository root
+        - ember_dir: Absolute path to .ember/ directory
+
+    Raises:
+        EmberCliError: If not in an ember repository.
+    """
+    from ember.core.repo_utils import find_repo_root
+
+    try:
+        return find_repo_root()
+    except RuntimeError:
+        repo_not_found_error()
 
 
 def _create_indexing_usecase(repo_root: Path, db_path: Path, config):
@@ -148,24 +209,58 @@ def _create_indexing_usecase(repo_root: Path, db_path: Path, config):
     )
 
 
-def check_and_auto_sync(
+@dataclass
+class SyncResult:
+    """Result of an ensure_synced() call.
+
+    Provides information about whether a sync was performed and its outcome.
+
+    Attributes:
+        synced: True if a sync was performed, False if index was already up to date.
+        files_indexed: Number of files that were indexed (0 if no sync).
+        error: Error message if sync failed, None otherwise.
+    """
+
+    synced: bool = False
+    files_indexed: int = 0
+    error: str | None = None
+
+
+def ensure_synced(
     repo_root: Path,
     db_path: Path,
     config,
-    quiet_mode: bool = False,
+    show_progress: bool = True,
+    interactive_mode: bool = False,
     verbose: bool = False,
-) -> None:
-    """Check if index is stale and auto-sync if needed.
+) -> SyncResult:
+    """Ensure the index is synced before running a command.
+
+    This is the unified sync helper for all Ember commands that need fresh data.
+    Use this instead of implementing sync logic directly in each command.
 
     Args:
         repo_root: Repository root path.
         db_path: Path to SQLite database.
         config: Configuration object.
-        quiet_mode: If True, suppress progress and messages.
+        show_progress: If True, show progress bar during sync. Default True.
+        interactive_mode: If True, show brief status message even without progress bar.
+            Use this for TUI commands where progress bar would corrupt display.
         verbose: If True, show warnings on errors.
 
-    Note:
-        If staleness check fails, continues silently to allow search to proceed.
+    Returns:
+        SyncResult with information about whether sync was performed.
+
+    Example:
+        # In a command that needs fresh data with progress bar:
+        result = ensure_synced(repo_root, db_path, config, show_progress=True)
+
+        # In a TUI command (no progress bar but show status):
+        result = ensure_synced(repo_root, db_path, config,
+                              show_progress=False, interactive_mode=True)
+
+        # In JSON output mode (completely silent):
+        result = ensure_synced(repo_root, db_path, config, show_progress=False)
     """
     try:
         # Import dependencies
@@ -182,92 +277,90 @@ def check_and_auto_sync(
         # Get last indexed tree SHA
         last_tree_sha = meta_repo.get("last_tree_sha")
 
-        # If tree SHAs differ, index is stale - auto-sync
-        if last_tree_sha != current_tree_sha:
-            # Create indexing use case with all dependencies
-            indexing_usecase = _create_indexing_usecase(repo_root, db_path, config)
+        # If tree SHAs match, index is up to date - no sync needed
+        if last_tree_sha == current_tree_sha:
+            return SyncResult(synced=False, files_indexed=0)
 
-            # Execute incremental sync
-            request = IndexRequest(
-                repo_root=repo_root,
-                sync_mode="worktree",
-                path_filters=[],
-                force_reindex=False,
-            )
+        # Index is stale - need to sync
 
-            # Use progress bars unless in quiet mode
-            from ember.core.cli_utils import progress_context
+        # Show "Syncing..." message for interactive mode (even without progress bar)
+        if interactive_mode and not show_progress:
+            click.echo("Syncing index...", err=True)
 
-            with progress_context(quiet_mode=quiet_mode) as progress:
-                if progress:
-                    response = indexing_usecase.execute(request, progress=progress)
-                else:
-                    # Silent mode
-                    response = indexing_usecase.execute(request)
+        # Create indexing use case with all dependencies
+        indexing_usecase = _create_indexing_usecase(repo_root, db_path, config)
 
-            # Show completion message AFTER progress context exits (ensures progress bar is cleared)
-            if not quiet_mode and response.success:
-                if response.files_indexed > 0:
-                    click.echo(
-                        f"✓ Synced {response.files_indexed} file(s)",
-                        err=True,
-                    )
-                else:
-                    click.echo("✓ Index up to date", err=True)
+        # Execute incremental sync
+        request = IndexRequest(
+            repo_root=repo_root,
+            sync_mode="worktree",
+            path_filters=[],
+            force_reindex=False,
+        )
+
+        # Use progress bars unless in quiet mode
+        quiet_mode = not show_progress
+        with progress_context(quiet_mode=quiet_mode) as progress:
+            if progress:
+                response = indexing_usecase.execute(request, progress=progress)
+            else:
+                # Silent mode
+                response = indexing_usecase.execute(request)
+
+        # Show completion message AFTER progress context exits
+        if show_progress and response.success:
+            if response.files_indexed > 0:
+                click.echo(
+                    f"✓ Synced {response.files_indexed} file(s)",
+                    err=True,
+                )
+            else:
+                click.echo("✓ Index up to date", err=True)
+
+        return SyncResult(synced=True, files_indexed=response.files_indexed)
 
     except Exception as e:
         # If staleness check fails, continue with search anyway
         if verbose:
             click.echo(f"Warning: Could not check index staleness: {e}", err=True)
+        return SyncResult(synced=False, files_indexed=0, error=str(e))
 
 
-# Editor command patterns for opening files at specific line numbers
-EDITOR_PATTERNS = {
-    # Editors that use +line syntax (vim, emacs, nano)
-    "vim-style": {
-        "editors": ["vim", "vi", "nvim", "emacs", "emacsclient", "nano"],
-        "build": lambda ed, fp, ln: [ed, f"+{ln}", str(fp)],
-    },
-    # VS Code: --goto file:line
-    "vscode-style": {
-        "editors": ["code", "vscode"],
-        "build": lambda ed, fp, ln: [ed, "--goto", f"{fp}:{ln}"],
-    },
-    # Sublime Text and Atom: file:line
-    "colon-style": {
-        "editors": ["subl", "atom"],
-        "build": lambda ed, fp, ln: [ed, f"{fp}:{ln}"],
-    },
-}
+def check_and_auto_sync(
+    repo_root: Path,
+    db_path: Path,
+    config,
+    quiet_mode: bool = False,
+    verbose: bool = False,
+) -> None:
+    """Check if index is stale and auto-sync if needed.
 
-
-def get_editor_command(editor: str, file_path: Path, line_num: int) -> list[str]:
-    """Build editor command with line number support.
+    .. deprecated::
+        Use :func:`ensure_synced` instead. This function is kept for backward
+        compatibility and will be removed in a future version.
 
     Args:
-        editor: Editor executable name or path.
-        file_path: Path to file to open.
-        line_num: Line number to jump to.
-
-    Returns:
-        Command list for subprocess.run().
+        repo_root: Repository root path.
+        db_path: Path to SQLite database.
+        config: Configuration object.
+        quiet_mode: If True, suppress progress and messages.
+        verbose: If True, show warnings on errors.
 
     Note:
-        Falls back to vim-style +line syntax for unknown editors.
+        If staleness check fails, continues silently to allow search to proceed.
     """
-    editor_name = Path(editor).name.lower()
-
-    # Find matching pattern
-    for pattern in EDITOR_PATTERNS.values():
-        if editor_name in pattern["editors"]:
-            return pattern["build"](editor, file_path, line_num)
-
-    # Default: vim-style +line syntax (most widely supported)
-    return [editor, f"+{line_num}", str(file_path)]
+    # Delegate to ensure_synced with appropriate parameters
+    ensure_synced(
+        repo_root=repo_root,
+        db_path=db_path,
+        config=config,
+        show_progress=not quiet_mode,
+        verbose=verbose,
+    )
 
 
 @click.group()
-@click.version_option(version="1.1.0", prog_name="ember")
+@click.version_option(version="1.2.0", prog_name="ember")
 @click.option(
     "--verbose",
     "-v",
@@ -298,22 +391,75 @@ def cli(ctx: click.Context, verbose: bool, quiet: bool) -> None:
     is_flag=True,
     help="Reinitialize even if .ember/ already exists.",
 )
+@click.option(
+    "--model",
+    "-m",
+    type=str,
+    default=None,
+    help="Embedding model to use (jina-code-v2, bge-small, minilm, auto).",
+)
+@click.option(
+    "--yes",
+    "-y",
+    is_flag=True,
+    help="Accept recommended model without prompting.",
+)
 @click.pass_context
-def init(ctx: click.Context, force: bool) -> None:
+def init(ctx: click.Context, force: bool, model: str | None, yes: bool) -> None:
     """Initialize Ember in the current directory.
 
     Creates .ember/ directory with configuration and database.
     If in a git repository, initializes at the git root.
+
+    Detects available system RAM and suggests an appropriate embedding model.
+    Use --model to override or --yes to accept the recommendation.
     """
     # Lazy import - only load when init is actually called
+    from ember.adapters.sqlite.initializer import SqliteDatabaseInitializer
     from ember.core.config.init_usecase import InitRequest, InitUseCase
+    from ember.core.hardware import (
+        detect_system_resources,
+        get_model_recommendation_reason,
+        recommend_model,
+    )
     from ember.core.repo_utils import find_repo_root_for_init
 
     repo_root = find_repo_root_for_init()
+    quiet = ctx.obj.get("quiet", False)
 
-    # Create use case and execute
-    use_case = InitUseCase(version="1.1.0")
-    request = InitRequest(repo_root=repo_root, force=force)
+    # Determine which model to use
+    if model is not None:
+        # User explicitly specified a model
+        selected_model = model
+    else:
+        # Auto-detect and suggest
+        resources = detect_system_resources()
+        recommended = recommend_model(resources)
+        reason = get_model_recommendation_reason(recommended, resources)
+
+        if not quiet:
+            click.echo("\nDetecting system resources...")
+            click.echo(f"  Available RAM: {resources.available_ram_gb:.1f}GB")
+            click.echo(f"  Recommended model: {recommended}")
+            click.echo(f"  ({reason})")
+            click.echo()
+
+        # Check if the default (jina) is NOT recommended and we need to prompt
+        if recommended != "jina-code-v2" and not yes:
+            click.echo(
+                "The default model (jina-code-v2) requires ~1.6GB RAM and may cause slowdowns."
+            )
+            use_recommended = click.confirm(
+                f"Use recommended model ({recommended}) instead?", default=True
+            )
+            selected_model = recommended if use_recommended else "jina-code-v2"
+        else:
+            selected_model = recommended
+
+    # Create use case with injected dependencies
+    db_initializer = SqliteDatabaseInitializer()
+    use_case = InitUseCase(db_initializer=db_initializer, version="1.2.0")
+    request = InitRequest(repo_root=repo_root, force=force, model=selected_model)
 
     try:
         response = use_case.execute(request)
@@ -324,19 +470,23 @@ def init(ctx: click.Context, force: bool) -> None:
         else:
             click.echo(f"Initialized ember index at {response.ember_dir}")
 
-        if not ctx.obj.get("quiet", False):
+        if not quiet:
             click.echo(f"  ✓ Created {response.config_path.name}")
             click.echo(f"  ✓ Created {response.db_path.name}")
             click.echo(f"  ✓ Created {response.state_path.name}")
+            click.echo(f"  ✓ Using model: {selected_model}")
             click.echo("\nNext: Run 'ember sync' to index your codebase")
 
     except FileExistsError as e:
-        click.echo(f"Error: {e}", err=True)
-        click.echo("Use 'ember init --force' to reinitialize", err=True)
-        sys.exit(1)
+        raise EmberCliError(
+            str(e),
+            hint="Use 'ember init --force' to reinitialize",
+        ) from e
     except Exception as e:
-        click.echo(f"Error initializing ember: {e}", err=True)
-        sys.exit(1)
+        raise EmberCliError(
+            f"Failed to initialize ember: {e}",
+            hint="Check permissions and try again, or use --force to reinitialize",
+        ) from e
 
 
 def _parse_sync_mode(rev: str | None, staged: bool, worktree: bool) -> str:
@@ -409,7 +559,7 @@ def _format_sync_results(response) -> None:
     sync_type = "incremental" if response.is_incremental else "full"
 
     if response.files_indexed == 0 and response.chunks_deleted == 0:
-        click.echo("✓ No changes detected (full scan)")
+        click.echo(f"✓ No changes detected ({sync_type} scan completed)")
     else:
         click.echo(f"✓ Indexed {response.files_indexed} files ({sync_type} sync)")
 
@@ -462,14 +612,8 @@ def sync(
     """
     from ember.adapters.config.toml_config_provider import TomlConfigProvider
     from ember.core.indexing.index_usecase import IndexRequest
-    from ember.core.repo_utils import find_repo_root
 
-    try:
-        repo_root, ember_dir = find_repo_root()
-    except RuntimeError as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
-
+    repo_root, ember_dir = get_ember_repo_root()
     db_path = ember_dir / "index.db"
     sync_mode = _parse_sync_mode(rev, staged, worktree)
 
@@ -497,8 +641,10 @@ def sync(
             response = indexing_usecase.execute(request)
 
     if not response.success:
-        click.echo(f"Error during indexing: {response.error}", err=True)
-        sys.exit(1)
+        raise EmberCliError(
+            f"Indexing failed: {response.error}",
+            hint="Run 'ember sync --reindex' to force a fresh index",
+        )
 
     _format_sync_results(response)
 
@@ -523,7 +669,7 @@ def sync(
     "--in",
     "path_filter",
     type=str,
-    help="Filter results by path glob (e.g., 'src/**/*.py').",
+    help="Filter results by path glob (e.g., '*.py'). Cannot be used with PATH argument.",
 )
 @click.option(
     "--lang",
@@ -568,14 +714,7 @@ def find(
         ember find "query" .          # Search current directory subtree
         ember find "query" src/       # Search src/ subtree
     """
-    from ember.core.repo_utils import find_repo_root
-
-    try:
-        repo_root, ember_dir = find_repo_root()
-    except RuntimeError as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
-
+    repo_root, ember_dir = get_ember_repo_root()
     db_path = ember_dir / "index.db"
 
     # Handle path argument: convert from CWD-relative to repo-relative glob
@@ -588,21 +727,17 @@ def find(
         try:
             path_rel_to_repo = path_abs.relative_to(repo_root)
         except ValueError:
-            click.echo(f"Error: Path '{path}' is not within repository", err=True)
-            sys.exit(1)
+            path_not_in_repo_error(path)
+
+        # Check for mutually exclusive filter options
+        if path_filter:
+            raise EmberCliError(
+                f"Cannot use both PATH argument ('{path}') and --in filter ('{path_filter}')",
+                hint="Use PATH to search a directory subtree, OR --in for glob patterns, but not both",
+            )
 
         # Create glob pattern for this path subtree
-        path_scope_filter = f"{path_rel_to_repo}/**" if path_rel_to_repo != Path(".") else "*/**"
-
-        # Merge with existing path_filter if present
-        if path_filter:
-            # Both filters specified - this is a conflict, prefer path argument
-            click.echo(
-                f"Warning: Both path argument '{path}' and --in filter '{path_filter}' specified. "
-                f"Using path argument only.",
-                err=True,
-            )
-        path_filter = path_scope_filter
+        path_filter = f"{path_rel_to_repo}/**" if path_rel_to_repo != Path(".") else "*/**"
 
     # Load config
     from ember.adapters.config.toml_config_provider import TomlConfigProvider
@@ -615,12 +750,13 @@ def find(
         topk = config.search.topk
 
     # Auto-sync: Check if index is stale and sync if needed (unless --no-sync)
+    # Use ensure_synced - show progress unless in JSON output mode
     if not no_sync:
-        check_and_auto_sync(
+        ensure_synced(
             repo_root=repo_root,
             db_path=db_path,
             config=config,
-            quiet_mode=json_output,
+            show_progress=not json_output,  # Show progress in human mode
             verbose=ctx.obj.get("verbose", False),
         )
 
@@ -670,10 +806,172 @@ def find(
             click.echo(f"Warning: Could not cache results: {e}", err=True)
 
     # Display results
+    presenter = ResultPresenter(LocalFileSystem())
     if json_output:
-        click.echo(ResultPresenter.format_json_output(results, context=context, repo_root=repo_root))
+        click.echo(presenter.format_json_output(results, context=context, repo_root=repo_root))
     else:
-        ResultPresenter.format_human_output(results, context=context, repo_root=repo_root)
+        presenter.format_human_output(results, context=context, repo_root=repo_root, config=config)
+
+
+@cli.command()
+@click.argument("path", type=str, required=False, default=None)
+@click.option(
+    "--in",
+    "file_pattern",
+    type=str,
+    help="Filter by glob pattern (e.g., '*.py'). Cannot be used with PATH argument.",
+)
+@click.option(
+    "--lang",
+    "lang_filter",
+    type=str,
+    help="Filter by language (e.g., python, typescript).",
+)
+@click.option(
+    "--topk",
+    "-k",
+    type=int,
+    default=None,
+    help="Max results to show (default: from config).",
+)
+@click.option(
+    "--no-preview",
+    is_flag=True,
+    help="Start with preview pane disabled.",
+)
+@click.option(
+    "--no-scores",
+    is_flag=True,
+    help="Hide relevance scores.",
+)
+@click.option(
+    "--no-sync",
+    "no_sync",
+    is_flag=True,
+    help="Skip auto-sync check before searching.",
+)
+@click.pass_context
+@handle_cli_errors("search")
+def search(
+    ctx: click.Context,
+    path: str | None,
+    file_pattern: str | None,
+    lang_filter: str | None,
+    topk: int | None,
+    no_preview: bool,
+    no_scores: bool,
+    no_sync: bool,
+) -> None:
+    """Interactive semantic search interface.
+
+    Opens an fzf-style interactive search UI with real-time results,
+    keyboard navigation, preview pane, and direct file opening.
+
+    Can be run from any subdirectory within the repository.
+
+    If PATH is provided, searches only within that path (relative to current directory).
+    Examples:
+        ember search              # Search entire repo
+        ember search .            # Search current directory subtree
+        ember search src/         # Search src/ subtree
+        ember search tests        # Search tests/ subtree
+    """
+    repo_root, ember_dir = get_ember_repo_root()
+    db_path = ember_dir / "index.db"
+
+    # Handle path argument: convert from CWD-relative to repo-relative glob
+    path_filter: str | None = None
+    if path is not None:
+        # Convert path argument to absolute, then to relative from repo root
+        cwd = Path.cwd().resolve()
+        path_abs = (cwd / path).resolve()
+
+        # Check if path is within repo
+        try:
+            path_rel_to_repo = path_abs.relative_to(repo_root)
+        except ValueError:
+            path_not_in_repo_error(path)
+
+        # Check for mutually exclusive filter options
+        if file_pattern:
+            raise EmberCliError(
+                f"Cannot use both PATH argument ('{path}') and --in filter ('{file_pattern}')",
+                hint="Use PATH to search a directory subtree, OR --in for glob patterns, but not both",
+            )
+
+        # Create glob pattern for this path subtree
+        path_filter = f"{path_rel_to_repo}/**" if path_rel_to_repo != Path(".") else "*/**"
+
+    # Convert file_pattern to path_filter format
+    if file_pattern:
+        path_filter = f"**/{file_pattern}"
+
+    # Load config
+    from ember.adapters.config.toml_config_provider import TomlConfigProvider
+
+    config_provider = TomlConfigProvider()
+    config = config_provider.load(ember_dir)
+
+    # Use config default for topk if not specified
+    if topk is None:
+        topk = config.search.topk
+
+    # Auto-sync unless disabled
+    # Use ensure_synced with interactive_mode=True to show "Syncing..." status
+    if not no_sync:
+        ensure_synced(
+            repo_root=repo_root,
+            db_path=db_path,
+            config=config,
+            show_progress=False,  # No progress bar (would corrupt TUI)
+            interactive_mode=True,  # Show brief "Syncing..." message
+            verbose=ctx.obj.get("verbose", False),
+        )
+
+    # Lazy imports
+    from ember.adapters.fts.sqlite_fts import SQLiteFTS
+    from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
+    from ember.adapters.tui.search_ui import InteractiveSearchUI
+    from ember.adapters.vss.sqlite_vec_adapter import SqliteVecAdapter
+    from ember.core.retrieval.search_usecase import SearchUseCase
+    from ember.domain.entities import Query
+
+    # Initialize search dependencies
+    text_search = SQLiteFTS(db_path)
+    vector_search = SqliteVecAdapter(db_path)
+    chunk_repo = SQLiteChunkRepository(db_path)
+    embedder = _create_embedder(config, show_progress=False)  # No progress for interactive
+
+    # Create search use case
+    search_usecase = SearchUseCase(
+        text_search=text_search,
+        vector_search=vector_search,
+        chunk_repo=chunk_repo,
+        embedder=embedder,
+    )
+
+    # Create search function wrapper
+    def search_fn(query: Query) -> list:
+        return search_usecase.search(query)
+
+    # Create and run interactive UI
+    ui = InteractiveSearchUI(
+        search_fn=search_fn,
+        config=config,
+        initial_query="",  # Always start with empty query, user types interactively
+        topk=topk,
+        path_filter=path_filter,
+        lang_filter=lang_filter,
+        show_scores=not no_scores,
+        show_preview=not no_preview,
+    )
+
+    selected_file, selected_line = ui.run()
+
+    # If user selected a file, open it in editor
+    if selected_file and selected_line:
+        file_path = repo_root / selected_file
+        open_file_in_editor(file_path, selected_line)
 
 
 @cli.command()
@@ -698,72 +996,27 @@ def cat(ctx: click.Context, identifier: str, context: int) -> None:
       - Full chunk ID (e.g., 'blake3:a1b2c3d4...')
       - Short hash prefix (e.g., 'a1b2c3d4') - minimum 8 characters
     """
-    from ember.core.repo_utils import find_repo_root
+    from ember.adapters.config.toml_config_provider import TomlConfigProvider
 
-    try:
-        repo_root, ember_dir = find_repo_root()
-    except RuntimeError as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
+    repo_root, ember_dir = get_ember_repo_root()
+    config_provider = TomlConfigProvider()
+    config = config_provider.load(ember_dir)
 
-    # Determine if identifier is numeric index or hash ID
+    # Look up result by numeric index or hash ID
     is_numeric = identifier.isdigit()
-
     if is_numeric:
-        # Legacy behavior: numeric index from cached search results
         cache_path = ember_dir / ".last_search.json"
-        cache_data = load_cached_results(cache_path)
-        results = cache_data.get("results", [])
-        result = validate_result_index(int(identifier), results)
+        result = lookup_result_from_cache(identifier, cache_path)
     else:
-        # New behavior: hash-based lookup
         from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
 
         db_path = ember_dir / "index.db"
         chunk_repo = SQLiteChunkRepository(db_path)
-
-        # Try to find chunk by ID prefix
-        matches = chunk_repo.find_by_id_prefix(identifier)
-
-        if len(matches) == 0:
-            click.echo(f"Error: No chunk found with ID prefix '{identifier}'", err=True)
-            sys.exit(1)
-        elif len(matches) > 1:
-            click.echo(f"Error: Ambiguous chunk ID prefix '{identifier}' matches {len(matches)} chunks:", err=True)
-            for chunk in matches[:5]:  # Show first 5 matches
-                click.echo(f"  {chunk.id}", err=True)
-            if len(matches) > 5:
-                click.echo(f"  ... and {len(matches) - 5} more", err=True)
-            click.echo("\nUse a longer prefix to uniquely identify the chunk", err=True)
-            sys.exit(1)
-
-        # Found exactly one match
-        chunk = matches[0]
-
-        # Convert chunk to result format (matching cached results structure)
-        result = {
-            "path": str(chunk.path),
-            "start_line": chunk.start_line,
-            "end_line": chunk.end_line,
-            "content": chunk.content,
-            "lang": chunk.lang,
-            "symbol": chunk.symbol,
-        }
+        result = lookup_result_by_hash(identifier, chunk_repo)
 
     # Display header
-    # Only pass index if we're using numeric identifier (for backward compatibility)
     display_index = int(identifier) if is_numeric else None
-    if display_index:
-        format_result_header(result, display_index, show_symbol=True)
-    else:
-        # For hash-based lookup, show file path and symbol directly
-        file_path = result["path"]
-        symbol = result.get("symbol")
-        if symbol:
-            click.echo(f"{click.style(file_path, fg='cyan')} {click.style(f'[{symbol}]', fg='yellow')}")
-        else:
-            click.echo(click.style(file_path, fg='cyan'))
-
+    format_result_header(result, display_index, show_symbol=True)
     click.echo(
         click.style(
             f"Lines {result['start_line']}-{result['end_line']} ({result['lang'] or 'text'})",
@@ -772,44 +1025,14 @@ def cat(ctx: click.Context, identifier: str, context: int) -> None:
     )
     click.echo()
 
-    # Get chunk content
-    content = result["content"]
-
-    # If context requested, read file and show surrounding lines
+    # Display content (with context or with highlighting)
     if context > 0:
-        file_path = repo_root / result["path"]
-        if file_path.exists():
-            try:
-                file_lines = file_path.read_text(errors="replace").splitlines()
-                start_line = result["start_line"]
-                end_line = result["end_line"]
-
-                # Calculate context range (1-based line numbers)
-                context_start = max(1, start_line - context)
-                context_end = min(len(file_lines), end_line + context)
-
-                # Display with line numbers
-                for line_num in range(context_start, context_end + 1):
-                    line_content = file_lines[line_num - 1]  # Convert to 0-based
-                    # Highlight the chunk lines
-                    if start_line <= line_num <= end_line:
-                        click.echo(f"{line_num:5} | {line_content}")
-                    else:
-                        click.echo(click.style(f"{line_num:5} | {line_content}", dim=True))
-            except Exception as e:
-                # Fall back to just chunk content if file read fails
-                click.echo(
-                    f"Warning: Could not read context from {result['path']}: {e}", err=True
-                )
-                click.echo(content)
-        else:
-            click.echo(
-                f"Warning: File {result['path']} not found, showing chunk only", err=True
-            )
-            click.echo(content)
+        if not display_content_with_context(result, context, repo_root):
+            click.echo(result["content"])
     else:
-        # Just display the chunk content
-        click.echo(content)
+        display_content_with_highlighting(
+            result, config, verbose=ctx.obj.get("verbose", False)
+        )
 
     click.echo()
 
@@ -825,17 +1048,8 @@ def open_result(ctx: click.Context, index: int) -> None:
     Can be run from any subdirectory within the repository.
     """
     import os
-    import shutil
-    import subprocess
 
-    from ember.core.repo_utils import find_repo_root
-
-    try:
-        repo_root, ember_dir = find_repo_root()
-    except RuntimeError as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
-
+    repo_root, ember_dir = get_ember_repo_root()
     cache_path = ember_dir / ".last_search.json"
 
     # Load cached results
@@ -847,33 +1061,16 @@ def open_result(ctx: click.Context, index: int) -> None:
 
     # Build absolute file path
     file_path = repo_root / result["path"]
-
-    # Check if file exists
-    if not file_path.exists():
-        click.echo(f"Error: File not found: {result['path']}", err=True)
-        sys.exit(1)
-
-    # Determine which editor to use
-    # Priority: $VISUAL > $EDITOR > vim (fallback)
-    editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "vim"
-
-    # Build editor command with line number
     line_num = result["start_line"]
-    cmd = get_editor_command(editor, file_path, line_num)
-
-    # Check if editor exists before trying to run it
-    if not shutil.which(editor):
-        click.echo(f"Error: Editor '{editor}' not found", err=True)
-        click.echo("Set $EDITOR or $VISUAL environment variable", err=True)
-        sys.exit(1)
 
     # Show what we're doing (if not quiet)
     if not ctx.obj.get("quiet", False):
+        editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "vim"
         click.echo(f"Opening in {editor}:")
         format_result_header(result, index, show_symbol=True)
 
-    # Execute editor command
-    subprocess.run(cmd, check=True)
+    # Open in editor
+    open_file_in_editor(file_path, line_num)
 
 
 @cli.command()
@@ -932,83 +1129,238 @@ def status(ctx: click.Context) -> None:
     - Whether index is up to date
     - Current configuration
     """
-    from pathlib import Path
-
+    from ember.adapters.config.toml_config_provider import TomlConfigProvider
     from ember.adapters.git_cmd.git_adapter import GitAdapter
     from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
     from ember.adapters.sqlite.meta_repository import SQLiteMetaRepository
-    from ember.core.repo_utils import find_ember_root
     from ember.core.status.status_usecase import StatusRequest, StatusUseCase
 
-    try:
-        # Find ember root (returns parent directory containing .ember/)
-        repo_root = find_ember_root(Path.cwd())
-        if repo_root is None:
-            click.echo("✗ Not in an ember repository (or any parent directory)", err=True)
-            click.echo("Run 'ember init' to initialize ember in this repository", err=True)
-            sys.exit(1)
+    repo_root, ember_dir = get_ember_repo_root()
 
-        ember_dir = repo_root / ".ember"
+    # Load configuration
+    config_provider = TomlConfigProvider()
+    config = config_provider.load(ember_dir)
 
-        # Load configuration
-        from ember.adapters.config.toml_config_provider import TomlConfigProvider
+    # Set up repositories
+    db_path = ember_dir / "index.db"
+    vcs = GitAdapter(repo_root)
+    chunk_repo = SQLiteChunkRepository(db_path)
+    meta_repo = SQLiteMetaRepository(db_path)
 
-        config_provider = TomlConfigProvider()
-        config = config_provider.load(ember_dir)
+    # Execute status use case
+    use_case = StatusUseCase(
+        vcs=vcs,
+        chunk_repo=chunk_repo,
+        meta_repo=meta_repo,
+        config=config,
+    )
 
-        # Set up repositories
-        db_path = ember_dir / "index.db"
-        vcs = GitAdapter(repo_root)
-        chunk_repo = SQLiteChunkRepository(db_path)
-        meta_repo = SQLiteMetaRepository(db_path)
+    response = use_case.execute(StatusRequest(repo_root=repo_root))
 
-        # Execute status use case
-        use_case = StatusUseCase(
-            vcs=vcs,
-            chunk_repo=chunk_repo,
-            meta_repo=meta_repo,
-            config=config,
+    if not response.success:
+        raise EmberCliError(
+            f"Failed to get status: {response.error}",
+            hint="Try 'ember sync' to refresh the index",
         )
 
-        response = use_case.execute(StatusRequest(repo_root=repo_root))
+    # Display status
+    click.echo(f"✓ Ember initialized at {repo_root}\n")
 
-        if not response.success:
-            click.echo(f"✗ Failed to get status: {response.error}", err=True)
-            sys.exit(1)
+    click.echo("Index Status:")
+    click.echo(f"  Indexed files: {response.indexed_files}")
+    click.echo(f"  Total chunks: {response.total_chunks}")
 
-        # Display status
-        click.echo(f"✓ Ember initialized at {repo_root}\n")
-
-        click.echo("Index Status:")
-        click.echo(f"  Indexed files: {response.indexed_files}")
-        click.echo(f"  Total chunks: {response.total_chunks}")
-
-        if response.last_tree_sha:
-            if response.is_stale:
-                click.echo(f"  Status: {click.style('⚠ Out of date', fg='yellow')}")
-                click.echo("    Run 'ember sync' to update index")
-            else:
-                click.echo(f"  Status: {click.style('✓ Up to date', fg='green')}")
+    if response.last_tree_sha:
+        if response.is_stale:
+            click.echo(f"  Status: {click.style('⚠ Out of date', fg='yellow')}")
+            click.echo("    Run 'ember sync' to update index")
         else:
-            click.echo(f"  Status: {click.style('⚠ Never synced', fg='yellow')}")
-            click.echo("    Run 'ember sync' to index your repository")
+            click.echo(f"  Status: {click.style('✓ Up to date', fg='green')}")
+    else:
+        click.echo(f"  Status: {click.style('⚠ Never synced', fg='yellow')}")
+        click.echo("    Run 'ember sync' to index your repository")
 
-        # Show configuration
-        if response.config:
-            click.echo("\nConfiguration:")
-            click.echo(f"  Search results (topk): {response.config.search.topk}")
-            click.echo(f"  Chunking strategy: {response.config.index.chunk}")
-            if response.config.index.chunk == "lines":
-                click.echo(f"  Line window: {response.config.index.line_window} lines")
-                click.echo(f"  Overlap: {response.config.index.overlap_lines} lines")
-            if response.model_fingerprint:
-                # Extract model name from fingerprint (e.g., "jina-embeddings-v2-base-code")
-                model_name = response.model_fingerprint.split(":")[0] if ":" in response.model_fingerprint else response.model_fingerprint
-                click.echo(f"  Model: {model_name}")
+    # Show configuration
+    if response.config:
+        click.echo("\nConfiguration:")
+        click.echo(f"  Search results (topk): {response.config.search.topk}")
+        click.echo(f"  Chunking strategy: {response.config.index.chunk}")
+        if response.config.index.chunk == "lines":
+            click.echo(f"  Line window: {response.config.index.line_window} lines")
+            click.echo(f"  Overlap: {response.config.index.overlap_lines} lines")
+        if response.model_fingerprint:
+            # Extract model name from fingerprint (e.g., "jina-embeddings-v2-base-code")
+            model_name = response.model_fingerprint.split(":")[0] if ":" in response.model_fingerprint else response.model_fingerprint
+            click.echo(f"  Model: {model_name}")
 
-    except Exception as e:
-        click.echo(f"✗ Error: {e}", err=True)
-        sys.exit(1)
+
+# Configuration management commands
+@cli.group()
+def config() -> None:
+    """Manage Ember configuration files.
+
+    Ember uses a two-tier configuration system:
+    - Local: .ember/config.toml (repo-specific settings)
+    - Global: ~/.config/ember/config.toml (user defaults)
+
+    Local settings override global settings. Missing values use built-in defaults.
+    """
+    pass
+
+
+@config.command(name="show")
+@click.option(
+    "--global", "-g", "show_global", is_flag=True, help="Show global config location"
+)
+@click.option(
+    "--local", "-l", "show_local", is_flag=True, help="Show local config location"
+)
+@click.pass_context
+def config_show(
+    ctx: click.Context, show_global: bool, show_local: bool
+) -> None:
+    """Show configuration file locations and current settings.
+
+    By default shows both locations. Use --global or --local to show specific one.
+    """
+    from ember.adapters.config.toml_config_provider import TomlConfigProvider
+    from ember.shared.config_io import get_global_config_path
+
+    global_path = get_global_config_path()
+
+    # Try to find local config if we're in a repo
+    local_path = None
+    try:
+        _, ember_dir = get_ember_repo_root()
+        local_path = ember_dir / "config.toml"
+    except Exception:
+        pass  # Not in a repo, local config doesn't apply
+
+    show_both = not show_global and not show_local
+
+    if show_global or show_both:
+        click.echo(f"Global config: {global_path}")
+        if global_path.exists():
+            click.echo(f"  Status: {click.style('exists', fg='green')}")
+        else:
+            click.echo(f"  Status: {click.style('not created', fg='yellow')}")
+
+    if show_local or show_both:
+        if local_path:
+            click.echo(f"Local config:  {local_path}")
+            if local_path.exists():
+                click.echo(f"  Status: {click.style('exists', fg='green')}")
+            else:
+                click.echo(f"  Status: {click.style('not created', fg='yellow')}")
+        elif show_local:
+            click.echo("Local config: Not in an Ember repository")
+
+    # Show effective config if we're in a repo
+    if (show_both or show_local) and local_path:
+        click.echo("\nEffective configuration (merged):")
+        provider = TomlConfigProvider()
+        try:
+            config = provider.load(local_path.parent)
+            click.echo("  [index]")
+            click.echo(f"    model = {config.index.model}")
+            click.echo(f"    chunk = {config.index.chunk}")
+            click.echo("  [search]")
+            click.echo(f"    topk = {config.search.topk}")
+            click.echo("  [display]")
+            click.echo(f"    theme = {config.display.theme}")
+        except Exception as e:
+            click.echo(f"  Error loading config: {e}")
+
+
+@config.command(name="edit")
+@click.option(
+    "--global", "-g", "edit_global", is_flag=True, help="Edit global config file"
+)
+@click.pass_context
+def config_edit(ctx: click.Context, edit_global: bool) -> None:
+    """Open configuration file in your default editor.
+
+    Opens the local config by default. Use --global to edit global config.
+    Creates the config file if it doesn't exist.
+    """
+    import os
+    import subprocess
+
+    from ember.shared.config_io import create_default_config_file, get_global_config_path
+
+    if edit_global:
+        config_path = get_global_config_path()
+        config_type = "global"
+    else:
+        # Find local config
+        try:
+            _, ember_dir = get_ember_repo_root()
+            config_path = ember_dir / "config.toml"
+            config_type = "local"
+        except Exception as e:
+            raise EmberCliError(
+                "Not in an Ember repository",
+                hint="Use 'ember config edit --global' to edit global config",
+            ) from e
+
+    # Create config file if it doesn't exist
+    if not config_path.exists():
+        click.echo(f"Creating {config_type} config at {config_path}...")
+        create_default_config_file(config_path)
+
+    # Open in editor
+    editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "vi"
+    click.echo(f"Opening {config_path} in {editor}...")
+    try:
+        subprocess.run([editor, str(config_path)], check=True)
+    except subprocess.CalledProcessError as e:
+        raise EmberCliError(
+            f"Editor exited with error: {e.returncode}",
+            hint="Set EDITOR environment variable to change your editor",
+        ) from e
+    except FileNotFoundError as e:
+        raise EmberCliError(
+            f"Editor '{editor}' not found",
+            hint="Set EDITOR environment variable to your preferred editor",
+        ) from e
+
+
+@config.command(name="path")
+@click.option(
+    "--global", "-g", "show_global", is_flag=True, help="Show only global config path"
+)
+@click.option(
+    "--local", "-l", "show_local", is_flag=True, help="Show only local config path"
+)
+def config_path(show_global: bool, show_local: bool) -> None:
+    """Print config file path(s) for use in scripts.
+
+    Outputs bare paths without any decoration, suitable for piping.
+    """
+    from ember.shared.config_io import get_global_config_path
+
+    global_path = get_global_config_path()
+
+    if show_global:
+        click.echo(global_path)
+        return
+
+    if show_local:
+        try:
+            _, ember_dir = get_ember_repo_root()
+            click.echo(ember_dir / "config.toml")
+        except Exception:
+            # Exit silently with no output if not in repo
+            pass
+        return
+
+    # Default: show both
+    click.echo(f"global:{global_path}")
+    try:
+        _, ember_dir = get_ember_repo_root()
+        click.echo(f"local:{ember_dir / 'config.toml'}")
+    except Exception:
+        pass
 
 
 # Daemon management commands
@@ -1050,8 +1402,10 @@ def start(ctx: click.Context, foreground: bool) -> None:
         try:
             lifecycle.start(foreground=True)
         except RuntimeError as e:
-            click.echo(f"✗ Failed to start daemon: {e}", err=True)
-            sys.exit(1)
+            raise EmberCliError(
+                f"Failed to start daemon: {e}",
+                hint="Check 'ember daemon status' for details, or try 'ember daemon restart'",
+            ) from e
     else:
         # Background mode with progress
         from ember.adapters.daemon.lifecycle import DaemonLifecycle
@@ -1062,8 +1416,10 @@ def start(ctx: click.Context, foreground: bool) -> None:
             if not quiet:
                 click.echo("✓ Daemon started successfully")
         else:
-            click.echo("✗ Failed to start daemon", err=True)
-            sys.exit(1)
+            raise EmberCliError(
+                "Failed to start daemon",
+                hint="Check 'ember daemon status' for details, or try 'ember daemon restart'",
+            )
 
 
 @daemon.command()
@@ -1081,8 +1437,10 @@ def stop() -> None:
     if lifecycle.stop():
         click.echo("✓ Daemon stopped successfully")
     else:
-        click.echo("✗ Failed to stop daemon", err=True)
-        sys.exit(1)
+        raise EmberCliError(
+            "Failed to stop daemon",
+            hint="The process may have already exited. Check 'ember daemon status'",
+        )
 
 
 @daemon.command()
@@ -1096,8 +1454,10 @@ def restart() -> None:
     if lifecycle.restart():
         click.echo("✓ Daemon restarted successfully")
     else:
-        click.echo("✗ Failed to restart daemon", err=True)
-        sys.exit(1)
+        raise EmberCliError(
+            "Failed to restart daemon",
+            hint="Try 'ember daemon stop' then 'ember daemon start'",
+        )
 
 
 @daemon.command(name="status")
