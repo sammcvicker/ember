@@ -161,6 +161,7 @@ def save_config(config: EmberConfig, path: Path) -> None:
             "line_window": config.index.line_window,
             "line_stride": config.index.line_stride,
             "overlap_lines": config.index.overlap_lines,
+            "batch_size": config.index.batch_size,
             "include": config.index.include,
             "ignore": config.index.ignore,
         },
@@ -226,6 +227,10 @@ line_stride = 100
 
 # Overlap lines between chunks for context preservation
 overlap_lines = 15
+
+# Batch size for embedding (lower values use less GPU memory)
+# Will be automatically reduced on CUDA out-of-memory errors
+batch_size = 32
 
 # File patterns to include (glob syntax)
 include = [
@@ -358,6 +363,10 @@ chunk = "symbol"
 line_window = 120
 line_stride = 100
 overlap_lines = 15
+
+# Batch size for embedding (lower values use less GPU memory)
+# Will be automatically reduced on CUDA out-of-memory errors
+batch_size = 32
 
 # Default file patterns to include
 include = [

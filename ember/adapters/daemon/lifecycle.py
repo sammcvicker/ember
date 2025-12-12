@@ -26,6 +26,7 @@ class DaemonLifecycle:
         log_file: Path | None = None,
         idle_timeout: int = 900,
         model_name: str | None = None,
+        batch_size: int = 32,
     ):
         """Initialize lifecycle manager.
 
@@ -35,6 +36,7 @@ class DaemonLifecycle:
             log_file: Path to log file (default: ~/.ember/daemon.log)
             idle_timeout: Daemon idle timeout in seconds
             model_name: Embedding model preset or HuggingFace ID
+            batch_size: Batch size for embedding
         """
         ember_dir = Path.home() / ".ember"
         self.socket_path = socket_path or (ember_dir / "daemon.sock")
@@ -42,6 +44,7 @@ class DaemonLifecycle:
         self.log_file = log_file or (ember_dir / "daemon.log")
         self.idle_timeout = idle_timeout
         self.model_name = model_name
+        self.batch_size = batch_size
 
         # Ensure ember directory exists
         ember_dir.mkdir(parents=True, exist_ok=True)
@@ -304,6 +307,8 @@ class DaemonLifecycle:
             str(self.idle_timeout),
             "--log-level",
             "INFO",
+            "--batch-size",
+            str(self.batch_size),
         ]
 
         # Add model selection if specified

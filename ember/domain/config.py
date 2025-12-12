@@ -19,6 +19,8 @@ class IndexConfig:
         line_window: Lines per chunk when using line-based chunking
         line_stride: Stride between chunks when using line-based chunking
         overlap_lines: Overlap lines between chunks for context preservation
+        batch_size: Batch size for embedding (default: 32). Lower values use less
+                   GPU memory. Will be automatically reduced on CUDA OOM errors.
         include: Glob patterns for files to include (e.g., ["**/*.py"])
         ignore: Patterns for files/dirs to ignore (e.g., ["node_modules/"])
 
@@ -32,6 +34,7 @@ class IndexConfig:
     line_window: int = 120
     line_stride: int = 100
     overlap_lines: int = 15
+    batch_size: int = 32
     include: list[str] = field(
         default_factory=lambda: [
             "**/*.py",
@@ -77,6 +80,8 @@ class IndexConfig:
                 f"overlap_lines ({self.overlap_lines}) must be less than "
                 f"line_window ({self.line_window})"
             )
+        if self.batch_size <= 0:
+            raise ValueError(f"batch_size must be positive, got {self.batch_size}")
         # Validate model name
         self._validate_model()
 
