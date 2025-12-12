@@ -27,6 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Existing projects continue to work (full project configs still override everything)
 
 ### Fixed
+- **Test isolation: global config no longer leaks into unit tests** (#254)
+  - Config provider tests now mock `get_global_config_path()` to prevent user's `~/.config/ember/config.toml` from affecting test results
+  - Added `no_global_config` fixture for consistent test isolation
+
 - **SqliteVecAdapter now uses correct embedding dimension** (#249)
   - `SqliteVecAdapter` was hardcoded to 768 dimensions (Jina), breaking MiniLM and BGE models which use 384 dimensions
   - `ember find` and `ember search` commands now pass the embedder's dimension to `SqliteVecAdapter`
