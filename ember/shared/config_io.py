@@ -196,6 +196,9 @@ def save_config(config: EmberConfig, path: Path) -> None:
 def create_default_config_file(path: Path, model: str = "local-default-code-embed") -> None:
     """Create a default config.toml file with sensible defaults and comments.
 
+    This creates a FULL config file with all settings explicitly set.
+    For project configs, prefer create_minimal_project_config().
+
     Args:
         path: Destination path for config.toml
         model: Embedding model preset to use (default: local-default-code-embed)
@@ -273,6 +276,141 @@ patterns = [
 
 # Maximum file size to process (MB)
 max_file_mb = 5
+"""
+
+    # Ensure parent directory exists
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Write template
+    with path.open("w", encoding="utf-8") as f:
+        f.write(template)
+
+
+def create_minimal_project_config(path: Path) -> None:
+    """Create a minimal project config.toml with helpful comments.
+
+    Project configs should only contain repository-specific settings.
+    Machine-specific settings (like model) belong in global config.
+
+    Args:
+        path: Destination path for config.toml
+    """
+    template = """\
+# Ember Project Configuration
+# Settings here override defaults from global config (~/.config/ember/config.toml)
+#
+# Edit global config: ember config -g edit
+# Edit this file:     ember config edit
+# Show merged config: ember config show
+
+# [index]
+# Repository-specific indexing settings (uncomment to override)
+# chunk = "symbol"    # "symbol" (tree-sitter) or "lines" (sliding window)
+# include = ["**/*.py", "**/*.ts"]  # Override file patterns
+# ignore = [".git/", "node_modules/"]  # Override ignore patterns
+
+# [search]
+# topk = 20           # Default number of results
+
+# [display]
+# theme = "ansi"      # Syntax highlighting theme
+# syntax_highlighting = true
+"""
+
+    # Ensure parent directory exists
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Write template
+    with path.open("w", encoding="utf-8") as f:
+        f.write(template)
+
+
+def create_global_config_file(path: Path, model: str = "local-default-code-embed") -> None:
+    """Create a global config.toml with machine-specific defaults.
+
+    Global config contains settings that depend on the machine's hardware
+    (GPU, RAM, etc.) and should be the same across all repositories.
+
+    Args:
+        path: Destination path for config.toml
+        model: Embedding model preset to use
+    """
+    template = f"""\
+# Ember Global Configuration
+# Machine-specific defaults that apply to all repositories
+#
+# Edit this file:     ember config -g edit
+# View this file:     ember config -g show
+# Per-project config: .ember/config.toml (overrides these settings)
+
+[index]
+# Embedding model - hardware dependent (choose based on GPU/RAM)
+# Options:
+#   jina-code-v2  - Best quality, requires ~1.6GB RAM
+#   bge-small     - Balanced, ~130MB
+#   minilm        - Lightweight, ~100MB
+model = "{model}"
+
+# Default chunking strategy
+chunk = "symbol"
+
+# Line-based chunking parameters
+line_window = 120
+line_stride = 100
+overlap_lines = 15
+
+# Default file patterns to include
+include = [
+    "**/*.py",
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.js",
+    "**/*.jsx",
+    "**/*.go",
+    "**/*.rs",
+    "**/*.java",
+    "**/*.cpp",
+    "**/*.c",
+    "**/*.h",
+    "**/*.hpp",
+]
+
+# Default patterns to ignore
+ignore = [
+    ".git/",
+    "node_modules/",
+    "dist/",
+    "build/",
+    "__pycache__/",
+    ".venv/",
+    "venv/",
+    "*.pyc",
+    ".DS_Store",
+]
+
+[model]
+# Embedding model loading mode
+mode = "daemon"           # "daemon" (recommended) or "direct"
+daemon_timeout = 900      # Idle timeout in seconds (15 min)
+daemon_startup_timeout = 5
+
+[search]
+topk = 20
+rerank = false
+filters = []
+
+[redaction]
+patterns = [
+    "(?i)api_key\\\\s*[:=]\\\\s*['\\\"]?[A-Za-z0-9-_]{{16,}}",
+    "(?i)secret\\\\s*[:=]\\\\s*['\\\"]?[A-Za-z0-9-_]{{16,}}",
+    "(?i)password\\\\s*[:=]\\\\s*['\\\"]?[A-Za-z0-9-_]{{8,}}",
+]
+max_file_mb = 5
+
+[display]
+syntax_highlighting = true
+color_scheme = "auto"
+theme = "ansi"
 """
 
     # Ensure parent directory exists
