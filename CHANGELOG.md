@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `ember find` and `ember search` commands now pass the embedder's dimension to `SqliteVecAdapter`
   - Non-Jina models (minilm, bge-small) now work correctly with vector search
 
+- **`ember daemon start/restart` now uses configured model**
+  - `ember daemon start` and `ember daemon restart` were ignoring the `model` setting from config.toml
+  - Daemon now starts with the correct embedding model from project configuration
+  - Prevents dimension mismatch errors when using non-default models
+
 ## [1.2.0] - 2025-12-12
 
 ### Changed
