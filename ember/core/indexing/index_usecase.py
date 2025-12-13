@@ -674,7 +674,8 @@ class IndexingUseCase:
             sync_mode: Sync mode (for rev field).
 
         Returns:
-            Dict with counts: chunks_created, chunks_updated, vectors_stored.
+            Dict with counts: chunks_created, chunks_updated, vectors_stored, failed.
+            On failure, failed=1 and other counts are 0.
         """
         # Get relative path
         rel_path = file_path.relative_to(repo_root)
@@ -718,7 +719,11 @@ class IndexingUseCase:
         # Since we're re-indexing this file now, we want to completely replace
         # all old chunks with the new chunks
         # NOTE: This is done AFTER validation to prevent data loss if chunking fails
-        self.chunk_repo.delete_all_for_path(path=rel_path)
+        try:
+            self.chunk_repo.delete_all_for_path(path=rel_path)
+        except Exception as e:
+            logger.error(f"Failed to delete old chunks for {rel_path}: {e}")
+            return {"chunks_created": 0, "chunks_updated": 0, "vectors_stored": 0, "failed": 1}
 
         # Create Chunk entities from ChunkData
         chunks = self._create_chunks(
@@ -729,52 +734,79 @@ class IndexingUseCase:
             rev=sync_mode if sync_mode != "worktree" else "worktree",
         )
 
+        # Track chunks that were successfully added for potential rollback
+        added_chunk_ids: list[str] = []
+
         # Store chunks and embed
         chunks_created = 0
         chunks_updated = 0
         vectors_stored = 0
 
-        # First pass: store all chunks and track statistics
-        for chunk in chunks:
-            # Check if chunk already exists (by content hash)
-            existing = self.chunk_repo.find_by_content_hash(chunk.content_hash)
-            is_new = len(existing) == 0
+        try:
+            # First pass: store all chunks and track statistics
+            for chunk in chunks:
+                # Check if chunk already exists (by content hash)
+                existing = self.chunk_repo.find_by_content_hash(chunk.content_hash)
+                is_new = len(existing) == 0
 
-            # Store chunk
-            self.chunk_repo.add(chunk)
+                # Store chunk
+                self.chunk_repo.add(chunk)
+                added_chunk_ids.append(chunk.id)
 
-            if is_new:
-                chunks_created += 1
-            else:
-                chunks_updated += 1
+                if is_new:
+                    chunks_created += 1
+                else:
+                    chunks_updated += 1
 
-        # Second pass: batch embed all chunks at once for efficiency
-        if chunks:
-            # Collect all chunk contents
-            contents = [chunk.content for chunk in chunks]
+            # Second pass: batch embed all chunks at once for efficiency
+            if chunks:
+                # Collect all chunk contents
+                contents = [chunk.content for chunk in chunks]
 
-            # Single batch embedding call
-            embeddings = self.embedder.embed_texts(contents)
+                # Single batch embedding call
+                embeddings = self.embedder.embed_texts(contents)
 
-            # Compute fingerprint once (avoids repeated function calls)
-            model_fingerprint = self.embedder.fingerprint()
+                # Validate embedding count matches chunk count before storing
+                if len(embeddings) != len(chunks):
+                    raise ValueError(
+                        f"Embedding count mismatch: got {len(embeddings)} embeddings "
+                        f"for {len(chunks)} chunks"
+                    )
 
-            # Store vectors for each chunk
-            for chunk, embedding in zip(chunks, embeddings, strict=True):
-                self.vector_repo.add(
-                    chunk_id=chunk.id,
-                    embedding=embedding,
-                    model_fingerprint=model_fingerprint,
-                )
-                vectors_stored += 1
+                # Compute fingerprint once (avoids repeated function calls)
+                model_fingerprint = self.embedder.fingerprint()
+
+                # Store vectors for each chunk
+                for chunk, embedding in zip(chunks, embeddings, strict=True):
+                    self.vector_repo.add(
+                        chunk_id=chunk.id,
+                        embedding=embedding,
+                        model_fingerprint=model_fingerprint,
+                    )
+                    vectors_stored += 1
+
+        except Exception as e:
+            # Rollback: delete any chunks we added
+            logger.error(f"Error indexing {rel_path}: {e}. Rolling back added chunks.")
+            for chunk_id in added_chunk_ids:
+                try:
+                    self.chunk_repo.delete(chunk_id)
+                except Exception as delete_err:
+                    logger.warning(f"Failed to rollback chunk {chunk_id}: {delete_err}")
+            return {"chunks_created": 0, "chunks_updated": 0, "vectors_stored": 0, "failed": 1}
 
         # Track file (use pre-computed file_size, avoids re-encoding)
-        self.file_repo.track_file(
-            path=file_path,
-            file_hash=file_hash,
-            size=file_size,
-            mtime=time.time(),
-        )
+        # This is metadata tracking and failures here should not fail the indexing
+        try:
+            self.file_repo.track_file(
+                path=file_path,
+                file_hash=file_hash,
+                size=file_size,
+                mtime=time.time(),
+            )
+        except Exception as e:
+            logger.warning(f"Failed to track file {rel_path}: {e}")
+            # Continue - file tracking is not critical
 
         return {
             "chunks_created": chunks_created,

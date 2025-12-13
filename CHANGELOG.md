@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Error handling for critical operations in `_index_file()`** (#262)
+  - Embedding failures now roll back any chunks added during that file's indexing
+  - Embedding count is validated to match chunk count before storing vectors
+  - `vector_repo.add()` failures trigger cleanup of partially stored data
+  - `chunk_repo.delete_all_for_path()` failures are caught and logged
+  - `chunk_repo.add()` failures are handled with proper rollback
+  - `file_repo.track_file()` failures don't fail the overall indexing (non-critical)
+  - Detailed error logging for debugging partial failures
+  - Index state remains consistent even when individual file indexing fails
+
 ### Added
 - **GPU VRAM detection for smarter model recommendations** (#248)
   - `ember init` now detects GPU (CUDA/MPS) and available VRAM

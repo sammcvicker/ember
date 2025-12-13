@@ -548,3 +548,180 @@ class TestModelMismatchErrorAttributes:
         assert "jina-code-v2:768" in msg
         assert "minilm:384" in msg
         assert "ember sync --force" in msg
+
+
+class TestIndexFileErrorHandling:
+    """Tests for error handling in _index_file() method."""
+
+    @pytest.fixture
+    def setup_indexing_usecase(self, mock_deps: dict) -> IndexingUseCase:
+        """Create IndexingUseCase configured for indexing a single file."""
+        # Configure chunk_usecase to return success with chunks
+        from ember.ports.chunkers import ChunkData
+
+        chunk_data = ChunkData(
+            content="def hello(): pass",
+            start_line=1,
+            end_line=1,
+            lang="py",
+            symbol="hello",
+        )
+        mock_deps["chunk_usecase"].execute.return_value = Mock(
+            success=True,
+            chunks=[chunk_data],
+            error=None,
+        )
+        # Configure fs to return file content
+        mock_deps["fs"].read.return_value = b"def hello(): pass"
+        # Configure embedder
+        mock_deps["embedder"].fingerprint.return_value = "test-model:384"
+        mock_deps["embedder"].embed_texts.return_value = [[0.1] * 384]
+        # Configure chunk_repo
+        mock_deps["chunk_repo"].find_by_content_hash.return_value = []
+        mock_deps["chunk_repo"].delete_all_for_path.return_value = 0
+
+        return IndexingUseCase(**mock_deps)
+
+    def test_embedding_failure_rolls_back_chunks(
+        self, mock_deps: dict, setup_indexing_usecase: IndexingUseCase
+    ) -> None:
+        """When embedding fails, chunks added during this indexing are rolled back."""
+        usecase = setup_indexing_usecase
+
+        # Make embedding fail
+        mock_deps["embedder"].embed_texts.side_effect = RuntimeError("GPU OOM")
+
+        result = usecase._index_file(
+            file_path=Path("/repo/test.py"),
+            repo_root=Path("/repo"),
+            tree_sha="abc123",
+            sync_mode="worktree",
+        )
+
+        # Should return failed status
+        assert result["failed"] == 1
+        assert result["chunks_created"] == 0
+        assert result["vectors_stored"] == 0
+
+    def test_embedding_count_mismatch_detected(
+        self, mock_deps: dict, setup_indexing_usecase: IndexingUseCase
+    ) -> None:
+        """When embedding count doesn't match chunk count, error is raised."""
+        usecase = setup_indexing_usecase
+
+        # Return wrong number of embeddings (0 instead of 1)
+        mock_deps["embedder"].embed_texts.return_value = []
+
+        result = usecase._index_file(
+            file_path=Path("/repo/test.py"),
+            repo_root=Path("/repo"),
+            tree_sha="abc123",
+            sync_mode="worktree",
+        )
+
+        # Should detect mismatch and return failed status
+        assert result["failed"] == 1
+        assert result["vectors_stored"] == 0
+
+    def test_vector_repo_failure_partial_rollback(
+        self, mock_deps: dict, setup_indexing_usecase: IndexingUseCase
+    ) -> None:
+        """When vector_repo.add() fails, partial vectors are cleaned up."""
+        usecase = setup_indexing_usecase
+
+        # Make vector_repo.add fail
+        mock_deps["vector_repo"].add.side_effect = RuntimeError("DB connection lost")
+
+        result = usecase._index_file(
+            file_path=Path("/repo/test.py"),
+            repo_root=Path("/repo"),
+            tree_sha="abc123",
+            sync_mode="worktree",
+        )
+
+        # Should return failed status
+        assert result["failed"] == 1
+        assert result["vectors_stored"] == 0
+
+    def test_chunk_deletion_failure_handled(
+        self, mock_deps: dict, setup_indexing_usecase: IndexingUseCase
+    ) -> None:
+        """When chunk_repo.delete_all_for_path() fails, error is logged and handled."""
+        usecase = setup_indexing_usecase
+
+        # Make delete_all_for_path fail
+        mock_deps["chunk_repo"].delete_all_for_path.side_effect = RuntimeError(
+            "DB locked"
+        )
+
+        result = usecase._index_file(
+            file_path=Path("/repo/test.py"),
+            repo_root=Path("/repo"),
+            tree_sha="abc123",
+            sync_mode="worktree",
+        )
+
+        # Should return failed status
+        assert result["failed"] == 1
+
+    def test_chunk_add_failure_rolls_back(
+        self, mock_deps: dict, setup_indexing_usecase: IndexingUseCase
+    ) -> None:
+        """When chunk_repo.add() fails, the file indexing is marked as failed."""
+        usecase = setup_indexing_usecase
+
+        # Make chunk_repo.add fail
+        mock_deps["chunk_repo"].add.side_effect = RuntimeError("Constraint violation")
+
+        result = usecase._index_file(
+            file_path=Path("/repo/test.py"),
+            repo_root=Path("/repo"),
+            tree_sha="abc123",
+            sync_mode="worktree",
+        )
+
+        # Should return failed status
+        assert result["failed"] == 1
+        assert result["chunks_created"] == 0
+
+    def test_successful_indexing_returns_correct_counts(
+        self, mock_deps: dict, setup_indexing_usecase: IndexingUseCase
+    ) -> None:
+        """Successful indexing returns correct chunk and vector counts."""
+        usecase = setup_indexing_usecase
+
+        result = usecase._index_file(
+            file_path=Path("/repo/test.py"),
+            repo_root=Path("/repo"),
+            tree_sha="abc123",
+            sync_mode="worktree",
+        )
+
+        # Should succeed with correct counts
+        assert result["failed"] == 0
+        assert result["chunks_created"] == 1
+        assert result["vectors_stored"] == 1
+
+    def test_file_repo_failure_does_not_affect_indexing_result(
+        self, mock_deps: dict, setup_indexing_usecase: IndexingUseCase
+    ) -> None:
+        """When file_repo.track_file() fails, indexing should still report success.
+
+        File tracking is metadata and should not fail the entire indexing operation.
+        """
+        usecase = setup_indexing_usecase
+
+        # Make file_repo.track_file fail
+        mock_deps["file_repo"].track_file.side_effect = RuntimeError("DB error")
+
+        result = usecase._index_file(
+            file_path=Path("/repo/test.py"),
+            repo_root=Path("/repo"),
+            tree_sha="abc123",
+            sync_mode="worktree",
+        )
+
+        # Indexing should succeed (file tracking is not critical)
+        assert result["failed"] == 0
+        assert result["chunks_created"] == 1
+        assert result["vectors_stored"] == 1
