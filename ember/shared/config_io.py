@@ -105,6 +105,23 @@ def merge_config_data(base: dict[str, Any], override: dict[str, Any]) -> dict[st
     return result
 
 
+def _validate_model_name(model_name: str) -> None:
+    """Validate that the model name is recognized.
+
+    Args:
+        model_name: Model name to validate
+
+    Raises:
+        ValueError: If model name is not a known preset or supported model
+    """
+    from ember.adapters.local_models.registry import resolve_model_name
+
+    try:
+        resolve_model_name(model_name)
+    except ValueError as e:
+        raise ValueError(f"Invalid model configuration: {e}") from e
+
+
 def config_data_to_ember_config(data: dict[str, Any]) -> EmberConfig:
     """Convert raw config data dictionary to EmberConfig.
 
@@ -113,12 +130,19 @@ def config_data_to_ember_config(data: dict[str, Any]) -> EmberConfig:
 
     Returns:
         EmberConfig instance
+
+    Raises:
+        ValueError: If model name is not recognized
     """
     index_data = data.get("index", {})
     search_data = data.get("search", {})
     redaction_data = data.get("redaction", {})
     model_data = data.get("model", {})
     display_data = data.get("display", {})
+
+    # Validate model name at config boundary (not in domain model)
+    model_name = index_data.get("model", "local-default-code-embed")
+    _validate_model_name(model_name)
 
     return EmberConfig(
         index=IndexConfig(**index_data),
