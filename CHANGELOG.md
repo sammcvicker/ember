@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Refactored `config_show()` to reduce cyclomatic complexity** (#259)
+  - Reduced cyclomatic complexity from 21 to 5 (now grade A)
+  - Extracted helper functions: `_display_path_status()`, `_load_and_display_config()`, `_get_local_config_path()`, `_display_local_config_info()`, `_show_effective_config()`
+  - Removed tautological condition that was always true
+  - Simplified flag logic with clearer include_global/include_local variables
+  - Improved code readability and maintainability
+  - Added 8 new tests to ensure behavior preservation
+
 - **IndexConfig no longer imports from adapters layer** (#264)
   - Model name validation moved from domain model to config loading boundary
   - Fixes clean architecture violation where domain layer imported from adapters

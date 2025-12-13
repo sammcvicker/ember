@@ -1247,6 +1247,66 @@ def config() -> None:
     pass
 
 
+def _display_path_status(path: Path, label: str) -> None:
+    """Display a config path with its existence status."""
+    status = "exists" if path.exists() else "not created"
+    color = "green" if path.exists() else "yellow"
+    click.echo(f"{label}{path}")
+    click.echo(f"  Status: {click.style(status, fg=color)}")
+
+
+def _load_and_display_config(
+    title: str, loader: "Callable[[], EmberConfig]"  # noqa: F821
+) -> None:
+    """Load config using the provided loader and display it with a title."""
+    click.echo(f"\n{title}:")
+    try:
+        config = loader()
+        _display_config_summary(config)
+    except Exception as e:
+        click.echo(f"  Error loading config: {e}")
+
+
+def _get_local_config_path() -> Path | None:
+    """Get the local config path if in a repository, or None otherwise."""
+    try:
+        _, ember_dir = get_ember_repo_root()
+        return ember_dir / "config.toml"
+    except Exception:
+        return None
+
+
+def _display_local_config_info(local_path: Path | None, show_local: bool) -> None:
+    """Display local config path and status."""
+    if local_path:
+        _display_path_status(local_path, "Local config:  ")
+    elif show_local:
+        click.echo("Local config: Not in an Ember repository")
+
+
+def _show_effective_config(
+    local_path: Path | None,
+    global_path: Path,
+    include_local: bool,
+    include_global: bool,
+) -> None:
+    """Show effective configuration content based on display mode."""
+    from ember.adapters.config.toml_config_provider import TomlConfigProvider
+    from ember.shared.config_io import load_config
+
+    if local_path and include_local:
+        provider = TomlConfigProvider()
+        _load_and_display_config(
+            "Effective configuration (merged global + local)",
+            lambda: provider.load(local_path.parent),
+        )
+    elif include_global and not include_local and global_path.exists():
+        _load_and_display_config(
+            "Global configuration",
+            lambda: load_config(global_path),
+        )
+
+
 @config.command(name="show")
 @click.option(
     "--global", "-g", "show_global", is_flag=True, help="Show global config location"
@@ -1262,57 +1322,23 @@ def config_show(
 
     By default shows both locations. Use --global or --local to show specific one.
     """
-    from ember.adapters.config.toml_config_provider import TomlConfigProvider
     from ember.shared.config_io import get_global_config_path
 
     global_path = get_global_config_path()
+    local_path = _get_local_config_path()
 
-    # Try to find local config if we're in a repo
-    local_path = None
-    try:
-        _, ember_dir = get_ember_repo_root()
-        local_path = ember_dir / "config.toml"
-    except Exception:
-        pass  # Not in a repo, local config doesn't apply
+    # Determine what to display - default is both
+    include_global = show_global or not show_local
+    include_local = show_local or not show_global
 
-    show_both = not show_global and not show_local
+    # Display path info
+    if include_global:
+        _display_path_status(global_path, "Global config: ")
+    if include_local:
+        _display_local_config_info(local_path, show_local)
 
-    if show_global or show_both:
-        click.echo(f"Global config: {global_path}")
-        if global_path.exists():
-            click.echo(f"  Status: {click.style('exists', fg='green')}")
-        else:
-            click.echo(f"  Status: {click.style('not created', fg='yellow')}")
-
-    if show_local or show_both:
-        if local_path:
-            click.echo(f"Local config:  {local_path}")
-            if local_path.exists():
-                click.echo(f"  Status: {click.style('exists', fg='green')}")
-            else:
-                click.echo(f"  Status: {click.style('not created', fg='yellow')}")
-        elif show_local:
-            click.echo("Local config: Not in an Ember repository")
-
-    # Show effective config if we're in a repo or showing global-only
-    if show_both or show_local or show_global:
-        if local_path and (show_both or show_local):
-            click.echo("\nEffective configuration (merged global + local):")
-            provider = TomlConfigProvider()
-            try:
-                config = provider.load(local_path.parent)
-                _display_config_summary(config)
-            except Exception as e:
-                click.echo(f"  Error loading config: {e}")
-        elif show_global and global_path.exists():
-            # Show global config only when explicitly requested
-            click.echo("\nGlobal configuration:")
-            from ember.shared.config_io import load_config
-            try:
-                config = load_config(global_path)
-                _display_config_summary(config)
-            except Exception as e:
-                click.echo(f"  Error loading config: {e}")
+    # Show effective configuration content
+    _show_effective_config(local_path, global_path, include_local, include_global)
 
 
 def _display_config_summary(config: "EmberConfig") -> None:  # noqa: F821
