@@ -9,7 +9,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from ember.core.indexing.index_usecase import IndexingUseCase
+from ember.core.indexing.index_usecase import IndexingUseCase, ModelMismatchError
 
 
 @pytest.fixture
@@ -478,3 +478,73 @@ class TestGetFilesToIndexCombined:
 
         assert all(f.is_absolute() for f in files)
         assert all(str(f).startswith(str(repo_root)) for f in files)
+
+
+class TestModelMismatchDetection:
+    """Tests for embedding model mismatch detection."""
+
+    def test_no_stored_fingerprint_allows_sync(self, mock_deps: dict) -> None:
+        """When no model fingerprint is stored, sync proceeds normally."""
+        usecase = IndexingUseCase(**mock_deps)
+        mock_deps["meta_repo"].get.return_value = None
+        mock_deps["embedder"].fingerprint.return_value = "jina-code-v2:768"
+
+        # Should not raise
+        usecase._verify_model_compatibility(force_reindex=False)
+
+    def test_matching_fingerprint_allows_sync(self, mock_deps: dict) -> None:
+        """When model fingerprint matches, sync proceeds normally."""
+        usecase = IndexingUseCase(**mock_deps)
+        mock_deps["meta_repo"].get.return_value = "jina-code-v2:768"
+        mock_deps["embedder"].fingerprint.return_value = "jina-code-v2:768"
+
+        # Should not raise
+        usecase._verify_model_compatibility(force_reindex=False)
+
+    def test_different_fingerprint_raises_error(self, mock_deps: dict) -> None:
+        """When model fingerprint differs and force_reindex is False, raise error."""
+        usecase = IndexingUseCase(**mock_deps)
+        mock_deps["meta_repo"].get.return_value = "jina-code-v2:768"
+        mock_deps["embedder"].fingerprint.return_value = "minilm:384"
+
+        with pytest.raises(ModelMismatchError) as exc_info:
+            usecase._verify_model_compatibility(force_reindex=False)
+
+        assert "jina-code-v2:768" in str(exc_info.value)
+        assert "minilm:384" in str(exc_info.value)
+        assert "ember sync --force" in str(exc_info.value)
+
+    def test_different_fingerprint_with_force_allows_sync(self, mock_deps: dict) -> None:
+        """When model fingerprint differs but force_reindex is True, allow sync."""
+        usecase = IndexingUseCase(**mock_deps)
+        mock_deps["meta_repo"].get.return_value = "jina-code-v2:768"
+        mock_deps["embedder"].fingerprint.return_value = "minilm:384"
+
+        # Should not raise when force_reindex is True
+        usecase._verify_model_compatibility(force_reindex=True)
+
+
+class TestModelMismatchErrorAttributes:
+    """Tests for ModelMismatchError exception attributes."""
+
+    def test_error_stores_model_names(self) -> None:
+        """ModelMismatchError stores both model names."""
+        error = ModelMismatchError(
+            stored_model="jina-code-v2:768",
+            current_model="minilm:384",
+        )
+
+        assert error.stored_model == "jina-code-v2:768"
+        assert error.current_model == "minilm:384"
+
+    def test_error_message_contains_instructions(self) -> None:
+        """ModelMismatchError message contains helpful instructions."""
+        error = ModelMismatchError(
+            stored_model="jina-code-v2:768",
+            current_model="minilm:384",
+        )
+
+        msg = str(error)
+        assert "jina-code-v2:768" in msg
+        assert "minilm:384" in msg
+        assert "ember sync --force" in msg
