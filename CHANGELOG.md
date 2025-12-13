@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **GPU VRAM detection for smarter model recommendations** (#248)
+  - `ember init` now detects GPU (CUDA/MPS) and available VRAM
+  - Model recommendation uses minimum of available RAM and GPU VRAM
+  - Prevents OOM errors on systems with discrete GPUs and limited VRAM
+  - Displays GPU info during init: "GPU: NVIDIA T550 (4GB VRAM, 2GB free)"
+  - Falls back to RAM-only detection when no GPU or torch unavailable
+  - Apple Silicon MPS detection uses unified memory (system RAM = VRAM)
+
 - **CUDA OOM: Dynamic batch sizing with graceful fallback** (#246)
   - Embedders now automatically retry with smaller batch sizes on CUDA out-of-memory errors
   - Batch size halves on each OOM error until success or minimum (1) reached

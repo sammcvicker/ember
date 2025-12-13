@@ -4,11 +4,30 @@ import gc
 import subprocess
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
 from ember.adapters.sqlite.schema import init_database
 from ember.domain.entities import Chunk
+
+# ============================================================================
+# GPU Mocking for Test Determinism
+# ============================================================================
+# Mock GPU detection to ensure tests behave consistently across machines.
+# Without this, tests may behave differently on machines with/without GPUs
+# because the init command prompts when GPU VRAM is limited.
+
+
+@pytest.fixture(autouse=True)
+def mock_gpu_detection():
+    """Mock GPU detection to return None for consistent test behavior.
+
+    This ensures tests don't prompt for model selection based on GPU VRAM,
+    making integration tests deterministic across different hardware.
+    """
+    with patch("ember.core.hardware.detect_gpu_resources", return_value=None):
+        yield
 
 # ============================================================================
 # Git Repository Helpers
