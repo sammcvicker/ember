@@ -27,6 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Existing projects continue to work (full project configs still override everything)
 
 ### Fixed
+- **Dimension mismatch after model change now detected early** (#247)
+  - `ember sync` now fails fast with clear error when embedding model differs from index
+  - Run `ember sync --force` to rebuild index with the new model
+  - `DimensionMismatchError` provides helpful message if search is attempted with wrong model
+  - Prevents cryptic sqlite-vec errors when model dimensions don't match
+
 - **Test isolation: global config no longer leaks into unit tests** (#254)
   - Config provider tests now mock `get_global_config_path()` to prevent user's `~/.config/ember/config.toml` from affecting test results
   - Added `no_global_config` fixture for consistent test isolation

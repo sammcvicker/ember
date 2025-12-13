@@ -12,6 +12,7 @@ import blake3
 import click
 
 from ember.adapters.fs.local import LocalFileSystem
+from ember.adapters.vss.sqlite_vec_adapter import DimensionMismatchError
 from ember.core.cli_utils import (
     EmberCliError,
     display_content_with_context,
@@ -26,6 +27,7 @@ from ember.core.cli_utils import (
     repo_not_found_error,
     validate_result_index,
 )
+from ember.core.indexing.index_usecase import ModelMismatchError
 from ember.core.presentation import ResultPresenter
 
 
@@ -51,6 +53,18 @@ def handle_cli_errors(command_name: str):
             except EmberCliError:
                 # Let EmberCliError propagate to use its format_message()
                 raise
+            except ModelMismatchError as e:
+                # Embedding model changed - clear action required
+                raise EmberCliError(
+                    str(e),
+                    hint="The embedding model in your config differs from the one used to build the index.",
+                ) from e
+            except DimensionMismatchError as e:
+                # Vector dimension mismatch - clear action required
+                raise EmberCliError(
+                    str(e),
+                    hint="The embedding model in your config differs from the one used to build the index.",
+                ) from e
             except RuntimeError as e:
                 # Convert RuntimeError to EmberCliError with generic hint
                 raise EmberCliError(

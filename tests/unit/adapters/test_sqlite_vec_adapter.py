@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from ember.adapters.sqlite.schema import init_database
-from ember.adapters.vss.sqlite_vec_adapter import SqliteVecAdapter
+from ember.adapters.vss.sqlite_vec_adapter import DimensionMismatchError, SqliteVecAdapter
 
 
 @pytest.fixture
@@ -60,10 +60,10 @@ def test_sqlite_vec_adapter_creates_table_with_correct_dimension(tmp_path: Path)
     assert "float[384]" in create_sql, f"Expected float[384] in: {create_sql}"
 
 
-def test_sqlite_vec_adapter_dimension_mismatch_fails(tmp_path: Path) -> None:
-    """Test that querying with wrong dimension fails with clear error.
+def test_sqlite_vec_adapter_dimension_mismatch_raises_custom_error(tmp_path: Path) -> None:
+    """Test that querying with wrong dimension raises DimensionMismatchError.
 
-    This ensures users get a clear error when model dimensions don't match.
+    This ensures users get a clear, actionable error when model dimensions don't match.
     """
     db_path = tmp_path / "test.db"
     init_database(db_path)
@@ -74,12 +74,18 @@ def test_sqlite_vec_adapter_dimension_mismatch_fails(tmp_path: Path) -> None:
     # Try to query with a 768-dimensional vector (wrong!)
     wrong_dim_vector = [0.1] * 768
 
-    with pytest.raises(Exception) as exc_info:
+    with pytest.raises(DimensionMismatchError) as exc_info:
         adapter.query(wrong_dim_vector, topk=10)
 
-    # Should get dimension mismatch error from sqlite-vec
-    error_msg = str(exc_info.value).lower()
-    assert "dimension" in error_msg or "mismatch" in error_msg
+    # Check error attributes
+    assert exc_info.value.expected == 384
+    assert exc_info.value.received == 768
+
+    # Check error message is helpful
+    error_msg = str(exc_info.value)
+    assert "384" in error_msg
+    assert "768" in error_msg
+    assert "ember sync --force" in error_msg
 
 
 def test_sqlite_vec_adapter_correct_dimension_succeeds(tmp_path: Path) -> None:

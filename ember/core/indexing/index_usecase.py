@@ -30,6 +30,22 @@ from ember.ports.vcs import VCS
 
 logger = logging.getLogger(__name__)
 
+
+class ModelMismatchError(Exception):
+    """Raised when embedding model differs from the one used to build the index.
+
+    This error prevents dimension mismatch errors during search by requiring
+    an explicit --force flag to rebuild the index with the new model.
+    """
+
+    def __init__(self, stored_model: str, current_model: str) -> None:
+        self.stored_model = stored_model
+        self.current_model = current_model
+        super().__init__(
+            f"Embedding model changed: {stored_model} → {current_model}. "
+            f"Run 'ember sync --force' to rebuild the index with the new model."
+        )
+
 # Code file extensions to index (whitelist approach)
 # Only source code files are indexed - data, config, docs, and binary files are skipped
 CODE_FILE_EXTENSIONS = frozenset(
@@ -193,23 +209,32 @@ class IndexingUseCase:
             error=error,
         )
 
-    def _verify_model_compatibility(self) -> None:
+    def _verify_model_compatibility(self, force_reindex: bool) -> None:
         """Verify embedding model compatibility with stored fingerprint.
 
-        Logs a warning if the model has changed, indicating that existing
-        vectors may be incompatible and a force reindex should be considered.
+        Raises ModelMismatchError if the model has changed and force_reindex is False,
+        to prevent dimension mismatch errors during search.
+
+        Args:
+            force_reindex: If True, allow model change (will rebuild index).
+
+        Raises:
+            ModelMismatchError: If model changed and force_reindex is False.
         """
         stored_fingerprint = self.meta_repo.get("model_fingerprint")
         current_fingerprint = self.embedder.fingerprint()
 
         if stored_fingerprint and stored_fingerprint != current_fingerprint:
-            logger.warning(
-                f"Embedding model changed: {stored_fingerprint} → {current_fingerprint}"
-            )
-            logger.warning(
-                "Existing vectors may be incompatible with the new model. "
-                "Run 'ember sync --force' to rebuild the index with the new model."
-            )
+            if force_reindex:
+                logger.info(
+                    f"Embedding model changed: {stored_fingerprint} → {current_fingerprint}. "
+                    "Rebuilding index with new model."
+                )
+            else:
+                raise ModelMismatchError(
+                    stored_model=stored_fingerprint,
+                    current_model=current_fingerprint,
+                )
 
     def _ensure_model_loaded(self, progress: ProgressCallback | None) -> None:
         """Eagerly load embedding model before indexing.
@@ -366,8 +391,8 @@ class IndexingUseCase:
         logger.info(f"Starting indexing for {request.repo_root} (mode: {request.sync_mode})")
 
         try:
-            # Check if embedding model has changed
-            self._verify_model_compatibility()
+            # Check if embedding model has changed (fails if mismatch without --force)
+            self._verify_model_compatibility(request.force_reindex)
 
             # Get current tree SHA based on sync mode
             tree_sha = self._get_tree_sha(request.repo_root, request.sync_mode)
@@ -427,6 +452,11 @@ class IndexingUseCase:
             # Always let these propagate - user requested termination
             logger.info("Indexing interrupted by user")
             raise
+
+        except ModelMismatchError as e:
+            # Model changed - provide clear error message
+            logger.error(str(e))
+            return self._create_error_response(str(e))
 
         except FileNotFoundError as e:
             # File was deleted between detection and indexing

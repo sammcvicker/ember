@@ -5,11 +5,28 @@ sqlite-vec provides much better performance than brute-force methods,
 especially for larger datasets.
 """
 
+import re
 import sqlite3
 import struct
 from pathlib import Path
 
 import sqlite_vec
+
+
+class DimensionMismatchError(Exception):
+    """Raised when query vector dimension doesn't match stored vectors.
+
+    This typically happens when the embedding model changes without reindexing.
+    """
+
+    def __init__(self, expected: int, received: int) -> None:
+        self.expected = expected
+        self.received = received
+        super().__init__(
+            f"Vector dimension mismatch: index expects {expected} dimensions "
+            f"but received {received}. This usually means the embedding model changed. "
+            f"Run 'ember sync --force' to rebuild the index with the current model."
+        )
 
 
 class SqliteVecAdapter:
@@ -216,6 +233,9 @@ class SqliteVecAdapter:
         Returns:
             List of (chunk_id, similarity) tuples, sorted by similarity (descending).
             For cosine distance, similarity = 1 - distance.
+
+        Raises:
+            DimensionMismatchError: If query vector dimension doesn't match index.
         """
         # Sync any new vectors before querying
         self._sync_vectors()
@@ -226,43 +246,56 @@ class SqliteVecAdapter:
         # Serialize query vector for sqlite-vec
         serialized_vector = sqlite_vec.serialize_float32(vector)
 
-        # Query vec0 table for nearest neighbors
-        # sqlite-vec returns distance, we need to convert to similarity
-        # Add path filtering if specified
-        # Join with chunks table to get the stored chunk_id
-        if path_filter:
-            cursor.execute(
-                """
-                SELECT
-                    c.chunk_id,
-                    v.distance
-                FROM vec_chunks v
-                JOIN vec_chunk_mapping m ON v.rowid = m.vec_rowid
-                JOIN chunks c ON m.chunk_db_id = c.id
-                WHERE v.embedding MATCH ?
-                  AND k = ?
-                  AND m.path GLOB ?
-                ORDER BY v.distance
-                LIMIT ?
-                """,
-                (serialized_vector, topk, path_filter, topk),
-            )
-        else:
-            cursor.execute(
-                """
-                SELECT
-                    c.chunk_id,
-                    v.distance
-                FROM vec_chunks v
-                JOIN vec_chunk_mapping m ON v.rowid = m.vec_rowid
-                JOIN chunks c ON m.chunk_db_id = c.id
-                WHERE v.embedding MATCH ?
-                  AND k = ?
-                ORDER BY v.distance
-                LIMIT ?
-                """,
-                (serialized_vector, topk, topk),
-            )
+        try:
+            # Query vec0 table for nearest neighbors
+            # sqlite-vec returns distance, we need to convert to similarity
+            # Add path filtering if specified
+            # Join with chunks table to get the stored chunk_id
+            if path_filter:
+                cursor.execute(
+                    """
+                    SELECT
+                        c.chunk_id,
+                        v.distance
+                    FROM vec_chunks v
+                    JOIN vec_chunk_mapping m ON v.rowid = m.vec_rowid
+                    JOIN chunks c ON m.chunk_db_id = c.id
+                    WHERE v.embedding MATCH ?
+                      AND k = ?
+                      AND m.path GLOB ?
+                    ORDER BY v.distance
+                    LIMIT ?
+                    """,
+                    (serialized_vector, topk, path_filter, topk),
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT
+                        c.chunk_id,
+                        v.distance
+                    FROM vec_chunks v
+                    JOIN vec_chunk_mapping m ON v.rowid = m.vec_rowid
+                    JOIN chunks c ON m.chunk_db_id = c.id
+                    WHERE v.embedding MATCH ?
+                      AND k = ?
+                    ORDER BY v.distance
+                    LIMIT ?
+                    """,
+                    (serialized_vector, topk, topk),
+                )
+        except sqlite3.OperationalError as e:
+            # Catch dimension mismatch error from sqlite-vec and provide helpful message
+            error_msg = str(e)
+            if "Dimension mismatch" in error_msg:
+                # Parse dimensions from error message:
+                # "Dimension mismatch for ... Expected 768 dimensions but received 384."
+                match = re.search(r"Expected (\d+) dimensions but received (\d+)", error_msg)
+                if match:
+                    expected = int(match.group(1))
+                    received = int(match.group(2))
+                    raise DimensionMismatchError(expected, received) from e
+            raise
 
         rows = cursor.fetchall()
         results = []
