@@ -428,8 +428,8 @@ def init(ctx: click.Context, force: bool, model: str | None, yes: bool) -> None:
     Creates .ember/ directory with configuration and database.
     If in a git repository, initializes at the git root.
 
-    Detects available system RAM and suggests an appropriate embedding model.
-    Use --model to override or --yes to accept the recommendation.
+    Detects available system RAM and GPU VRAM and suggests an appropriate
+    embedding model. Use --model to override or --yes to accept the recommendation.
     """
     # Lazy import - only load when init is actually called
     from ember.adapters.sqlite.initializer import SqliteDatabaseInitializer
@@ -457,15 +457,27 @@ def init(ctx: click.Context, force: bool, model: str | None, yes: bool) -> None:
         if not quiet:
             click.echo("\nDetecting system resources...")
             click.echo(f"  Available RAM: {resources.available_ram_gb:.1f}GB")
+            if resources.gpu is not None:
+                gpu = resources.gpu
+                click.echo(
+                    f"  GPU: {gpu.device_name} "
+                    f"({gpu.total_vram_gb:.1f}GB VRAM, {gpu.free_vram_gb:.1f}GB free)"
+                )
             click.echo(f"  Recommended model: {recommended}")
             click.echo(f"  ({reason})")
             click.echo()
 
         # Check if the default (jina) is NOT recommended and we need to prompt
         if recommended != "jina-code-v2" and not yes:
-            click.echo(
-                "The default model (jina-code-v2) requires ~1.6GB RAM and may cause slowdowns."
-            )
+            # Determine the limiting factor for the warning message
+            if resources.gpu is not None and resources.gpu.free_vram_gb < resources.available_ram_gb:
+                click.echo(
+                    "The default model (jina-code-v2) requires ~1.6GB VRAM and may cause GPU memory issues."
+                )
+            else:
+                click.echo(
+                    "The default model (jina-code-v2) requires ~1.6GB RAM and may cause slowdowns."
+                )
             use_recommended = click.confirm(
                 f"Use recommended model ({recommended}) instead?", default=True
             )
