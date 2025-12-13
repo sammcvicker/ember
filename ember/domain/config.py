@@ -82,22 +82,6 @@ class IndexConfig:
             )
         if self.batch_size <= 0:
             raise ValueError(f"batch_size must be positive, got {self.batch_size}")
-        # Validate model name
-        self._validate_model()
-
-    def _validate_model(self) -> None:
-        """Validate that the model name is recognized.
-
-        Raises:
-            ValueError: If model name is not a known preset or supported model
-        """
-        # Import here to avoid circular imports
-        from ember.adapters.local_models.registry import resolve_model_name
-
-        try:
-            resolve_model_name(self.model)
-        except ValueError as e:
-            raise ValueError(f"Invalid model configuration: {e}") from e
 
 
 @dataclass(frozen=True)

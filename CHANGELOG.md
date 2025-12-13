@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **IndexConfig no longer imports from adapters layer** (#264)
+  - Model name validation moved from domain model to config loading boundary
+  - Fixes clean architecture violation where domain layer imported from adapters
+  - Domain model `IndexConfig` is now testable in isolation without adapter dependencies
+  - Model validation still happens at config load time (same user experience)
+
 ### Fixed
 - **Error handling for critical operations in `_index_file()`** (#262)
   - Embedding failures now roll back any chunks added during that file's indexing
