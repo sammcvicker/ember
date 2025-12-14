@@ -21,8 +21,8 @@ from ember.core.cli_utils import (
     load_cached_results,
     lookup_result_by_hash,
     lookup_result_from_cache,
+    normalize_path_filter,
     open_file_in_editor,
-    path_not_in_repo_error,
     progress_context,
     repo_not_found_error,
     validate_result_index,
@@ -754,27 +754,13 @@ def find(
     repo_root, ember_dir = get_ember_repo_root()
     db_path = ember_dir / "index.db"
 
-    # Handle path argument: convert from CWD-relative to repo-relative glob
-    if path is not None:
-        # Convert path argument to absolute, then to relative from repo root
-        cwd = Path.cwd().resolve()
-        path_abs = (cwd / path).resolve()
-
-        # Check if path is within repo
-        try:
-            path_rel_to_repo = path_abs.relative_to(repo_root)
-        except ValueError:
-            path_not_in_repo_error(path)
-
-        # Check for mutually exclusive filter options
-        if path_filter:
-            raise EmberCliError(
-                f"Cannot use both PATH argument ('{path}') and --in filter ('{path_filter}')",
-                hint="Use PATH to search a directory subtree, OR --in for glob patterns, but not both",
-            )
-
-        # Create glob pattern for this path subtree
-        path_filter = f"{path_rel_to_repo}/**" if path_rel_to_repo != Path(".") else "*/**"
+    # Normalize path argument to path filter glob pattern
+    path_filter = normalize_path_filter(
+        path=path,
+        existing_filter=path_filter,
+        repo_root=repo_root,
+        cwd=Path.cwd().resolve(),
+    )
 
     # Load config
     from ember.adapters.config.toml_config_provider import TomlConfigProvider
@@ -921,32 +907,16 @@ def search(
     repo_root, ember_dir = get_ember_repo_root()
     db_path = ember_dir / "index.db"
 
-    # Handle path argument: convert from CWD-relative to repo-relative glob
-    path_filter: str | None = None
-    if path is not None:
-        # Convert path argument to absolute, then to relative from repo root
-        cwd = Path.cwd().resolve()
-        path_abs = (cwd / path).resolve()
+    # Convert file_pattern to path_filter format (e.g., "*.py" -> "**/*.py")
+    existing_filter = f"**/{file_pattern}" if file_pattern else None
 
-        # Check if path is within repo
-        try:
-            path_rel_to_repo = path_abs.relative_to(repo_root)
-        except ValueError:
-            path_not_in_repo_error(path)
-
-        # Check for mutually exclusive filter options
-        if file_pattern:
-            raise EmberCliError(
-                f"Cannot use both PATH argument ('{path}') and --in filter ('{file_pattern}')",
-                hint="Use PATH to search a directory subtree, OR --in for glob patterns, but not both",
-            )
-
-        # Create glob pattern for this path subtree
-        path_filter = f"{path_rel_to_repo}/**" if path_rel_to_repo != Path(".") else "*/**"
-
-    # Convert file_pattern to path_filter format
-    if file_pattern:
-        path_filter = f"**/{file_pattern}"
+    # Normalize path argument to path filter glob pattern
+    path_filter = normalize_path_filter(
+        path=path,
+        existing_filter=existing_filter,
+        repo_root=repo_root,
+        cwd=Path.cwd().resolve(),
+    )
 
     # Load config
     from ember.adapters.config.toml_config_provider import TomlConfigProvider

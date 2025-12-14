@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Deduplicated path handling logic between `find()` and `search()` commands** (#266)
+  - Extracted `normalize_path_filter()` function to `ember/core/cli_utils.py`
+  - Single source of truth for PATH argument to glob pattern conversion
+  - Single source of truth for PATH/--in mutual exclusivity check
+  - Both commands now use identical path normalization logic
+  - Added 9 unit tests for the new function
+
 - **Refactored `DaemonLifecycle.stop()` to reduce cyclomatic complexity** (#263)
   - Reduced cyclomatic complexity from 11 to 5 (target: ≤10)
   - Extracted helper methods: `_reap_zombie()`, `_wait_for_death()`, `_send_signal_and_wait()`, `_stop_with_sigterm()`, `_stop_with_sigkill()`
