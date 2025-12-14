@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Refactored `IndexingUseCase.execute()` to reduce cyclomatic complexity** (#260)
+  - Reduced cyclomatic complexity from 12 to 9 (target: ≤10)
+  - Grouped related exception handlers: I/O errors (FileNotFoundError, PermissionError, OSError) and execution errors (ValueError, RuntimeError)
+  - Reduced exception handlers from 8 to 5 while maintaining all error handling functionality
+  - Added 9 new unit tests for execute() error handling behavior
+  - Clearer separation between orchestration and error handling
+
 - **Refactored `config_show()` to reduce cyclomatic complexity** (#259)
   - Reduced cyclomatic complexity from 21 to 5 (now grade A)
   - Extracted helper functions: `_display_path_status()`, `_load_and_display_config()`, `_get_local_config_path()`, `_display_local_config_info()`, `_show_effective_config()`

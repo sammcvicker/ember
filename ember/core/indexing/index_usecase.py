@@ -458,35 +458,17 @@ class IndexingUseCase:
             logger.error(str(e))
             return self._create_error_response(str(e))
 
-        except FileNotFoundError as e:
-            # File was deleted between detection and indexing
-            logger.warning(f"File not found during indexing: {e}")
-            return self._create_error_response(
-                f"File not found: {e}. The file may have been deleted during indexing."
-            )
-
-        except PermissionError as e:
-            # Permission denied reading file or accessing repository
-            logger.error(f"Permission denied during indexing: {e}")
-            return self._create_error_response(
-                f"Permission denied: {e}. Check file and directory permissions."
-            )
-
         except OSError as e:
-            # I/O errors (disk full, network filesystem issues, etc.)
+            # I/O errors: FileNotFoundError, PermissionError, disk full, etc.
+            # OSError is the base class for all I/O-related exceptions
             logger.error(f"I/O error during indexing: {e}")
             return self._create_error_response(
-                f"I/O error: {e}. Check disk space and filesystem access."
+                f"I/O error: {e}. Check file permissions, disk space, and filesystem access."
             )
 
-        except ValueError as e:
-            # Invalid configuration or parameters
-            logger.error(f"Invalid configuration during indexing: {e}")
-            return self._create_error_response(f"Configuration error: {e}")
-
-        except RuntimeError as e:
-            # Git errors, repository state errors, etc.
-            logger.error(f"Runtime error during indexing: {e}")
+        except (ValueError, RuntimeError) as e:
+            # Execution errors: invalid config, git errors, repository state, etc.
+            logger.error(f"Error during indexing: {e}")
             return self._create_error_response(f"Indexing error: {e}")
 
         except Exception:

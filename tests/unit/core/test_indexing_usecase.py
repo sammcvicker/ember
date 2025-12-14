@@ -725,3 +725,203 @@ class TestIndexFileErrorHandling:
         assert result["failed"] == 0
         assert result["chunks_created"] == 1
         assert result["vectors_stored"] == 1
+
+
+class TestExecuteErrorHandling:
+    """Tests for error handling in execute() method.
+
+    These tests verify that the execute() method properly catches and
+    handles various exception types, returning appropriate IndexResponse
+    objects with error information.
+    """
+
+    @pytest.fixture
+    def setup_execute_usecase(self, mock_deps: dict) -> IndexingUseCase:
+        """Create IndexingUseCase configured for execute() testing."""
+        # Configure for basic successful operation
+        mock_deps["meta_repo"].get.return_value = None  # No previous index
+        mock_deps["vcs"].list_tracked_files.return_value = ["test.py"]
+        mock_deps["vcs"].get_worktree_tree_sha.return_value = "abc123"
+        mock_deps["embedder"].fingerprint.return_value = "test-model:384"
+        mock_deps["embedder"].embed_texts.return_value = [[0.1] * 384]
+        mock_deps["fs"].read.return_value = b"def hello(): pass"
+        mock_deps["chunk_repo"].find_by_content_hash.return_value = []
+        mock_deps["chunk_repo"].delete_all_for_path.return_value = 0
+
+        from ember.ports.chunkers import ChunkData
+
+        chunk_data = ChunkData(
+            content="def hello(): pass",
+            start_line=1,
+            end_line=1,
+            lang="py",
+            symbol="hello",
+        )
+        mock_deps["chunk_usecase"].execute.return_value = Mock(
+            success=True,
+            chunks=[chunk_data],
+            error=None,
+        )
+
+        return IndexingUseCase(**mock_deps)
+
+    def test_model_mismatch_returns_error_response(
+        self, mock_deps: dict, setup_execute_usecase: IndexingUseCase
+    ) -> None:
+        """ModelMismatchError returns an error response with helpful message."""
+        from ember.core.indexing.index_usecase import IndexRequest
+
+        usecase = setup_execute_usecase
+
+        # Set up model mismatch scenario
+        mock_deps["meta_repo"].get.return_value = "old-model:768"
+        mock_deps["embedder"].fingerprint.return_value = "new-model:384"
+
+        request = IndexRequest(repo_root=Path("/repo"), force_reindex=False)
+        response = usecase.execute(request)
+
+        assert not response.success
+        assert response.error is not None
+        assert "old-model:768" in response.error
+        assert "new-model:384" in response.error
+
+    def test_file_not_found_returns_io_error_response(
+        self, mock_deps: dict, setup_execute_usecase: IndexingUseCase
+    ) -> None:
+        """FileNotFoundError (subclass of OSError) returns an I/O error response."""
+        from ember.core.indexing.index_usecase import IndexRequest
+
+        usecase = setup_execute_usecase
+
+        # Make fs.read raise FileNotFoundError
+        mock_deps["fs"].read.side_effect = FileNotFoundError("test.py not found")
+
+        request = IndexRequest(repo_root=Path("/repo"), force_reindex=True)
+        response = usecase.execute(request)
+
+        assert not response.success
+        assert response.error is not None
+        assert "i/o error" in response.error.lower()
+
+    def test_permission_error_returns_io_error_response(
+        self, mock_deps: dict, setup_execute_usecase: IndexingUseCase
+    ) -> None:
+        """PermissionError (subclass of OSError) returns an I/O error response."""
+        from ember.core.indexing.index_usecase import IndexRequest
+
+        usecase = setup_execute_usecase
+
+        # Make fs.read raise PermissionError
+        mock_deps["fs"].read.side_effect = PermissionError("Access denied")
+
+        request = IndexRequest(repo_root=Path("/repo"), force_reindex=True)
+        response = usecase.execute(request)
+
+        assert not response.success
+        assert response.error is not None
+        assert "i/o error" in response.error.lower()
+        assert "permission" in response.error.lower()
+
+    def test_os_error_returns_io_error_response(
+        self, mock_deps: dict, setup_execute_usecase: IndexingUseCase
+    ) -> None:
+        """OSError returns an I/O error response."""
+        from ember.core.indexing.index_usecase import IndexRequest
+
+        usecase = setup_execute_usecase
+
+        # Make fs.read raise OSError
+        mock_deps["fs"].read.side_effect = OSError("Disk full")
+
+        request = IndexRequest(repo_root=Path("/repo"), force_reindex=True)
+        response = usecase.execute(request)
+
+        assert not response.success
+        assert response.error is not None
+        assert "i/o error" in response.error.lower()
+
+    def test_value_error_returns_error_response(
+        self, mock_deps: dict, setup_execute_usecase: IndexingUseCase
+    ) -> None:
+        """ValueError at the orchestration level returns an error response."""
+        from ember.core.indexing.index_usecase import IndexRequest
+
+        usecase = setup_execute_usecase
+
+        # Make _get_tree_sha raise ValueError (at orchestration level)
+        mock_deps["vcs"].get_worktree_tree_sha.side_effect = ValueError(
+            "Invalid sync mode"
+        )
+
+        request = IndexRequest(repo_root=Path("/repo"), force_reindex=True)
+        response = usecase.execute(request)
+
+        assert not response.success
+        assert response.error is not None
+
+    def test_runtime_error_returns_error_response(
+        self, mock_deps: dict, setup_execute_usecase: IndexingUseCase
+    ) -> None:
+        """RuntimeError returns an error response."""
+        from ember.core.indexing.index_usecase import IndexRequest
+
+        usecase = setup_execute_usecase
+
+        # Make vcs raise RuntimeError
+        mock_deps["vcs"].get_worktree_tree_sha.side_effect = RuntimeError("Git error")
+
+        request = IndexRequest(repo_root=Path("/repo"), force_reindex=True)
+        response = usecase.execute(request)
+
+        assert not response.success
+        assert response.error is not None
+
+    def test_unexpected_exception_returns_internal_error(
+        self, mock_deps: dict, setup_execute_usecase: IndexingUseCase
+    ) -> None:
+        """Unexpected exceptions return a generic internal error response."""
+        from ember.core.indexing.index_usecase import IndexRequest
+
+        usecase = setup_execute_usecase
+
+        # Make something raise an unexpected exception type
+        mock_deps["vcs"].get_worktree_tree_sha.side_effect = TypeError("Unexpected")
+
+        request = IndexRequest(repo_root=Path("/repo"), force_reindex=True)
+        response = usecase.execute(request)
+
+        assert not response.success
+        assert response.error is not None
+        assert "internal error" in response.error.lower()
+
+    def test_keyboard_interrupt_propagates(
+        self, mock_deps: dict, setup_execute_usecase: IndexingUseCase
+    ) -> None:
+        """KeyboardInterrupt is not caught and propagates up."""
+        from ember.core.indexing.index_usecase import IndexRequest
+
+        usecase = setup_execute_usecase
+
+        # Make vcs raise KeyboardInterrupt
+        mock_deps["vcs"].get_worktree_tree_sha.side_effect = KeyboardInterrupt()
+
+        request = IndexRequest(repo_root=Path("/repo"), force_reindex=True)
+
+        with pytest.raises(KeyboardInterrupt):
+            usecase.execute(request)
+
+    def test_system_exit_propagates(
+        self, mock_deps: dict, setup_execute_usecase: IndexingUseCase
+    ) -> None:
+        """SystemExit is not caught and propagates up."""
+        from ember.core.indexing.index_usecase import IndexRequest
+
+        usecase = setup_execute_usecase
+
+        # Make vcs raise SystemExit
+        mock_deps["vcs"].get_worktree_tree_sha.side_effect = SystemExit(1)
+
+        request = IndexRequest(repo_root=Path("/repo"), force_reindex=True)
+
+        with pytest.raises(SystemExit):
+            usecase.execute(request)
