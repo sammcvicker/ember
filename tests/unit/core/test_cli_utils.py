@@ -18,6 +18,7 @@ from ember.core.cli_utils import (
     lookup_result_by_hash,
     lookup_result_from_cache,
     no_search_results_error,
+    normalize_path_filter,
     path_not_in_repo_error,
     repo_not_found_error,
 )
@@ -405,3 +406,134 @@ class TestOpenFileInEditor:
         # Verify vim was used as default
         call_args = mock_run.call_args[0][0]
         assert "vim" in call_args[0]
+
+
+class TestNormalizePathFilter:
+    """Tests for normalize_path_filter function."""
+
+    def test_converts_path_to_glob_pattern(self, tmp_path: Path) -> None:
+        """Should convert path argument to glob pattern."""
+        repo_root = tmp_path
+        cwd = tmp_path / "src"
+        cwd.mkdir()
+
+        result = normalize_path_filter(
+            path="models",
+            existing_filter=None,
+            repo_root=repo_root,
+            cwd=cwd,
+        )
+
+        assert result == "src/models/**"
+
+    def test_converts_dot_path_to_wildcard_glob(self, tmp_path: Path) -> None:
+        """Should convert '.' path to wildcard glob when at repo root."""
+        repo_root = tmp_path
+
+        result = normalize_path_filter(
+            path=".",
+            existing_filter=None,
+            repo_root=repo_root,
+            cwd=repo_root,
+        )
+
+        assert result == "*/**"
+
+    def test_converts_subdir_dot_path_to_subdir_glob(self, tmp_path: Path) -> None:
+        """Should convert '.' path to subdir glob when in subdirectory."""
+        repo_root = tmp_path
+        cwd = tmp_path / "src" / "components"
+        cwd.mkdir(parents=True)
+
+        result = normalize_path_filter(
+            path=".",
+            existing_filter=None,
+            repo_root=repo_root,
+            cwd=cwd,
+        )
+
+        assert result == "src/components/**"
+
+    def test_returns_none_when_no_path(self, tmp_path: Path) -> None:
+        """Should return None when path is None."""
+        result = normalize_path_filter(
+            path=None,
+            existing_filter=None,
+            repo_root=tmp_path,
+            cwd=tmp_path,
+        )
+
+        assert result is None
+
+    def test_returns_existing_filter_when_no_path(self, tmp_path: Path) -> None:
+        """Should return existing filter when path is None."""
+        result = normalize_path_filter(
+            path=None,
+            existing_filter="*.py",
+            repo_root=tmp_path,
+            cwd=tmp_path,
+        )
+
+        assert result == "*.py"
+
+    def test_raises_when_both_path_and_filter_provided(self, tmp_path: Path) -> None:
+        """Should raise EmberCliError when both path and filter are provided."""
+        with pytest.raises(EmberCliError) as exc_info:
+            normalize_path_filter(
+                path="src",
+                existing_filter="*.py",
+                repo_root=tmp_path,
+                cwd=tmp_path,
+            )
+
+        assert "Cannot use both" in exc_info.value.message
+        assert exc_info.value.hint is not None
+
+    def test_raises_when_path_outside_repo(self, tmp_path: Path) -> None:
+        """Should raise EmberCliError when path is outside repository."""
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        outside_path = tmp_path / "outside"
+        outside_path.mkdir()
+
+        with pytest.raises(EmberCliError) as exc_info:
+            normalize_path_filter(
+                path=str(outside_path),
+                existing_filter=None,
+                repo_root=repo_root,
+                cwd=repo_root,
+            )
+
+        assert "not within repository" in exc_info.value.message
+
+    def test_handles_absolute_path(self, tmp_path: Path) -> None:
+        """Should handle absolute path correctly."""
+        repo_root = tmp_path
+        target_dir = tmp_path / "src" / "utils"
+        target_dir.mkdir(parents=True)
+
+        result = normalize_path_filter(
+            path=str(target_dir),
+            existing_filter=None,
+            repo_root=repo_root,
+            cwd=repo_root,
+        )
+
+        assert result == "src/utils/**"
+
+    def test_handles_relative_path_from_subdirectory(self, tmp_path: Path) -> None:
+        """Should handle relative path from subdirectory correctly."""
+        repo_root = tmp_path
+        cwd = tmp_path / "src"
+        cwd.mkdir()
+        target = tmp_path / "src" / "utils"
+        target.mkdir()
+
+        result = normalize_path_filter(
+            path="utils",
+            existing_filter=None,
+            repo_root=repo_root,
+            cwd=cwd,
+        )
+
+        assert result == "src/utils/**"
