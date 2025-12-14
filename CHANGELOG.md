@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Extracted file indexing pipeline into separate services** (#261)
+  - Created `FilePreprocessor` service for file I/O, hashing, decoding, and language detection
+  - Created `ChunkStorageService` for chunk storage and embedding with transactional rollback
+  - `_index_file()` is now a thin orchestrator delegating to these services
+  - Services are independently testable with 30 new unit tests
+  - Supports dependency injection for custom implementations
+  - No change to public API or behavior
+
 - **Refactored `IndexingUseCase.execute()` to reduce cyclomatic complexity** (#260)
   - Reduced cyclomatic complexity from 12 to 9 (target: ≤10)
   - Grouped related exception handlers: I/O errors (FileNotFoundError, PermissionError, OSError) and execution errors (ValueError, RuntimeError)
