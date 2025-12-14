@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Refactored `DaemonLifecycle.stop()` to reduce cyclomatic complexity** (#263)
+  - Reduced cyclomatic complexity from 11 to 5 (target: ≤10)
+  - Extracted helper methods: `_reap_zombie()`, `_wait_for_death()`, `_send_signal_and_wait()`, `_stop_with_sigterm()`, `_stop_with_sigkill()`
+  - Unified SIGKILL timeout (2.5s) as explicit constant instead of hardcoded loop
+  - Proper zombie process handling with `os.waitpid()` using `contextlib.suppress()`
+  - Clear docstrings documenting shutdown sequence and return value semantics
+  - Added 11 new unit tests for extracted helper methods
+  - No change to public API or behavior
+
 - **Extracted file indexing pipeline into separate services** (#261)
   - Created `FilePreprocessor` service for file I/O, hashing, decoding, and language detection
   - Created `ChunkStorageService` for chunk storage and embedding with transactional rollback
