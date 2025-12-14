@@ -3,6 +3,7 @@
 Handles spawning, stopping, and monitoring the daemon process.
 """
 
+import contextlib
 import logging
 import os
 import signal
@@ -82,23 +83,61 @@ class DaemonLifecycle:
             True if process exists and is not a zombie
         """
         try:
-            # First try to collect any zombie children to avoid false positives
-            # This handles the case where we spawned a daemon that has exited
-            # but hasn't been reaped yet (zombie state)
-            try:
-                os.waitpid(pid, os.WNOHANG)
-            except ChildProcessError:
-                # Process is not our child, that's fine
-                pass
-            except OSError:
-                # Process doesn't exist or other error
-                pass
-
+            self._reap_zombie(pid)
             # Send signal 0 (no-op, just checks if process exists)
             os.kill(pid, 0)
             return True
         except OSError:
             return False
+
+    def _reap_zombie(self, pid: int) -> None:
+        """Attempt to reap a zombie process if it's our child.
+
+        Args:
+            pid: Process ID to reap
+        """
+        with contextlib.suppress(ChildProcessError, OSError):
+            os.waitpid(pid, os.WNOHANG)
+
+    def _wait_for_death(self, pid: int, timeout_secs: float) -> bool:
+        """Wait for a process to die within the given timeout.
+
+        Args:
+            pid: Process ID to wait for
+            timeout_secs: Maximum seconds to wait
+
+        Returns:
+            True if process died, False if still alive after timeout
+        """
+        check_interval = 0.5
+        checks = int(timeout_secs / check_interval)
+        for _ in range(checks):
+            time.sleep(check_interval)
+            if not self.is_process_alive(pid):
+                return True
+        return False
+
+    def _send_signal_and_wait(
+        self, pid: int, sig: signal.Signals, timeout_secs: float
+    ) -> bool | None:
+        """Send a signal to a process and wait for it to die.
+
+        Args:
+            pid: Process ID to signal
+            sig: Signal to send (SIGTERM or SIGKILL)
+            timeout_secs: Seconds to wait for process to die
+
+        Returns:
+            True if process died, False if still alive after timeout,
+            None if signal failed (process may have died or permission error)
+        """
+        try:
+            os.kill(pid, sig)
+        except OSError:
+            # Signal failed - caller should check if process is still alive
+            return None
+
+        return self._wait_for_death(pid, timeout_secs)
 
     def cleanup_stale_files(self) -> None:
         """Clean up stale socket and PID files."""
@@ -339,72 +378,91 @@ class DaemonLifecycle:
         # This return is unreachable but satisfies type checker
         return False
 
+    def _stop_with_sigterm(self, pid: int, timeout: int) -> bool | None:
+        """Attempt graceful shutdown with SIGTERM.
+
+        Args:
+            pid: Process ID to stop
+            timeout: Seconds to wait for graceful shutdown
+
+        Returns:
+            True if stopped, False if still alive, None if signal failed
+        """
+        logger.info(f"Stopping daemon (PID {pid})...")
+        result = self._send_signal_and_wait(pid, signal.SIGTERM, float(timeout))
+
+        if result is True:
+            logger.info("Daemon stopped gracefully")
+        elif result is None and not self.is_process_alive(pid):
+            logger.info("Process already dead")
+            return True
+
+        return result
+
+    def _stop_with_sigkill(self, pid: int) -> bool:
+        """Force kill with SIGKILL as last resort.
+
+        Args:
+            pid: Process ID to kill
+
+        Returns:
+            True if killed, False if survived
+        """
+        logger.warning("Daemon did not stop gracefully, sending SIGKILL...")
+        sigkill_timeout = 2.5  # Unified timeout constant
+        result = self._send_signal_and_wait(pid, signal.SIGKILL, sigkill_timeout)
+
+        if result is True:
+            logger.info("Daemon force-killed")
+            return True
+
+        if result is None and not self.is_process_alive(pid):
+            logger.info("Process died before SIGKILL")
+            return True
+
+        if result is None:
+            logger.error("Failed to kill daemon")
+        else:
+            logger.error("Daemon survived SIGKILL! Manual cleanup required.")
+        return False
+
     def stop(self, timeout: int = 10) -> bool:
         """Stop the daemon gracefully.
 
+        Shutdown sequence:
+        1. Check if process exists (early return if not)
+        2. Try SIGTERM and wait up to `timeout` seconds
+        3. If still alive, send SIGKILL and wait 2.5 seconds
+        4. Clean up PID/socket files on success
+
         Args:
-            timeout: Seconds to wait for graceful shutdown
+            timeout: Seconds to wait for graceful SIGTERM shutdown
 
         Returns:
             True if stopped successfully
         """
-        # Get PID
         pid = self.get_pid()
         if pid is None:
             logger.info("Daemon not running (no PID file)")
             self.cleanup_stale_files()
             return True
 
-        # Check if process exists
         if not self.is_process_alive(pid):
             logger.info(f"Daemon not running (process {pid} not found)")
             self.cleanup_stale_files()
             return True
 
-        # Try SIGTERM first for graceful shutdown
-        logger.info(f"Stopping daemon (PID {pid})...")
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except OSError as e:
-            # SIGTERM failed - check if process already dead or no permission
-            if not self.is_process_alive(pid):
-                logger.info("Process already dead")
-                self.cleanup_stale_files()
-                return True
-            logger.warning(f"SIGTERM failed: {e}, trying SIGKILL...")
-            # Don't return here! Fall through to SIGKILL
-        else:
-            # SIGTERM succeeded, wait for graceful shutdown
-            for _ in range(timeout * 2):  # Check every 0.5s
-                time.sleep(0.5)
-                if not self.is_process_alive(pid):
-                    logger.info("Daemon stopped gracefully")
-                    self.cleanup_stale_files()
-                    return True
+        # Try graceful shutdown first
+        sigterm_result = self._stop_with_sigterm(pid, timeout)
+        if sigterm_result is True:
+            self.cleanup_stale_files()
+            return True
 
-        # Still alive after SIGTERM - force kill
-        logger.warning("Daemon did not stop gracefully, sending SIGKILL...")
-        try:
-            os.kill(pid, signal.SIGKILL)
-        except OSError as e:
-            # SIGKILL failed - check if process died between check and kill
-            if not self.is_process_alive(pid):
-                logger.info("Process died before SIGKILL")
-                self.cleanup_stale_files()
-                return True
-            logger.error(f"Failed to kill daemon: {e}")
-            return False
+        # Fall through to SIGKILL if SIGTERM failed or timed out
+        if self._stop_with_sigkill(pid):
+            self.cleanup_stale_files()
+            return True
 
-        # Verify SIGKILL worked before cleanup
-        # Give process time to fully terminate (may take longer on some systems)
-        for _ in range(5):  # Up to 2.5s total
-            time.sleep(0.5)
-            if not self.is_process_alive(pid):
-                logger.info("Daemon force-killed")
-                self.cleanup_stale_files()
-                return True
-
-        logger.error("Daemon survived SIGKILL! Manual cleanup required.")
         return False
 
     def restart(self, foreground: bool = False) -> bool:
