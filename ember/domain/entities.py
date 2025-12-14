@@ -173,3 +173,36 @@ class SearchResult:
         if len(lines) > max_lines:
             preview_lines.append("...")
         return "\n".join(preview_lines)
+
+
+@dataclass
+class SearchResultSet:
+    """Collection of search results with metadata.
+
+    Wraps search results with information about retrieval quality,
+    particularly for detecting index degradation when chunks are missing.
+
+    Attributes:
+        results: List of search results.
+        requested_count: Number of results originally requested.
+        missing_chunks: Number of chunks that couldn't be retrieved.
+        warning: User-facing warning message if results are degraded.
+    """
+
+    results: list[SearchResult]
+    requested_count: int = 0
+    missing_chunks: int = 0
+    warning: str | None = None
+
+    @property
+    def is_degraded(self) -> bool:
+        """Check if results are degraded due to missing chunks."""
+        return self.missing_chunks > 0
+
+    def __iter__(self):
+        """Allow iteration over results for backward compatibility."""
+        return iter(self.results)
+
+    def __len__(self) -> int:
+        """Return number of results for backward compatibility."""
+        return len(self.results)

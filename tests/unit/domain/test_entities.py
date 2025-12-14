@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from ember.domain.entities import Chunk, Query
+from ember.domain.entities import Chunk, Query, SearchResult, SearchResultSet
 
 
 def test_chunk_compute_content_hash():
@@ -205,3 +205,87 @@ class TestChunkValidation:
             rev="HEAD",
         )
         assert chunk.start_line == chunk.end_line == 5
+
+
+# =============================================================================
+# SearchResultSet tests (#265)
+# =============================================================================
+
+
+class TestSearchResultSet:
+    """Tests for SearchResultSet entity."""
+
+    @pytest.fixture
+    def sample_chunk(self) -> Chunk:
+        """Create a sample chunk for testing."""
+        return Chunk(
+            id="test_id",
+            project_id="proj",
+            path=Path("file.py"),
+            lang="py",
+            symbol="func",
+            start_line=1,
+            end_line=10,
+            content="def foo(): pass",
+            content_hash="hash",
+            file_hash="fhash",
+            tree_sha="tree",
+            rev="HEAD",
+        )
+
+    @pytest.fixture
+    def sample_result(self, sample_chunk: Chunk) -> SearchResult:
+        """Create a sample search result for testing."""
+        return SearchResult(
+            chunk=sample_chunk,
+            score=0.95,
+            rank=1,
+            preview="def foo(): pass",
+        )
+
+    def test_search_result_set_empty(self):
+        """Test creating empty SearchResultSet."""
+        result_set = SearchResultSet(results=[])
+        assert len(result_set) == 0
+        assert not result_set.is_degraded
+        assert result_set.warning is None
+
+    def test_search_result_set_with_results(self, sample_result: SearchResult):
+        """Test SearchResultSet with results."""
+        result_set = SearchResultSet(
+            results=[sample_result],
+            requested_count=10,
+            missing_chunks=0,
+        )
+        assert len(result_set) == 1
+        assert not result_set.is_degraded
+        assert result_set.warning is None
+
+    def test_search_result_set_is_degraded(self, sample_result: SearchResult):
+        """Test is_degraded property when chunks are missing."""
+        result_set = SearchResultSet(
+            results=[sample_result],
+            requested_count=10,
+            missing_chunks=5,
+            warning="Some chunks missing",
+        )
+        assert result_set.is_degraded
+        assert result_set.warning == "Some chunks missing"
+
+    def test_search_result_set_iteration(self, sample_result: SearchResult):
+        """Test that SearchResultSet is iterable."""
+        result_set = SearchResultSet(
+            results=[sample_result, sample_result],
+            requested_count=10,
+        )
+        results_list = list(result_set)
+        assert len(results_list) == 2
+        assert all(r == sample_result for r in results_list)
+
+    def test_search_result_set_len(self, sample_result: SearchResult):
+        """Test __len__ returns number of results."""
+        result_set = SearchResultSet(
+            results=[sample_result, sample_result, sample_result],
+            requested_count=10,
+        )
+        assert len(result_set) == 3

@@ -589,12 +589,13 @@ def test_missing_chunks_logged(db_path: Path, caplog: pytest.LogCaptureFixture) 
 
     # Enable logging capture at WARNING level
     with caplog.at_level(logging.WARNING):
-        chunks = use_case._retrieve_chunks(chunk_ids)
+        result = use_case._retrieve_chunks(chunk_ids)
 
     # Should return only the 2 found chunks
-    assert len(chunks) == 2
-    assert chunks[0].id == "chunk_1"
-    assert chunks[1].id == "chunk_2"
+    assert len(result.chunks) == 2
+    assert result.chunks[0].id == "chunk_1"
+    assert result.chunks[1].id == "chunk_2"
+    assert result.missing_count == 3
 
     # Should have logged a warning about missing chunks
     assert len(caplog.records) == 1

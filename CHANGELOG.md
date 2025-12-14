@@ -47,6 +47,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Model validation still happens at config load time (same user experience)
 
 ### Fixed
+- **SearchUseCase now surfaces missing chunks to users** (#265)
+  - Added `SearchResultSet` dataclass wrapping results with metadata
+  - CLI displays yellow warning when chunks are missing due to index corruption
+  - `is_degraded` property indicates when results are degraded
+  - Added 6 new unit tests for `SearchResultSet` behavior
+  - Backward compatible: `SearchResultSet` supports iteration and `len()`
+
 - **Error handling for critical operations in `_index_file()`** (#262)
   - Embedding failures now roll back any chunks added during that file's indexing
   - Embedding count is validated to match chunk count before storing vectors
