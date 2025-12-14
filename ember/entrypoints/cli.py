@@ -829,14 +829,18 @@ def find(
     )
 
     # Execute search
-    results = search_usecase.search(query_obj)
+    result_set = search_usecase.search(query_obj)
+
+    # Display warning if results are degraded (missing chunks)
+    if result_set.warning:
+        click.secho(result_set.warning, fg="yellow", err=True)
 
     # Cache results for cat/open commands
     cache_path = ember_dir / ".last_search.json"
     try:
         import json
 
-        cache_data = ResultPresenter.serialize_for_cache(query, results)
+        cache_data = ResultPresenter.serialize_for_cache(query, result_set.results)
         cache_path.write_text(json.dumps(cache_data, indent=2))
     except Exception as e:
         # Log cache errors but don't fail the command
@@ -846,9 +850,9 @@ def find(
     # Display results
     presenter = ResultPresenter(LocalFileSystem())
     if json_output:
-        click.echo(presenter.format_json_output(results, context=context, repo_root=repo_root))
+        click.echo(presenter.format_json_output(result_set.results, context=context, repo_root=repo_root))
     else:
-        presenter.format_human_output(results, context=context, repo_root=repo_root, config=config)
+        presenter.format_human_output(result_set.results, context=context, repo_root=repo_root, config=config)
 
 
 @cli.command()
@@ -989,9 +993,10 @@ def search(
         embedder=embedder,
     )
 
-    # Create search function wrapper
+    # Create search function wrapper (returns list for TUI compatibility)
     def search_fn(query: Query) -> list:
-        return search_usecase.search(query)
+        result_set = search_usecase.search(query)
+        return result_set.results
 
     # Create and run interactive UI
     ui = InteractiveSearchUI(
