@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+- **Cache tree-sitter Query objects per language instead of compiling per file** (#269)
+  - Query compilation is expensive; for 1000 Python files we were compiling the same query 1000 times
+  - Added `get_query()` method to `LanguageRegistry` with lazy initialization and caching
+  - Queries are now compiled once per language and reused for all files of that language
+  - Improves indexing performance for repositories with many files of the same language
+
 ### Changed
 - **Replaced broad `except Exception` clauses with specific exception types** (#267)
   - `ember/adapters/fs/local.py`: Now catches `OSError` for file read errors

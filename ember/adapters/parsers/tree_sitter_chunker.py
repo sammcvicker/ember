@@ -6,7 +6,7 @@ Extracts semantic code units (functions, classes, methods) using tree-sitter AST
 import logging
 from pathlib import Path
 
-from tree_sitter import Query, QueryCursor
+from tree_sitter import QueryCursor
 
 from ember.adapters.parsers.definition_matcher import DefinitionMatcher
 from ember.adapters.parsers.language_registry import LanguageRegistry
@@ -49,11 +49,11 @@ class TreeSitterChunker:
             logger.debug(f"Language '{lang}' not supported by tree-sitter chunker (file: {path})")
             return []
 
-        # Get parser and language (lazy initialization)
+        # Get parser and query (lazy initialization with caching)
         parser = self._registry.get_parser(config.name)
-        language = self._registry.get_language(config.name)
+        query = self._registry.get_query(config.name)
 
-        if not parser or not language:
+        if not parser or not query:
             logger.warning(f"Failed to initialize parser for {config.name} (file: {path})")
             return []
 
@@ -67,9 +67,8 @@ class TreeSitterChunker:
             logger.warning(f"Failed to parse {path} as {config.name}: {e}")
             return []
 
-        # Execute query to find definitions
+        # Execute query to find definitions (query is pre-compiled and cached)
         try:
-            query = Query(language, config.query)
             cursor = QueryCursor(query)
             captures = cursor.captures(tree.root_node)
         except Exception as e:
