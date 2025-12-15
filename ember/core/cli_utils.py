@@ -29,7 +29,7 @@ __all__ = ["RichProgressCallback", "progress_context", "load_cached_results",
            "ensure_daemon_with_progress", "lookup_result_from_cache",
            "lookup_result_by_hash", "display_content_with_context",
            "display_content_with_highlighting", "open_file_in_editor",
-           "get_editor_command", "EDITOR_PATTERNS", "EmberCliError",
+           "get_editor", "get_editor_command", "EDITOR_PATTERNS", "EmberCliError",
            "repo_not_found_error", "no_search_results_error",
            "path_not_in_repo_error", "index_out_of_range_error",
            "normalize_path_filter"]
@@ -194,6 +194,24 @@ def normalize_path_filter(
     return f"{path_rel_to_repo}/**"
 
 
+def get_editor() -> str:
+    """Get the user's preferred editor command.
+
+    Checks environment variables in order of preference:
+    1. $VISUAL - for visual/graphical editors
+    2. $EDITOR - for terminal editors
+    3. 'vim' - default fallback
+
+    Returns:
+        The editor command string to use.
+
+    Example:
+        >>> editor = get_editor()
+        >>> print(f"Opening in {editor}...")
+    """
+    return os.environ.get("VISUAL") or os.environ.get("EDITOR") or "vim"
+
+
 # Editor command patterns for opening files at specific line numbers
 EDITOR_PATTERNS = {
     # Editors that use +line syntax (vim, emacs, nano)
@@ -256,7 +274,7 @@ def open_file_in_editor(file_path: Path, line_num: int) -> None:
         raise click.ClickException(f"File not found: {file_path}")
 
     # Determine editor (priority: $VISUAL > $EDITOR > vim)
-    editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "vim"
+    editor = get_editor()
 
     # Check editor is available
     if not shutil.which(editor):
