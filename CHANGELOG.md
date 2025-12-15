@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Use specific exception types in test assertions** (#270)
+  - `tests/integration/test_search_usecase.py`: Changed `pytest.raises((sqlite3.OperationalError, Exception))` to `pytest.raises(ValueError)` for empty query test
+  - `tests/integration/test_search_usecase.py`: Removed `except Exception: pass` block that hid FTS5 query failures; uncovered that hyphenated queries fail (documented as FTS5 limitation)
+  - `tests/unit/test_config_provider.py`: Changed loose OR assertion to specific `"Invalid TOML"` check
+  - `tests/unit/adapters/test_global_config.py`: Changed loose OR assertion to specific `"Failed to parse global config"` check
+  - `tests/conftest.py`: Changed `except Exception` to `except (ValueError, AttributeError, TypeError)` for URL validation utility
+  - Improves test reliability by catching bugs instead of masking them
+
 - **Deduplicated editor command lookup across CLI** (#268)
   - Created `get_editor()` function in `ember/core/cli_utils.py`
   - Single source of truth for `$VISUAL > $EDITOR > vim` fallback logic

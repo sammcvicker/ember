@@ -15,7 +15,7 @@ from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
 from ember.adapters.sqlite.vector_repository import SQLiteVectorRepository
 from ember.adapters.vss.sqlite_vec_adapter import SqliteVecAdapter
 from ember.core.retrieval.search_usecase import SearchUseCase
-from ember.domain.entities import Chunk, Query
+from ember.domain.entities import Chunk, Query, SearchResultSet
 
 # Note: db_path fixture is now in tests/conftest.py
 
@@ -242,13 +242,9 @@ def test_search_topk_limit(search_usecase: SearchUseCase) -> None:
 @pytest.mark.slow
 def test_search_empty_query(search_usecase: SearchUseCase) -> None:
     """Test behavior with empty query."""
-    import sqlite3
-
-    query = Query(text="", topk=5)
-    # Empty query causes FTS5 syntax error (expected behavior)
-    # This is a known limitation of FTS5
-    with pytest.raises((sqlite3.OperationalError, Exception)):
-        search_usecase.search(query)
+    # Empty query is rejected by Query entity validation
+    with pytest.raises(ValueError, match="Query text cannot be empty"):
+        Query(text="", topk=5)
 
 
 @pytest.mark.slow
@@ -388,28 +384,21 @@ def test_search_with_different_path_and_language(search_usecase: SearchUseCase) 
 def test_search_with_special_characters_in_query(search_usecase: SearchUseCase) -> None:
     """Test search handles basic special characters.
 
-    Verifies that queries with some common special characters work.
-    Note: Current FTS5 implementation may have limitations with certain characters.
+    Verifies that queries with some common special characters work in FTS5.
+    Note: Hyphens and square brackets have special meaning in FTS5 and aren't
+    supported as literal characters (hyphen is NOT operator, brackets are column filters).
     """
-    # Test characters that should work in FTS5
+    # Characters that work in FTS5
     safe_queries = [
-        "function test",  # Space
-        "function-test",  # Hyphen
-        "function_test",  # Underscore
-        "(function)",  # Parentheses
-        "[function]",  # Brackets
+        "function test",  # Space (implicit AND)
+        "function_test",  # Underscore (part of token)
+        "(function)",  # Parentheses (grouping, no boolean operators)
     ]
 
     for safe_query in safe_queries:
         query = Query(text=safe_query, topk=10)
-        # Should not crash
-        try:
-            results = search_usecase.search(query)
-            assert isinstance(results, list)  # Should return a list
-        except Exception:
-            # Document if certain queries fail
-            # This helps identify FTS5 limitations to fix later
-            pass
+        results = search_usecase.search(query)
+        assert isinstance(results, SearchResultSet)
 
 
 @pytest.mark.slow

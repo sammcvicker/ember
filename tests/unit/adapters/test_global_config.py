@@ -218,7 +218,7 @@ syntax_highlighting = false
         default = EmberConfig.default()
         assert result == default
         # Should log warning about global config
-        assert "global" in caplog.text.lower() or "Failed" in caplog.text
+        assert "Failed to parse global config" in caplog.text
 
     def test_array_fields_merge_correctly(
         self, provider: TomlConfigProvider, tmp_path: Path
