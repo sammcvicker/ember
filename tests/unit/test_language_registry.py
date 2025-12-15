@@ -240,3 +240,68 @@ def test_lazy_init_memory_efficiency():
     # Other languages not loaded
     assert "go" not in registry._parser_cache
     assert "rust" not in registry._parser_cache
+
+
+def test_get_query_lazy_initialization():
+    """Test query objects are lazily initialized and cached."""
+    registry = LanguageRegistry()
+
+    # Cache should be empty initially
+    assert len(registry._query_cache) == 0
+
+    # First access initializes query
+    query = registry.get_query("python")
+    assert query is not None
+    assert "python" in registry._query_cache
+
+    # Second access uses cache
+    query2 = registry.get_query("python")
+    assert query2 is query  # Same object from cache
+
+
+def test_get_query_also_initializes_language():
+    """Test getting query also initializes language object."""
+    registry = LanguageRegistry()
+
+    # Get query (should also initialize language)
+    query = registry.get_query("python")
+    assert query is not None
+
+    # Language should also be cached
+    assert "python" in registry._language_cache
+
+
+def test_get_query_unsupported():
+    """Test getting query for unsupported name returns None."""
+    registry = LanguageRegistry()
+
+    query = registry.get_query("fortran")
+    assert query is None
+
+
+def test_get_query_all_languages():
+    """Test all supported languages have valid queries."""
+    registry = LanguageRegistry()
+
+    for name in ["python", "typescript", "tsx", "javascript", "jsx", "go", "rust", "java", "c", "cpp", "csharp", "ruby"]:
+        query = registry.get_query(name)
+        assert query is not None, f"Query for {name} should not be None"
+
+
+def test_query_cache_memory_efficiency():
+    """Test query cache saves memory for unused languages."""
+    registry = LanguageRegistry()
+
+    # Initially no queries loaded
+    assert len(registry._query_cache) == 0
+
+    # Load only Python
+    registry.get_query("python")
+
+    # Only Python should be cached
+    assert len(registry._query_cache) == 1
+    assert "python" in registry._query_cache
+
+    # Other languages not loaded
+    assert "go" not in registry._query_cache
+    assert "rust" not in registry._query_cache
