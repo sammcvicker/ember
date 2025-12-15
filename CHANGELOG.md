@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Replaced broad `except Exception` clauses with specific exception types** (#267)
+  - `ember/adapters/fs/local.py`: Now catches `OSError` for file read errors
+  - `ember/adapters/tui/search_ui.py`: Now catches `ValueError`, `TypeError`, `KeyError` for syntax highlighting errors with debug logging
+  - `ember/adapters/daemon/lifecycle.py`: Now catches `OSError` for stderr read errors
+  - `ember/adapters/daemon/server.py`: Now catches `OSError` for socket errors when sending error responses
+  - `ember/adapters/daemon/client.py`: Now catches `OSError`, `TimeoutError`, `ProtocolError` for socket operations
+  - `ember/core/cli_utils.py`: Now catches `OSError`, `RuntimeError` for daemon startup errors
+  - `ember/entrypoints/cli.py`: Now catches `EmberCliError` for repository detection (3 locations)
+  - Note: `IndexingUseCase.execute()` catch-all preserved as it follows best practices with `logger.exception()`
+  - Updated tests to use `EmberCliError` instead of `RuntimeError` for mocks
+  - Improves debuggability by making exception handling explicit and logged
+
 - **Deduplicated path handling logic between `find()` and `search()` commands** (#266)
   - Extracted `normalize_path_filter()` function to `ember/core/cli_utils.py`
   - Single source of truth for PATH argument to glob pattern conversion

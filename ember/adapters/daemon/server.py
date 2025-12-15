@@ -220,8 +220,8 @@ class DaemonServer:
             try:
                 error_response = Response.error(code=400, message=str(e))
                 send_message(client_socket, error_response)
-            except Exception:
-                pass  # Failed to send error response
+            except OSError:
+                pass  # Socket error sending error response (client disconnected, etc.)
         except Exception as e:
             logger.exception(f"Error handling client: {e}")
         finally:
