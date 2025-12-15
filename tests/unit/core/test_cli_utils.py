@@ -272,6 +272,63 @@ class TestDisplayContentWithHighlighting:
         display_content_with_highlighting(result, mock_config)
 
 
+class TestGetEditor:
+    """Tests for get_editor function."""
+
+    def test_returns_visual_when_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Should return $VISUAL when set."""
+        from ember.core.cli_utils import get_editor
+
+        monkeypatch.setenv("VISUAL", "code")
+        monkeypatch.setenv("EDITOR", "vim")
+
+        assert get_editor() == "code"
+
+    def test_returns_editor_when_visual_not_set(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Should return $EDITOR when $VISUAL is not set."""
+        from ember.core.cli_utils import get_editor
+
+        monkeypatch.delenv("VISUAL", raising=False)
+        monkeypatch.setenv("EDITOR", "nano")
+
+        assert get_editor() == "nano"
+
+    def test_returns_vim_when_no_env_vars_set(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Should return 'vim' as default when no env vars are set."""
+        from ember.core.cli_utils import get_editor
+
+        monkeypatch.delenv("VISUAL", raising=False)
+        monkeypatch.delenv("EDITOR", raising=False)
+
+        assert get_editor() == "vim"
+
+    def test_returns_empty_visual_falls_through_to_editor(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Should return $EDITOR when $VISUAL is empty string."""
+        from ember.core.cli_utils import get_editor
+
+        monkeypatch.setenv("VISUAL", "")
+        monkeypatch.setenv("EDITOR", "emacs")
+
+        assert get_editor() == "emacs"
+
+    def test_returns_empty_editor_falls_through_to_vim(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Should return 'vim' when both env vars are empty."""
+        from ember.core.cli_utils import get_editor
+
+        monkeypatch.setenv("VISUAL", "")
+        monkeypatch.setenv("EDITOR", "")
+
+        assert get_editor() == "vim"
+
+
 class TestOpenFileInEditor:
     """Tests for open_file_in_editor function."""
 

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Deduplicated editor command lookup across CLI** (#268)
+  - Created `get_editor()` function in `ember/core/cli_utils.py`
+  - Single source of truth for `$VISUAL > $EDITOR > vim` fallback logic
+  - Fixed inconsistent fallback (was "vi" in `config edit`, now consistently "vim")
+  - Added 5 unit tests for the new function
+
 ### Performance
 - **Cache tree-sitter Query objects per language instead of compiling per file** (#269)
   - Query compilation is expensive; for 1000 Python files we were compiling the same query 1000 times

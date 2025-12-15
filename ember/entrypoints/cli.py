@@ -18,6 +18,7 @@ from ember.core.cli_utils import (
     display_content_with_context,
     display_content_with_highlighting,
     format_result_header,
+    get_editor,
     load_cached_results,
     lookup_result_by_hash,
     lookup_result_from_cache,
@@ -1061,8 +1062,6 @@ def open_result(ctx: click.Context, index: int) -> None:
     Opens file at the correct line in $EDITOR.
     Can be run from any subdirectory within the repository.
     """
-    import os
-
     repo_root, ember_dir = get_ember_repo_root()
     cache_path = ember_dir / ".last_search.json"
 
@@ -1079,8 +1078,7 @@ def open_result(ctx: click.Context, index: int) -> None:
 
     # Show what we're doing (if not quiet)
     if not ctx.obj.get("quiet", False):
-        editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "vim"
-        click.echo(f"Opening in {editor}:")
+        click.echo(f"Opening in {get_editor()}:")
         format_result_header(result, index, show_symbol=True)
 
     # Open in editor
@@ -1343,7 +1341,6 @@ def config_edit(ctx: click.Context, edit_global: bool) -> None:
     Opens the local config by default. Use --global to edit global config.
     Creates the config file if it doesn't exist.
     """
-    import os
     import subprocess
 
     from ember.shared.config_io import (
@@ -1376,7 +1373,7 @@ def config_edit(ctx: click.Context, edit_global: bool) -> None:
             create_minimal_project_config(config_path)
 
     # Open in editor
-    editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "vi"
+    editor = get_editor()
     click.echo(f"Opening {config_path} in {editor}...")
     try:
         subprocess.run([editor, str(config_path)], check=True)
