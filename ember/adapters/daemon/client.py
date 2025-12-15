@@ -306,7 +306,8 @@ def is_daemon_running(socket_path: Path | None = None) -> bool:
         response = receive_message(sock, Response)
 
         return not response.is_error()
-    except Exception:
+    except (OSError, TimeoutError, ProtocolError):
+        # Connection errors, timeouts, or protocol issues mean daemon is not available
         return False
     finally:
         if sock:
@@ -352,7 +353,8 @@ def get_daemon_pid(socket_path: Path | None = None) -> int | None:
                 return pid
 
         return None
-    except Exception:
+    except (OSError, TimeoutError, ProtocolError):
+        # Connection errors, timeouts, or protocol issues mean daemon is not available
         return None
     finally:
         if sock:

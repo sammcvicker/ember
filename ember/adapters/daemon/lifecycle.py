@@ -193,7 +193,8 @@ class DaemonLifecycle:
         try:
             stderr_bytes = process.stderr.read()
             return stderr_bytes.decode("utf-8", errors="replace").strip()
-        except Exception:
+        except OSError:
+            # I/O errors reading from process stderr (pipe closed, etc.)
             logger.debug("Failed to read stderr from process")
             return ""
 

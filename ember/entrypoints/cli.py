@@ -1247,7 +1247,8 @@ def _get_local_config_path() -> Path | None:
     try:
         _, ember_dir = get_ember_repo_root()
         return ember_dir / "config.toml"
-    except Exception:
+    except EmberCliError:
+        # Not in an ember repository
         return None
 
 
@@ -1415,8 +1416,8 @@ def config_path(show_global: bool, show_local: bool) -> None:
         try:
             _, ember_dir = get_ember_repo_root()
             click.echo(ember_dir / "config.toml")
-        except Exception:
-            # Exit silently with no output if not in repo
+        except EmberCliError:
+            # Not in an ember repository, exit silently with no output
             pass
         return
 
@@ -1425,7 +1426,8 @@ def config_path(show_global: bool, show_local: bool) -> None:
     try:
         _, ember_dir = get_ember_repo_root()
         click.echo(f"local:{ember_dir / 'config.toml'}")
-    except Exception:
+    except EmberCliError:
+        # Not in an ember repository, only show global config
         pass
 
 

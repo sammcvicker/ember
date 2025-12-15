@@ -449,7 +449,8 @@ def ensure_daemon_with_progress(
         # No progress, just start
         try:
             return daemon_manager.ensure_running()
-        except Exception:
+        except (OSError, RuntimeError):
+            # OS-level errors or daemon startup failures
             return False
 
     # Show progress during startup

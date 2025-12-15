@@ -6,6 +6,7 @@ from unittest.mock import patch
 import pytest
 from click.testing import CliRunner
 
+from ember.core.cli_utils import EmberCliError
 from ember.entrypoints.cli import cli
 
 
@@ -34,7 +35,7 @@ class TestConfigShow:
         """Test showing local config when not in a repository."""
         with patch(
             "ember.entrypoints.cli.get_ember_repo_root",
-            side_effect=RuntimeError("Not in repo"),
+            side_effect=EmberCliError("Not in repo"),
         ):
             result = runner.invoke(cli, ["config", "show", "--local"], obj={})
 
@@ -70,7 +71,7 @@ class TestConfigShow:
             return_value=global_config,
         ), patch(
             "ember.entrypoints.cli.get_ember_repo_root",
-            side_effect=RuntimeError("Not in repo"),
+            side_effect=EmberCliError("Not in repo"),
         ):
             result = runner.invoke(cli, ["config", "show", "--global"], obj={})
 
@@ -86,7 +87,7 @@ class TestConfigShow:
             return_value=global_config,
         ), patch(
             "ember.entrypoints.cli.get_ember_repo_root",
-            side_effect=RuntimeError("Not in repo"),
+            side_effect=EmberCliError("Not in repo"),
         ):
             result = runner.invoke(cli, ["config", "show", "--global"], obj={})
 
@@ -174,7 +175,7 @@ class TestConfigShow:
             return_value=global_config,
         ), patch(
             "ember.entrypoints.cli.get_ember_repo_root",
-            side_effect=RuntimeError("Not in repo"),
+            side_effect=EmberCliError("Not in repo"),
         ), patch(
             "ember.shared.config_io.load_config",
             return_value=mock_config,
