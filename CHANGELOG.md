@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Improves performance on large files with 100+ definitions
 
 ### Changed
+- **Extracted search dependency setup to shared function** (#297)
+  - Created `_create_search_usecase()` helper to centralize SearchUseCase initialization
+  - Reduces code duplication between `find` and `search` commands
+  - Makes maintenance easier and ensures consistent initialization
+
 - **Batch inserts for sqlite-vec vector sync** (#296)
   - Refactored `_sync_vectors()` to use `executemany()` for batch operations
   - Reduced SQL operations from 2N+1 to 4 for N vectors (2 executemany + 1 select + 1 commit)
