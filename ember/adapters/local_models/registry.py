@@ -92,6 +92,63 @@ def resolve_model_name(model_name: str) -> str:
     )
 
 
+def _build_embedder_kwargs(
+    batch_size: int,
+    device: str | None,
+    max_seq_length: int | None,
+) -> dict:
+    """Build kwargs dict for embedder constructor.
+
+    Only includes optional parameters when they are not None.
+
+    Args:
+        batch_size: Batch size for encoding (always included)
+        device: Device to run on (included if not None)
+        max_seq_length: Maximum sequence length (included if not None)
+
+    Returns:
+        Dictionary of kwargs to pass to embedder constructor
+    """
+    kwargs: dict = {"batch_size": batch_size}
+    if device is not None:
+        kwargs["device"] = device
+    if max_seq_length is not None:
+        kwargs["max_seq_length"] = max_seq_length
+    return kwargs
+
+
+def _get_embedder_class(model_id: str) -> type:
+    """Get the embedder class for a model ID.
+
+    Uses late imports to avoid loading all embedder dependencies upfront.
+
+    Args:
+        model_id: Canonical HuggingFace model ID
+
+    Returns:
+        Embedder class (not instance)
+
+    Raises:
+        ValueError: If no embedder implementation exists for the model
+    """
+    if model_id == "jinaai/jina-embeddings-v2-base-code":
+        from ember.adapters.local_models.jina_embedder import JinaCodeEmbedder
+
+        return JinaCodeEmbedder
+
+    if model_id == "sentence-transformers/all-MiniLM-L6-v2":
+        from ember.adapters.local_models.minilm_embedder import MiniLMEmbedder
+
+        return MiniLMEmbedder
+
+    if model_id == "BAAI/bge-small-en-v1.5":
+        from ember.adapters.local_models.bge_embedder import BGESmallEmbedder
+
+        return BGESmallEmbedder
+
+    raise ValueError(f"No embedder implementation for model: {model_id}")
+
+
 def create_embedder(
     model_name: str | None = None,
     max_seq_length: int | None = None,
@@ -112,43 +169,10 @@ def create_embedder(
     Raises:
         ValueError: If model name is not recognized
     """
-    # Resolve to canonical model ID
     resolved = DEFAULT_MODEL if model_name is None else resolve_model_name(model_name)
-
-    # Create the appropriate embedder
-    if resolved == "jinaai/jina-embeddings-v2-base-code":
-        from ember.adapters.local_models.jina_embedder import JinaCodeEmbedder
-
-        kwargs: dict = {"batch_size": batch_size}
-        if device is not None:
-            kwargs["device"] = device
-        if max_seq_length is not None:
-            kwargs["max_seq_length"] = max_seq_length
-        return JinaCodeEmbedder(**kwargs)
-
-    elif resolved == "sentence-transformers/all-MiniLM-L6-v2":
-        from ember.adapters.local_models.minilm_embedder import MiniLMEmbedder
-
-        kwargs = {"batch_size": batch_size}
-        if device is not None:
-            kwargs["device"] = device
-        if max_seq_length is not None:
-            kwargs["max_seq_length"] = max_seq_length
-        return MiniLMEmbedder(**kwargs)
-
-    elif resolved == "BAAI/bge-small-en-v1.5":
-        from ember.adapters.local_models.bge_embedder import BGESmallEmbedder
-
-        kwargs = {"batch_size": batch_size}
-        if device is not None:
-            kwargs["device"] = device
-        if max_seq_length is not None:
-            kwargs["max_seq_length"] = max_seq_length
-        return BGESmallEmbedder(**kwargs)
-
-    else:
-        # This shouldn't happen if resolve_model_name works correctly
-        raise ValueError(f"No embedder implementation for model: {resolved}")
+    embedder_class = _get_embedder_class(resolved)
+    kwargs = _build_embedder_kwargs(batch_size, device, max_seq_length)
+    return embedder_class(**kwargs)
 
 
 def get_model_info(model_name: str) -> dict:
