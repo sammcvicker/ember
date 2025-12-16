@@ -1,10 +1,18 @@
 """Tests for domain entities."""
 
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
-from ember.domain.entities import Chunk, Query, SearchResult, SearchResultSet
+from ember.domain.entities import (
+    Chunk,
+    Query,
+    RepoState,
+    SearchResult,
+    SearchResultSet,
+    SyncMode,
+)
 
 
 def test_chunk_compute_content_hash():
@@ -289,3 +297,272 @@ class TestSearchResultSet:
             requested_count=10,
         )
         assert len(result_set) == 3
+
+
+# =============================================================================
+# SyncMode enum tests (#271)
+# =============================================================================
+
+
+class TestSyncMode:
+    """Tests for SyncMode enum."""
+
+    def test_sync_mode_values(self):
+        """Test SyncMode enum has expected values."""
+        assert SyncMode.NONE == "none"
+        assert SyncMode.WORKTREE == "worktree"
+        assert SyncMode.STAGED == "staged"
+
+    def test_sync_mode_from_string(self):
+        """Test creating SyncMode from string value."""
+        assert SyncMode("none") == SyncMode.NONE
+        assert SyncMode("worktree") == SyncMode.WORKTREE
+        assert SyncMode("staged") == SyncMode.STAGED
+
+    def test_sync_mode_invalid_string_raises_error(self):
+        """Test that invalid string raises ValueError."""
+        with pytest.raises(ValueError):
+            SyncMode("invalid")
+
+    def test_sync_mode_is_string_compatible(self):
+        """Test SyncMode can be used as string."""
+        mode = SyncMode.WORKTREE
+        # Direct comparison works because SyncMode inherits from str
+        assert mode == "worktree"
+        # .value gives the underlying string
+        assert mode.value == "worktree"
+
+    def test_sync_mode_is_commit_sha(self):
+        """Test is_commit_sha method for known modes."""
+        assert not SyncMode.is_commit_sha("none")
+        assert not SyncMode.is_commit_sha("worktree")
+        assert not SyncMode.is_commit_sha("staged")
+        # Valid commit SHAs
+        assert SyncMode.is_commit_sha("abc123def456789012345678901234567890abcd")
+        assert SyncMode.is_commit_sha("a" * 40)
+        # Short SHAs (7-39 chars) are also valid
+        assert SyncMode.is_commit_sha("abc1234")
+        # Invalid SHAs
+        assert not SyncMode.is_commit_sha("abc")  # Too short
+        assert not SyncMode.is_commit_sha("xyz123!")  # Invalid chars
+
+
+# =============================================================================
+# RepoState validation tests (#271)
+# =============================================================================
+
+
+class TestRepoStateValidation:
+    """Tests for RepoState entity validation."""
+
+    def test_repo_state_valid_creation_with_sync_mode_enum(self):
+        """Test creating a valid RepoState with SyncMode enum."""
+        now = datetime.now(UTC).isoformat()
+        state = RepoState(
+            last_tree_sha="a" * 40,
+            last_sync_mode=SyncMode.WORKTREE,
+            model_fingerprint="jina-v2-code",
+            version="1.0.0",
+            indexed_at=now,
+        )
+        assert state.last_sync_mode == SyncMode.WORKTREE
+        assert state.last_tree_sha == "a" * 40
+
+    def test_repo_state_valid_creation_with_string_sync_mode(self):
+        """Test creating RepoState with string sync mode (backward compat)."""
+        now = datetime.now(UTC).isoformat()
+        state = RepoState(
+            last_tree_sha="a" * 40,
+            last_sync_mode="worktree",
+            model_fingerprint="jina-v2-code",
+            version="1.0.0",
+            indexed_at=now,
+        )
+        # Should auto-convert to SyncMode enum
+        assert state.last_sync_mode == SyncMode.WORKTREE
+
+    def test_repo_state_accepts_commit_sha_as_sync_mode(self):
+        """Test that commit SHA is accepted as sync mode."""
+        now = datetime.now(UTC).isoformat()
+        commit_sha = "abc123def456789012345678901234567890abcd"
+        state = RepoState(
+            last_tree_sha="b" * 40,
+            last_sync_mode=commit_sha,
+            model_fingerprint="jina-v2-code",
+            version="1.0.0",
+            indexed_at=now,
+        )
+        assert state.last_sync_mode == commit_sha
+
+    def test_repo_state_empty_tree_sha_valid_for_uninitialized(self):
+        """Test that empty tree_sha is valid (uninitialized state)."""
+        now = datetime.now(UTC).isoformat()
+        state = RepoState(
+            last_tree_sha="",
+            last_sync_mode=SyncMode.NONE,
+            model_fingerprint="",
+            version="1.0.0",
+            indexed_at=now,
+        )
+        assert state.last_tree_sha == ""
+        assert state.is_uninitialized
+
+    def test_repo_state_invalid_tree_sha_format_raises_error(self):
+        """Test that malformed tree_sha raises ValueError."""
+        now = datetime.now(UTC).isoformat()
+        with pytest.raises(ValueError, match="tree_sha must be empty or a valid"):
+            RepoState(
+                last_tree_sha="not-a-valid-sha",
+                last_sync_mode=SyncMode.WORKTREE,
+                model_fingerprint="jina-v2-code",
+                version="1.0.0",
+                indexed_at=now,
+            )
+
+    def test_repo_state_tree_sha_wrong_length_raises_error(self):
+        """Test that tree_sha with wrong length raises ValueError."""
+        now = datetime.now(UTC).isoformat()
+        with pytest.raises(ValueError, match="tree_sha must be empty or a valid"):
+            RepoState(
+                last_tree_sha="abc123",  # Too short (not 40 chars)
+                last_sync_mode=SyncMode.WORKTREE,
+                model_fingerprint="jina-v2-code",
+                version="1.0.0",
+                indexed_at=now,
+            )
+
+    def test_repo_state_invalid_sync_mode_raises_error(self):
+        """Test that invalid sync mode raises ValueError."""
+        now = datetime.now(UTC).isoformat()
+        with pytest.raises(ValueError, match="sync_mode must be"):
+            RepoState(
+                last_tree_sha="a" * 40,
+                last_sync_mode="invalid_mode",
+                model_fingerprint="jina-v2-code",
+                version="1.0.0",
+                indexed_at=now,
+            )
+
+    def test_repo_state_empty_version_raises_error(self):
+        """Test that empty version raises ValueError."""
+        now = datetime.now(UTC).isoformat()
+        with pytest.raises(ValueError, match="version cannot be empty"):
+            RepoState(
+                last_tree_sha="a" * 40,
+                last_sync_mode=SyncMode.WORKTREE,
+                model_fingerprint="jina-v2-code",
+                version="",
+                indexed_at=now,
+            )
+
+    def test_repo_state_invalid_timestamp_raises_error(self):
+        """Test that invalid ISO-8601 timestamp raises ValueError."""
+        with pytest.raises(ValueError, match="indexed_at must be a valid ISO-8601"):
+            RepoState(
+                last_tree_sha="a" * 40,
+                last_sync_mode=SyncMode.WORKTREE,
+                model_fingerprint="jina-v2-code",
+                version="1.0.0",
+                indexed_at="not-a-timestamp",
+            )
+
+    def test_repo_state_valid_timestamps(self):
+        """Test various valid ISO-8601 timestamp formats."""
+        tree_sha = "a" * 40
+        # With timezone
+        state = RepoState(
+            last_tree_sha=tree_sha,
+            last_sync_mode=SyncMode.WORKTREE,
+            model_fingerprint="model",
+            version="1.0.0",
+            indexed_at="2025-01-15T10:30:00+00:00",
+        )
+        assert state.indexed_at == "2025-01-15T10:30:00+00:00"
+
+        # With Z suffix
+        state = RepoState(
+            last_tree_sha=tree_sha,
+            last_sync_mode=SyncMode.WORKTREE,
+            model_fingerprint="model",
+            version="1.0.0",
+            indexed_at="2025-01-15T10:30:00Z",
+        )
+        assert state.indexed_at == "2025-01-15T10:30:00Z"
+
+
+# =============================================================================
+# RepoState helper method tests (#271)
+# =============================================================================
+
+
+class TestRepoStateHelperMethods:
+    """Tests for RepoState helper methods."""
+
+    @pytest.fixture
+    def initialized_state(self) -> RepoState:
+        """Create an initialized RepoState for testing."""
+        return RepoState(
+            last_tree_sha="a" * 40,
+            last_sync_mode=SyncMode.WORKTREE,
+            model_fingerprint="jina-v2-code",
+            version="1.0.0",
+            indexed_at=datetime.now(UTC).isoformat(),
+        )
+
+    @pytest.fixture
+    def uninitialized_state(self) -> RepoState:
+        """Create an uninitialized RepoState for testing."""
+        return RepoState(
+            last_tree_sha="",
+            last_sync_mode=SyncMode.NONE,
+            model_fingerprint="",
+            version="1.0.0",
+            indexed_at=datetime.now(UTC).isoformat(),
+        )
+
+    def test_is_uninitialized_true_when_no_tree_sha(self, uninitialized_state):
+        """Test is_uninitialized returns True when tree_sha is empty."""
+        assert uninitialized_state.is_uninitialized
+
+    def test_is_uninitialized_false_when_has_tree_sha(self, initialized_state):
+        """Test is_uninitialized returns False when tree_sha is set."""
+        assert not initialized_state.is_uninitialized
+
+    def test_is_stale_returns_true_when_old(self):
+        """Test is_stale returns True when index is older than threshold."""
+        old_time = (datetime.now(UTC) - timedelta(hours=2)).isoformat()
+        state = RepoState(
+            last_tree_sha="a" * 40,
+            last_sync_mode=SyncMode.WORKTREE,
+            model_fingerprint="jina-v2-code",
+            version="1.0.0",
+            indexed_at=old_time,
+        )
+        # 1 hour threshold = 3600 seconds
+        assert state.is_stale(threshold_seconds=3600)
+
+    def test_is_stale_returns_false_when_fresh(self, initialized_state):
+        """Test is_stale returns False when index is newer than threshold."""
+        # Default fixture uses current time, should not be stale
+        assert not initialized_state.is_stale(threshold_seconds=3600)
+
+    def test_is_stale_with_zero_threshold(self, initialized_state):
+        """Test is_stale with zero threshold (any age is stale)."""
+        # Even very recent state should be considered stale with 0 threshold
+        # after any time passes
+        import time
+
+        time.sleep(0.01)  # Ensure some time passes
+        assert initialized_state.is_stale(threshold_seconds=0)
+
+    def test_needs_model_update_true_when_different(self, initialized_state):
+        """Test needs_model_update returns True when fingerprints differ."""
+        assert initialized_state.needs_model_update("different-model")
+
+    def test_needs_model_update_false_when_same(self, initialized_state):
+        """Test needs_model_update returns False when fingerprints match."""
+        assert not initialized_state.needs_model_update("jina-v2-code")
+
+    def test_needs_model_update_true_when_empty_fingerprint(self, uninitialized_state):
+        """Test needs_model_update returns True when current fingerprint is empty."""
+        assert uninitialized_state.needs_model_update("any-model")
