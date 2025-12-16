@@ -70,6 +70,23 @@ class TestIndexConfigValidation:
         with pytest.raises(ValueError, match="overlap_lines.*must be less than.*line_window"):
             IndexConfig(line_window=100, overlap_lines=150)
 
+    def test_index_config_stride_exceeds_window_raises_error(self):
+        """Test that line_stride > line_window raises ValueError."""
+        with pytest.raises(ValueError, match="line_stride.*cannot exceed.*line_window"):
+            IndexConfig(line_window=100, line_stride=150)
+
+    def test_index_config_stride_equals_window_valid(self):
+        """Test that line_stride == line_window is valid (no overlap)."""
+        config = IndexConfig(line_window=100, line_stride=100, overlap_lines=0)
+        assert config.line_stride == 100
+        assert config.line_window == 100
+
+    def test_index_config_stride_less_than_window_valid(self):
+        """Test that line_stride < line_window is valid (with overlap)."""
+        config = IndexConfig(line_window=100, line_stride=80)
+        assert config.line_stride == 80
+        assert config.line_window == 100
+
 
 # =============================================================================
 # SearchConfig validation tests

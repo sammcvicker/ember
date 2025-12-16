@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Added stride/window validation to IndexConfig** (#294)
+  - `IndexConfig` now validates that `line_stride` cannot exceed `line_window`
+  - Invalid configurations rejected at config load time with clear error message
+  - Prevents degraded chunking behavior (single-chunk-per-file) from unintended config
+
 ### Fixed
 - **Thread-safe SQLite connection initialization** (#292)
   - Added double-checked locking pattern to `_get_connection()` in all SQLite adapters
