@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Batch inserts for sqlite-vec vector sync** (#296)
+  - Refactored `_sync_vectors()` to use `executemany()` for batch operations
+  - Reduced SQL operations from 2N+1 to 4 for N vectors (2 executemany + 1 select + 1 commit)
+  - Fewer Python interpreter round-trips to SQLite
+  - Atomic batch commits for better reliability
+
 - **Added stride/window validation to IndexConfig** (#294)
   - `IndexConfig` now validates that `line_stride` cannot exceed `line_window`
   - Invalid configurations rejected at config load time with clear error message
