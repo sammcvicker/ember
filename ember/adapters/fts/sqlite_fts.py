@@ -1,6 +1,7 @@
 """SQLite FTS5 adapter implementing TextSearch protocol for full-text search."""
 
 import sqlite3
+import threading
 from pathlib import Path
 
 
@@ -20,6 +21,7 @@ class SQLiteFTS:
         """
         self.db_path = db_path
         self._conn: sqlite3.Connection | None = None
+        self._conn_lock = threading.Lock()
 
     def _get_connection(self) -> sqlite3.Connection:
         """Get a database connection.
@@ -28,11 +30,17 @@ class SQLiteFTS:
         Uses check_same_thread=False to allow use from different threads, which
         is required for interactive search where queries run in a thread executor.
 
+        Thread-safe: Uses double-checked locking to prevent race conditions
+        where multiple threads could create separate connections simultaneously.
+
         Returns:
             SQLite connection object.
         """
         if self._conn is None:
-            self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
+            with self._conn_lock:
+                # Double-check pattern: re-check after acquiring lock
+                if self._conn is None:
+                    self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
         return self._conn
 
     def close(self) -> None:

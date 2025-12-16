@@ -184,3 +184,83 @@ class TestInteractiveSearchThreadSafety:
         results = asyncio.run(run_async_search())
 
         assert isinstance(results, list)
+
+
+class TestConnectionInitializationRaceCondition:
+    """Test that connection initialization is thread-safe.
+
+    Issue #292: Multiple threads calling _get_connection() simultaneously
+    could both create new connections due to lack of synchronization.
+    """
+
+    def test_chunk_repository_concurrent_init(self, db_path: Path) -> None:
+        """Test that concurrent _get_connection calls don't create duplicate connections.
+
+        Multiple threads hammering _get_connection() should all get the same
+        connection object, not create separate ones.
+        """
+        repo = SQLiteChunkRepository(db_path)
+        connections_seen: list[int] = []
+
+        def get_connection_id() -> int:
+            conn = repo._get_connection()
+            return id(conn)
+
+        # Run many concurrent calls to _get_connection
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(get_connection_id) for _ in range(50)]
+            for future in concurrent.futures.as_completed(futures):
+                connections_seen.append(future.result(timeout=5.0))
+
+        # All threads should have received the same connection object
+        unique_connections = set(connections_seen)
+        assert len(unique_connections) == 1, (
+            f"Expected 1 connection but got {len(unique_connections)} different connections. "
+            "This indicates a race condition in _get_connection()."
+        )
+
+        repo.close()
+
+    def test_fts_concurrent_init(self, db_path: Path) -> None:
+        """Test that concurrent FTS _get_connection calls don't create duplicates."""
+        fts = SQLiteFTS(db_path)
+        connections_seen: list[int] = []
+
+        def get_connection_id() -> int:
+            conn = fts._get_connection()
+            return id(conn)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(get_connection_id) for _ in range(50)]
+            for future in concurrent.futures.as_completed(futures):
+                connections_seen.append(future.result(timeout=5.0))
+
+        unique_connections = set(connections_seen)
+        assert len(unique_connections) == 1, (
+            f"Expected 1 connection but got {len(unique_connections)} different connections. "
+            "This indicates a race condition in _get_connection()."
+        )
+
+        fts.close()
+
+    def test_vec_adapter_concurrent_init(self, db_path: Path) -> None:
+        """Test that concurrent vec adapter _get_connection calls don't create duplicates."""
+        vec = SqliteVecAdapter(db_path)
+        connections_seen: list[int] = []
+
+        def get_connection_id() -> int:
+            conn = vec._get_connection()
+            return id(conn)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(get_connection_id) for _ in range(50)]
+            for future in concurrent.futures.as_completed(futures):
+                connections_seen.append(future.result(timeout=5.0))
+
+        unique_connections = set(connections_seen)
+        assert len(unique_connections) == 1, (
+            f"Expected 1 connection but got {len(unique_connections)} different connections. "
+            "This indicates a race condition in _get_connection()."
+        )
+
+        vec.close()

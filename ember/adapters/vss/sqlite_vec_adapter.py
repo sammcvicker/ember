@@ -8,6 +8,7 @@ especially for larger datasets.
 import re
 import sqlite3
 import struct
+import threading
 from pathlib import Path
 
 import sqlite_vec
@@ -50,6 +51,7 @@ class SqliteVecAdapter:
         self.db_path = db_path
         self.vector_dim = vector_dim
         self._conn: sqlite3.Connection | None = None
+        self._conn_lock = threading.Lock()
         self._ensure_vec_table()
 
     def close(self) -> None:
@@ -75,14 +77,20 @@ class SqliteVecAdapter:
         Uses check_same_thread=False to allow use from different threads, which
         is required for interactive search where queries run in a thread executor.
 
+        Thread-safe: Uses double-checked locking to prevent race conditions
+        where multiple threads could create separate connections simultaneously.
+
         Returns:
             SQLite connection object with vec extension enabled.
         """
         if self._conn is None:
-            self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
-            self._conn.enable_load_extension(True)
-            sqlite_vec.load(self._conn)
-            self._conn.enable_load_extension(False)
+            with self._conn_lock:
+                # Double-check pattern: re-check after acquiring lock
+                if self._conn is None:
+                    self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
+                    self._conn.enable_load_extension(True)
+                    sqlite_vec.load(self._conn)
+                    self._conn.enable_load_extension(False)
         return self._conn
 
     def _ensure_vec_table(self) -> None:

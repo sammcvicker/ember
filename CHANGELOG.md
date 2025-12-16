@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Thread-safe SQLite connection initialization** (#292)
+  - Added double-checked locking pattern to `_get_connection()` in all SQLite adapters
+  - Prevents race condition where multiple threads could create separate connections
+  - Affected adapters: `SQLiteChunkRepository`, `SQLiteFTS`, `SqliteVecAdapter`
+  - Added integration tests to verify thread-safe connection initialization
+
 ### Added
 - **Buffer size limit for daemon protocol** (#291)
   - Added `MAX_MESSAGE_SIZE` constant (10MB default) to prevent memory exhaustion
