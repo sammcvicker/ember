@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Buffer size limit for daemon protocol** (#291)
+  - Added `MAX_MESSAGE_SIZE` constant (10MB default) to prevent memory exhaustion
+  - Added `max_size` parameter to `receive_message()` function
+  - Raises `ProtocolError` with clear message when buffer exceeds limit
+  - Protects daemon from malformed or malicious clients sending unbounded data
+
 ### Changed
 - **Reduced `init()` command complexity from 16 to 3** (#290)
   - Extracted `_select_embedding_model()` helper for model selection logic

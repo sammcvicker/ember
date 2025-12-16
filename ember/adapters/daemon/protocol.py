@@ -9,6 +9,9 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# Maximum message size in bytes (10MB default)
+MAX_MESSAGE_SIZE = 10 * 1024 * 1024
+
 
 class ProtocolError(Exception):
     """Base exception for protocol errors."""
@@ -151,7 +154,11 @@ def send_message(sock, message: Request | Response) -> None:
         raise ProtocolError(f"Failed to send message: {e}") from e
 
 
-def receive_message(sock, message_type: type[Request] | type[Response]) -> Request | Response:
+def receive_message(
+    sock,
+    message_type: type[Request] | type[Response],
+    max_size: int = MAX_MESSAGE_SIZE,
+) -> Request | Response:
     """Receive a message from a socket.
 
     This function reads newline-delimited messages from a socket. It expects
@@ -162,12 +169,13 @@ def receive_message(sock, message_type: type[Request] | type[Response]) -> Reque
     Args:
         sock: Socket to receive from
         message_type: Type of message to expect (Request or Response)
+        max_size: Maximum message size in bytes (default 10MB)
 
     Returns:
         Received message
 
     Raises:
-        ProtocolError: If receive fails or message is invalid
+        ProtocolError: If receive fails, message is invalid, or exceeds size limit
     """
     try:
         # Read until newline (use larger buffer to reduce recv() calls)
@@ -177,6 +185,8 @@ def receive_message(sock, message_type: type[Request] | type[Response]) -> Reque
             if not chunk:
                 raise ProtocolError("Connection closed")
             buffer += chunk
+            if len(buffer) > max_size:
+                raise ProtocolError(f"Message exceeds {max_size} bytes limit")
 
         # Parse first complete message
         parts = buffer.split(b"\n", 1)
