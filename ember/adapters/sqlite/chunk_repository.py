@@ -1,6 +1,7 @@
 """SQLite adapter implementing ChunkRepository protocol for chunk storage."""
 
 import sqlite3
+import threading
 import time
 from pathlib import Path
 
@@ -19,6 +20,7 @@ class SQLiteChunkRepository:
         """
         self.db_path = db_path
         self._conn: sqlite3.Connection | None = None
+        self._conn_lock = threading.Lock()
 
         # Run any pending migrations
         if db_path.exists():
@@ -31,12 +33,18 @@ class SQLiteChunkRepository:
         Uses check_same_thread=False to allow use from different threads, which
         is required for interactive search where queries run in a thread executor.
 
+        Thread-safe: Uses double-checked locking to prevent race conditions
+        where multiple threads could create separate connections simultaneously.
+
         Returns:
             SQLite connection object.
         """
         if self._conn is None:
-            self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
-            self._conn.execute("PRAGMA foreign_keys = ON")
+            with self._conn_lock:
+                # Double-check pattern: re-check after acquiring lock
+                if self._conn is None:
+                    self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
+                    self._conn.execute("PRAGMA foreign_keys = ON")
         return self._conn
 
     def close(self) -> None:
