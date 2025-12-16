@@ -136,6 +136,10 @@ class SqliteVecAdapter:
         This is called to populate vec_chunks with all vectors from the
         existing vectors table. New vectors added via VectorRepository will
         be picked up on the next sync.
+
+        Uses batch inserts with executemany() for significantly better performance
+        when syncing large numbers of vectors. For 1000 vectors, this reduces
+        database calls from 2000 individual executes to 2 batch operations.
         """
         conn = self._get_connection()
         cursor = conn.cursor()
@@ -178,24 +182,47 @@ class SqliteVecAdapter:
 
             vectors_to_add.append((vector, project_id, path, start_line, end_line, chunk_db_id))
 
-        # Batch insert new vectors
-        for vector, project_id, path, start_line, end_line, chunk_db_id in vectors_to_add:
-            # Insert into vec_chunks (serialize to float32 for sqlite-vec)
-            serialized_vector = sqlite_vec.serialize_float32(vector)
-            cursor.execute("INSERT INTO vec_chunks(embedding) VALUES (?)", (serialized_vector,))
-            vec_rowid = cursor.lastrowid
+        if not vectors_to_add:
+            return
 
-            # Insert mapping
-            cursor.execute(
-                """
-                INSERT INTO vec_chunk_mapping(vec_rowid, project_id, path, start_line, end_line, chunk_db_id)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """,
-                (vec_rowid, project_id, path, start_line, end_line, chunk_db_id),
+        # Get the current max rowid to calculate new rowids after batch insert
+        cursor.execute("SELECT COALESCE(MAX(rowid), 0) FROM vec_chunks")
+        base_rowid = cursor.fetchone()[0]
+
+        # Batch insert vectors using executemany()
+        # Serialize all vectors first
+        vec_data = [
+            (sqlite_vec.serialize_float32(vector),)
+            for vector, *_ in vectors_to_add
+        ]
+        cursor.executemany("INSERT INTO vec_chunks(embedding) VALUES (?)", vec_data)
+
+        # Build mapping data with calculated rowids
+        # SQLite AUTOINCREMENT guarantees sequential rowids for batch inserts
+        mapping_data = [
+            (
+                base_rowid + i + 1,  # vec_rowid (1-indexed from base)
+                project_id,
+                path,
+                start_line,
+                end_line,
+                chunk_db_id,
             )
+            for i, (_, project_id, path, start_line, end_line, chunk_db_id) in enumerate(
+                vectors_to_add
+            )
+        ]
 
-        if vectors_to_add:
-            conn.commit()
+        # Batch insert mappings
+        cursor.executemany(
+            """
+            INSERT INTO vec_chunk_mapping(vec_rowid, project_id, path, start_line, end_line, chunk_db_id)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            mapping_data,
+        )
+
+        conn.commit()
 
     def _encode_vector(self, vector: list[float]) -> bytes:
         """Encode a vector to binary format for sqlite-vec.
