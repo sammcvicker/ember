@@ -74,12 +74,12 @@ class SearchUseCase:
         # Pass path_filter to filter during SQL query (not after)
         retrieval_pool = max(query.topk * 5, 100)
         fts_results = self.text_search.query(
-            query.text, topk=retrieval_pool, path_filter=query.path_filter
+            query.text, topk=retrieval_pool, path_filter=query.path_filter_str
         )
 
         # 3. Get vector search results
         vector_results = self.vector_search.query(
-            query_embedding, topk=retrieval_pool, path_filter=query.path_filter
+            query_embedding, topk=retrieval_pool, path_filter=query.path_filter_str
         )
 
         # 4. Fuse results using Reciprocal Rank Fusion
@@ -97,8 +97,8 @@ class SearchUseCase:
         # 7. Apply filters if specified
         filtered_chunks = self._apply_filters(
             retrieval.chunks,
-            path_filter=query.path_filter,
-            lang_filter=query.lang_filter,
+            path_filter=query.path_filter_str,
+            lang_filter=query.lang_filter_str,
         )
 
         # 8. Create SearchResult objects with scores

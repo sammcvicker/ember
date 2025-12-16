@@ -6,11 +6,16 @@ These are pure Python dataclasses with no dependencies on infrastructure.
 
 import re
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 
 import blake3
+
+from ember.domain.value_objects import (
+    ISO8601Timestamp,
+    LanguageFilter,
+    PathFilter,
+)
 
 
 class SyncMode(str, Enum):
@@ -138,6 +143,8 @@ class RepoState:
         model_fingerprint: Fingerprint of embedding model used.
         version: Ember version that created the index.
         indexed_at: ISO-8601 timestamp of last indexing.
+            Accepts either a string (validated and converted to ISO8601Timestamp)
+            or an ISO8601Timestamp instance.
 
     Raises:
         ValueError: If any field fails validation (invalid SHA format,
@@ -148,16 +155,10 @@ class RepoState:
     last_sync_mode: str | SyncMode
     model_fingerprint: str
     version: str
-    indexed_at: str
+    indexed_at: ISO8601Timestamp | str
 
     # Regex for validating git SHA (40 hex characters)
     _SHA_PATTERN = re.compile(r"^[a-f0-9]{40}$")
-    # Regex for basic ISO-8601 datetime validation
-    _ISO8601_PATTERN = re.compile(
-        r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}"  # Basic datetime
-        r"(?:\.\d+)?"  # Optional fractional seconds
-        r"(?:Z|[+-]\d{2}:\d{2})?"  # Optional timezone
-    )
 
     def __post_init__(self) -> None:
         """Validate RepoState fields after initialization."""
@@ -192,11 +193,10 @@ class RepoState:
         if not self.version:
             raise ValueError("version cannot be empty")
 
-        # Validate indexed_at is a valid ISO-8601 timestamp
-        if not self._ISO8601_PATTERN.match(self.indexed_at):
-            raise ValueError(
-                f"indexed_at must be a valid ISO-8601 timestamp, "
-                f"got: {self.indexed_at!r}"
+        # Validate and convert indexed_at to ISO8601Timestamp
+        if not isinstance(self.indexed_at, ISO8601Timestamp):
+            object.__setattr__(
+                self, "indexed_at", ISO8601Timestamp.from_string(self.indexed_at)
             )
 
     @property
@@ -208,6 +208,11 @@ class RepoState:
         """
         return not self.last_tree_sha
 
+    @property
+    def indexed_at_str(self) -> str:
+        """Get indexed_at as string for serialization."""
+        return str(self.indexed_at)
+
     def is_stale(self, threshold_seconds: int) -> bool:
         """Check if the index is older than a threshold.
 
@@ -217,23 +222,8 @@ class RepoState:
         Returns:
             True if the index is older than threshold_seconds.
         """
-        # Parse the ISO-8601 timestamp
-        # Handle both 'Z' suffix and explicit offset
-        timestamp_str = self.indexed_at
-        if timestamp_str.endswith("Z"):
-            timestamp_str = timestamp_str[:-1] + "+00:00"
-
-        try:
-            indexed_time = datetime.fromisoformat(timestamp_str)
-            # Ensure timezone-aware comparison
-            if indexed_time.tzinfo is None:
-                indexed_time = indexed_time.replace(tzinfo=UTC)
-            now = datetime.now(UTC)
-            age_seconds = (now - indexed_time).total_seconds()
-            return age_seconds > threshold_seconds
-        except ValueError:
-            # If we can't parse the timestamp, consider it stale
-            return True
+        # Use the pre-parsed timestamp from ISO8601Timestamp
+        return self.indexed_at.is_older_than(threshold_seconds)
 
     def needs_model_update(self, current_model_fingerprint: str) -> bool:
         """Check if the index needs updating due to model change.
@@ -255,17 +245,21 @@ class Query:
         text: Query text.
         topk: Maximum number of results to return.
         path_filter: Optional glob pattern to filter by file path.
+            Accepts either a string (validated and converted to PathFilter)
+            or a PathFilter instance.
         lang_filter: Optional language code to filter by.
+            Accepts either a string (validated and converted to LanguageFilter)
+            or a LanguageFilter instance.
         json_output: Whether to output JSON instead of human-readable text.
 
     Raises:
-        ValueError: If text is empty or topk is not positive.
+        ValueError: If text is empty, topk is not positive, or filters are invalid.
     """
 
     text: str
     topk: int = 20
-    path_filter: str | None = None
-    lang_filter: str | None = None
+    path_filter: PathFilter | str | None = None
+    lang_filter: LanguageFilter | str | None = None
     json_output: bool = False
 
     def __post_init__(self) -> None:
@@ -274,6 +268,28 @@ class Query:
             raise ValueError("Query text cannot be empty")
         if self.topk <= 0:
             raise ValueError(f"topk must be positive, got {self.topk}")
+
+        # Validate and convert path_filter
+        if self.path_filter is not None and not isinstance(self.path_filter, PathFilter):
+            object.__setattr__(self, "path_filter", PathFilter(self.path_filter))
+
+        # Validate and convert lang_filter
+        if self.lang_filter is not None and not isinstance(self.lang_filter, LanguageFilter):
+            object.__setattr__(self, "lang_filter", LanguageFilter(self.lang_filter))
+
+    @property
+    def path_filter_str(self) -> str | None:
+        """Get path filter as string for use in queries."""
+        if self.path_filter is None:
+            return None
+        return str(self.path_filter)
+
+    @property
+    def lang_filter_str(self) -> str | None:
+        """Get language filter as string for use in queries."""
+        if self.lang_filter is None:
+            return None
+        return str(self.lang_filter)
 
 
 @dataclass

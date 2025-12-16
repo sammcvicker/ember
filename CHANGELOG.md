@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added integration tests to verify thread-safe connection initialization
 
 ### Added
+- **Value objects for domain validation** (#293)
+  - Added `PathFilter` with glob pattern validation at construction
+  - Added `LanguageFilter` with validation against supported languages
+  - Added `ISO8601Timestamp` with parse-once, cached datetime value
+  - Updated `Query` to validate path and language filters
+  - Updated `RepoState` to use `ISO8601Timestamp` for efficient `is_stale()` checks
+  - Invalid inputs now fail fast with clear error messages
+
 - **Buffer size limit for daemon protocol** (#291)
   - Added `MAX_MESSAGE_SIZE` constant (10MB default) to prevent memory exhaustion
   - Added `max_size` parameter to `receive_message()` function

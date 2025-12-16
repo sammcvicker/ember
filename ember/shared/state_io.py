@@ -59,7 +59,7 @@ def save_state(state: RepoState, path: Path) -> None:
         "last_sync_mode": sync_mode,
         "model_fingerprint": state.model_fingerprint,
         "version": state.version,
-        "indexed_at": state.indexed_at,
+        "indexed_at": state.indexed_at_str,
     }
 
     # Ensure parent directory exists
