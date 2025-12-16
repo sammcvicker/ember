@@ -17,6 +17,7 @@ import click
 if TYPE_CHECKING:
     from ember.core.config.init_usecase import InitResponse
     from ember.core.hardware import SystemResources
+    from ember.core.retrieval.search_usecase import SearchUseCase
 
 from ember.adapters.fs.local import LocalFileSystem
 from ember.adapters.vss.sqlite_vec_adapter import DimensionMismatchError
@@ -149,6 +150,36 @@ def _create_embedder(config, show_progress: bool = True):
         from ember.adapters.local_models.registry import create_embedder
 
         return create_embedder(model_name=model_name, batch_size=batch_size)
+
+
+def _create_search_usecase(db_path: Path, embedder) -> SearchUseCase:
+    """Create search use case with all required dependencies.
+
+    Centralizes the dependency setup for find/search commands to avoid
+    duplication and ensure consistent initialization.
+
+    Args:
+        db_path: Path to the SQLite database
+        embedder: Embedder instance for query vectorization
+
+    Returns:
+        Configured SearchUseCase ready for search operations
+    """
+    from ember.adapters.fts.sqlite_fts import SQLiteFTS
+    from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
+    from ember.adapters.vss.sqlite_vec_adapter import SqliteVecAdapter
+    from ember.core.retrieval.search_usecase import SearchUseCase
+
+    text_search = SQLiteFTS(db_path)
+    vector_search = SqliteVecAdapter(db_path, vector_dim=embedder.dim)
+    chunk_repo = SQLiteChunkRepository(db_path)
+
+    return SearchUseCase(
+        text_search=text_search,
+        vector_search=vector_search,
+        chunk_repo=chunk_repo,
+        embedder=embedder,
+    )
 
 
 def get_ember_repo_root() -> tuple[Path, Path]:
@@ -842,27 +873,12 @@ def find(
             verbose=ctx.obj.get("verbose", False),
         )
 
-    # Lazy imports - only load heavy dependencies when find is actually called
-    from ember.adapters.fts.sqlite_fts import SQLiteFTS
-    from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
-    from ember.adapters.vss.sqlite_vec_adapter import SqliteVecAdapter
-    from ember.core.retrieval.search_usecase import SearchUseCase
+    # Lazy import for Query entity
     from ember.domain.entities import Query
 
-    # Initialize dependencies
-    # Create embedder first to get its dimension for vector search
+    # Initialize search dependencies
     embedder = _create_embedder(config)
-    text_search = SQLiteFTS(db_path)
-    vector_search = SqliteVecAdapter(db_path, vector_dim=embedder.dim)
-    chunk_repo = SQLiteChunkRepository(db_path)
-
-    # Create search use case
-    search_usecase = SearchUseCase(
-        text_search=text_search,
-        vector_search=vector_search,
-        chunk_repo=chunk_repo,
-        embedder=embedder,
-    )
+    search_usecase = _create_search_usecase(db_path, embedder)
 
     # Create query object
     query_obj = Query(
@@ -1000,27 +1016,12 @@ def search(
         )
 
     # Lazy imports
-    from ember.adapters.fts.sqlite_fts import SQLiteFTS
-    from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
     from ember.adapters.tui.search_ui import InteractiveSearchUI
-    from ember.adapters.vss.sqlite_vec_adapter import SqliteVecAdapter
-    from ember.core.retrieval.search_usecase import SearchUseCase
     from ember.domain.entities import Query
 
     # Initialize search dependencies
-    # Create embedder first to get its dimension for vector search
     embedder = _create_embedder(config, show_progress=False)  # No progress for interactive
-    text_search = SQLiteFTS(db_path)
-    vector_search = SqliteVecAdapter(db_path, vector_dim=embedder.dim)
-    chunk_repo = SQLiteChunkRepository(db_path)
-
-    # Create search use case
-    search_usecase = SearchUseCase(
-        text_search=text_search,
-        vector_search=vector_search,
-        chunk_repo=chunk_repo,
-        embedder=embedder,
-    )
+    search_usecase = _create_search_usecase(db_path, embedder)
 
     # Create search function wrapper (returns list for TUI compatibility)
     def search_fn(query: Query) -> list:
