@@ -26,7 +26,8 @@ class IndexConfig:
 
     Raises:
         ValueError: If line_window, line_stride are not positive,
-                   overlap_lines is negative, or overlap_lines >= line_window.
+                   line_stride > line_window, overlap_lines is negative,
+                   or overlap_lines >= line_window.
     """
 
     model: str = "local-default-code-embed"
@@ -71,6 +72,11 @@ class IndexConfig:
             raise ValueError(f"line_window must be positive, got {self.line_window}")
         if self.line_stride <= 0:
             raise ValueError(f"line_stride must be positive, got {self.line_stride}")
+        if self.line_stride > self.line_window:
+            raise ValueError(
+                f"line_stride ({self.line_stride}) cannot exceed "
+                f"line_window ({self.line_window})"
+            )
         if self.overlap_lines < 0:
             raise ValueError(
                 f"overlap_lines cannot be negative, got {self.overlap_lines}"
