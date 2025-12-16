@@ -457,7 +457,7 @@ class TestRepoStateValidation:
 
     def test_repo_state_invalid_timestamp_raises_error(self):
         """Test that invalid ISO-8601 timestamp raises ValueError."""
-        with pytest.raises(ValueError, match="indexed_at must be a valid ISO-8601"):
+        with pytest.raises(ValueError, match="Invalid ISO-8601 timestamp"):
             RepoState(
                 last_tree_sha="a" * 40,
                 last_sync_mode=SyncMode.WORKTREE,
@@ -477,7 +477,8 @@ class TestRepoStateValidation:
             version="1.0.0",
             indexed_at="2025-01-15T10:30:00+00:00",
         )
-        assert state.indexed_at == "2025-01-15T10:30:00+00:00"
+        # indexed_at is now ISO8601Timestamp, use indexed_at_str for raw string
+        assert state.indexed_at_str == "2025-01-15T10:30:00+00:00"
 
         # With Z suffix
         state = RepoState(
@@ -487,7 +488,7 @@ class TestRepoStateValidation:
             version="1.0.0",
             indexed_at="2025-01-15T10:30:00Z",
         )
-        assert state.indexed_at == "2025-01-15T10:30:00Z"
+        assert state.indexed_at_str == "2025-01-15T10:30:00Z"
 
 
 # =============================================================================
