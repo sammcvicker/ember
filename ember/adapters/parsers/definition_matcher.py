@@ -47,8 +47,12 @@ class DefinitionMatcher:
         Algorithm:
             1. Separate captures into def_nodes and name_nodes
             2. Create entries for all definition nodes with byte positions
-            3. For each name node, walk up AST to find parent definition
+            3. For each name node, walk up AST to find parent definition (with memoization)
             4. Return matched definitions with line numbers
+
+        Complexity: O(n + m) where n = total nodes, m = name nodes
+            - Each AST node is visited at most once due to memoization
+            - Previous O(n*m) algorithm revisited parent nodes repeatedly
         """
         # Separate definition nodes from name nodes
         def_nodes = []
@@ -65,32 +69,57 @@ class DefinitionMatcher:
         # Value: (symbol_name, start_line, end_line)
         definitions: dict[tuple[int, int], tuple[str | None, int, int]] = {}
 
+        # Build set of definition positions for O(1) membership check
+        definition_positions: set[tuple[int, int]] = set()
+
         # First pass: create entries for all definitions
         for def_node in def_nodes:
             node_key = (def_node.start_byte, def_node.end_byte)
             start_line = def_node.start_point[0] + 1  # tree-sitter is 0-indexed
             end_line = def_node.end_point[0] + 1
             definitions[node_key] = (None, start_line, end_line)
+            definition_positions.add(node_key)
+
+        # Memoization cache: maps node position -> nearest ancestor definition position (or None)
+        # This avoids re-traversing the same parent paths for multiple name nodes
+        ancestor_cache: dict[tuple[int, int], tuple[int, int] | None] = {}
+
+        def find_definition_ancestor(node) -> tuple[int, int] | None:
+            """Find the nearest ancestor that is a definition node, with memoization."""
+            if node is None:
+                return None
+
+            node_key = (node.start_byte, node.end_byte)
+
+            # Check cache first
+            if node_key in ancestor_cache:
+                return ancestor_cache[node_key]
+
+            # Check if this node itself is a definition
+            if node_key in definition_positions:
+                ancestor_cache[node_key] = node_key
+                return node_key
+
+            # Recursively check parent (will be cached on the way back up)
+            result = find_definition_ancestor(node.parent)
+            ancestor_cache[node_key] = result
+            return result
 
         # Second pass: match names to their parent definitions
         for name_node in name_nodes:
-            # Decode name text
-            symbol_name = (
-                name_node.text.decode("utf-8")
-                if isinstance(name_node.text, bytes)
-                else name_node.text
-            )
+            # Find ancestor definition using memoized lookup
+            def_key = find_definition_ancestor(name_node.parent)
 
-            # Walk up AST to find parent definition node
-            parent = name_node.parent
-            while parent:
-                parent_key = (parent.start_byte, parent.end_byte)
-                if parent_key in definitions:
-                    # Found the parent definition - update with name
-                    _, start, end = definitions[parent_key]
-                    definitions[parent_key] = (symbol_name, start, end)
-                    break
-                parent = parent.parent
+            if def_key is not None:
+                # Decode name text
+                symbol_name = (
+                    name_node.text.decode("utf-8")
+                    if isinstance(name_node.text, bytes)
+                    else name_node.text
+                )
+                # Update definition with name
+                _, start, end = definitions[def_key]
+                definitions[def_key] = (symbol_name, start, end)
 
         # Convert to Definition objects
         return [

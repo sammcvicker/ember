@@ -367,3 +367,67 @@ def test_definition_matcher_mixed_named_unnamed():
     assert len(named) == 1
     assert len(unnamed) == 1
     assert named[0].symbol == "foo"
+
+
+def test_definition_matcher_large_file_performance():
+    """Test DefinitionMatcher handles large files efficiently.
+
+    Creates a structure with 100+ definitions to verify O(n) complexity.
+    Each definition is nested 10 levels deep to simulate realistic AST depth.
+    """
+    num_definitions = 150
+    nesting_depth = 10
+
+    def_nodes = []
+    name_nodes = []
+
+    for i in range(num_definitions):
+        # Create a chain of parent nodes simulating AST depth
+        base_offset = i * 1000
+        prev_node = None
+
+        # Build parent chain (root -> ... -> definition -> ... -> name)
+        for depth in range(nesting_depth):
+            node = MockNode(
+                start_byte=base_offset + depth * 10,
+                end_byte=base_offset + 900 - depth * 10,
+                start_point=(i * 10 + depth, 0),
+                end_point=(i * 10 + 9 - depth, 0),
+                text=f"node_{i}_{depth}".encode(),
+                parent=prev_node,
+            )
+            prev_node = node
+
+            # Middle node is the definition
+            if depth == nesting_depth // 2:
+                def_node = node
+                def_nodes.append(def_node)
+
+        # Name node at deepest level
+        name_node = MockNode(
+            start_byte=base_offset + nesting_depth * 10,
+            end_byte=base_offset + nesting_depth * 10 + 5,
+            start_point=(i * 10 + nesting_depth, 0),
+            end_point=(i * 10 + nesting_depth, 5),
+            text=f"func_{i}".encode(),
+            parent=prev_node,
+        )
+        name_nodes.append(name_node)
+
+    captures = {"func.def": def_nodes, "func.name": name_nodes}
+
+    # Time the matching operation
+    import time
+
+    start = time.perf_counter()
+    definitions = DefinitionMatcher.match(captures)
+    elapsed = time.perf_counter() - start
+
+    # Verify correctness
+    assert len(definitions) == num_definitions
+    named_defs = [d for d in definitions if d.symbol is not None]
+    assert len(named_defs) == num_definitions
+
+    # Performance should be reasonable (< 100ms for 150 definitions)
+    # This is a sanity check, not a strict benchmark
+    assert elapsed < 0.1, f"Matching took {elapsed:.3f}s, expected < 0.1s"

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+- **Optimized DefinitionMatcher AST traversal** (#295)
+  - Added memoization to `match()` method for ancestor lookups
+  - Reduces complexity from O(n*m) to O(n+m) where n=nodes, m=name nodes
+  - Each AST node is now visited at most once instead of repeatedly
+  - Improves performance on large files with 100+ definitions
+
 ### Changed
 - **Batch inserts for sqlite-vec vector sync** (#296)
   - Refactored `_sync_vectors()` to use `executemany()` for batch operations
