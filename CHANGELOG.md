@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **RepoState validation and domain behavior** (#271)
+  - Added `SyncMode` enum for type-safe sync mode values (`none`, `worktree`, `staged`)
+  - Added validation in `RepoState.__post_init__()`:
+    - `last_tree_sha` must be empty or a valid 40-character hex SHA
+    - `last_sync_mode` must be a `SyncMode` enum value or a valid commit SHA
+    - `version` cannot be empty
+    - `indexed_at` must be a valid ISO-8601 timestamp
+  - Added helper methods to `RepoState`:
+    - `is_uninitialized`: Check if repository has never been indexed
+    - `is_stale(threshold_seconds)`: Check if index is older than threshold
+    - `needs_model_update(fingerprint)`: Check if embedding model changed
+  - String values for sync mode are automatically converted to `SyncMode` enum
+  - Backward compatible: existing state.json files work without changes
+
 ### Changed
 - **Use specific exception types in test assertions** (#270)
   - `tests/integration/test_search_usecase.py`: Changed `pytest.raises((sqlite3.OperationalError, Exception))` to `pytest.raises(ValueError)` for empty query test

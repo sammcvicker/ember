@@ -4,10 +4,45 @@ Core domain models representing the business concepts of Ember.
 These are pure Python dataclasses with no dependencies on infrastructure.
 """
 
+import re
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from enum import Enum
 from pathlib import Path
 
 import blake3
+
+
+class SyncMode(str, Enum):
+    """Sync mode for repository indexing.
+
+    Defines how the repository should be indexed:
+    - NONE: Initial state, no sync performed yet
+    - WORKTREE: Index working directory (including unstaged changes)
+    - STAGED: Index only staged changes
+
+    Note: Commit SHAs can also be used as sync_mode values but are not
+    enumerated since they are dynamic. Use is_commit_sha() to check.
+    """
+
+    NONE = "none"
+    WORKTREE = "worktree"
+    STAGED = "staged"
+
+    @staticmethod
+    def is_commit_sha(value: str) -> bool:
+        """Check if a string is a valid git commit SHA.
+
+        Args:
+            value: String to check.
+
+        Returns:
+            True if value looks like a valid commit SHA (7-40 hex chars).
+        """
+        if value in (SyncMode.NONE.value, SyncMode.WORKTREE.value, SyncMode.STAGED.value):
+            return False
+        # Git SHAs are 40 hex chars, but short SHAs (7+) are also valid
+        return bool(re.match(r"^[a-f0-9]{7,40}$", value))
 
 
 @dataclass(frozen=True)
@@ -98,18 +133,118 @@ class RepoState:
     Tracks what has been indexed and with which model.
 
     Attributes:
-        last_tree_sha: Git tree SHA that was last indexed.
-        last_sync_mode: Sync mode used (worktree, staged, or commit SHA).
+        last_tree_sha: Git tree SHA that was last indexed (empty if uninitialized).
+        last_sync_mode: Sync mode used (SyncMode enum or commit SHA string).
         model_fingerprint: Fingerprint of embedding model used.
         version: Ember version that created the index.
         indexed_at: ISO-8601 timestamp of last indexing.
+
+    Raises:
+        ValueError: If any field fails validation (invalid SHA format,
+            invalid sync mode, empty version, or invalid timestamp).
     """
 
     last_tree_sha: str
-    last_sync_mode: str
+    last_sync_mode: str | SyncMode
     model_fingerprint: str
     version: str
     indexed_at: str
+
+    # Regex for validating git SHA (40 hex characters)
+    _SHA_PATTERN = re.compile(r"^[a-f0-9]{40}$")
+    # Regex for basic ISO-8601 datetime validation
+    _ISO8601_PATTERN = re.compile(
+        r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}"  # Basic datetime
+        r"(?:\.\d+)?"  # Optional fractional seconds
+        r"(?:Z|[+-]\d{2}:\d{2})?"  # Optional timezone
+    )
+
+    def __post_init__(self) -> None:
+        """Validate RepoState fields after initialization."""
+        # Validate tree_sha: must be empty or valid 40-char hex SHA
+        if self.last_tree_sha and not self._SHA_PATTERN.match(self.last_tree_sha):
+            raise ValueError(
+                f"tree_sha must be empty or a valid 40-character hex SHA, "
+                f"got: {self.last_tree_sha!r}"
+            )
+
+        # Validate and normalize sync_mode
+        if isinstance(self.last_sync_mode, SyncMode):
+            pass  # Already a SyncMode enum
+        elif isinstance(self.last_sync_mode, str):
+            # Try to convert string to SyncMode enum
+            try:
+                object.__setattr__(self, "last_sync_mode", SyncMode(self.last_sync_mode))
+            except ValueError:
+                # Not a known SyncMode - check if it's a commit SHA
+                if not SyncMode.is_commit_sha(self.last_sync_mode):
+                    raise ValueError(
+                        f"sync_mode must be 'none', 'worktree', 'staged', or a valid "
+                        f"commit SHA (7-40 hex chars), got: {self.last_sync_mode!r}"
+                    ) from None
+        else:
+            raise ValueError(
+                f"sync_mode must be SyncMode enum or string, "
+                f"got: {type(self.last_sync_mode).__name__}"
+            )
+
+        # Validate version is not empty
+        if not self.version:
+            raise ValueError("version cannot be empty")
+
+        # Validate indexed_at is a valid ISO-8601 timestamp
+        if not self._ISO8601_PATTERN.match(self.indexed_at):
+            raise ValueError(
+                f"indexed_at must be a valid ISO-8601 timestamp, "
+                f"got: {self.indexed_at!r}"
+            )
+
+    @property
+    def is_uninitialized(self) -> bool:
+        """Check if the repository has never been indexed.
+
+        Returns:
+            True if no indexing has been performed (empty tree_sha).
+        """
+        return not self.last_tree_sha
+
+    def is_stale(self, threshold_seconds: int) -> bool:
+        """Check if the index is older than a threshold.
+
+        Args:
+            threshold_seconds: Age threshold in seconds.
+
+        Returns:
+            True if the index is older than threshold_seconds.
+        """
+        # Parse the ISO-8601 timestamp
+        # Handle both 'Z' suffix and explicit offset
+        timestamp_str = self.indexed_at
+        if timestamp_str.endswith("Z"):
+            timestamp_str = timestamp_str[:-1] + "+00:00"
+
+        try:
+            indexed_time = datetime.fromisoformat(timestamp_str)
+            # Ensure timezone-aware comparison
+            if indexed_time.tzinfo is None:
+                indexed_time = indexed_time.replace(tzinfo=UTC)
+            now = datetime.now(UTC)
+            age_seconds = (now - indexed_time).total_seconds()
+            return age_seconds > threshold_seconds
+        except ValueError:
+            # If we can't parse the timestamp, consider it stale
+            return True
+
+    def needs_model_update(self, current_model_fingerprint: str) -> bool:
+        """Check if the index needs updating due to model change.
+
+        Args:
+            current_model_fingerprint: Fingerprint of current embedding model.
+
+        Returns:
+            True if the stored fingerprint differs from current model.
+        """
+        return self.model_fingerprint != current_model_fingerprint
 
 
 @dataclass
