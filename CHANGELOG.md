@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Moved large `realistic_repo` fixture to separate module** (#273)
+  - Created `tests/fixtures/realistic_repo_data.py` with all file content data
+  - Reduced `conftest.py` from 1548 lines to 327 lines (79% smaller)
+  - Fixture behavior unchanged, tests pass identically
+  - Improves test configuration maintainability
+
 - **Deduplicated kwargs building logic in `create_embedder()`** (#272)
   - Extracted `_build_embedder_kwargs()` helper function to build kwargs dict once
   - Extracted `_get_embedder_class()` to separate class lookup from instantiation
