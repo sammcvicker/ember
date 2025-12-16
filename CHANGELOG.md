@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Deduplicated kwargs building logic in `create_embedder()`** (#272)
+  - Extracted `_build_embedder_kwargs()` helper function to build kwargs dict once
+  - Extracted `_get_embedder_class()` to separate class lookup from instantiation
+  - Reduced cyclomatic complexity from 11 to ~4
+  - Adding new embedding models no longer requires duplicating kwargs logic
+
 ### Added
 - **RepoState validation and domain behavior** (#271)
   - Added `SyncMode` enum for type-safe sync mode values (`none`, `worktree`, `staged`)
