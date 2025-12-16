@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Split `cli_utils.py` into focused modules** (#289)
+  - Created `ember/core/errors.py`: Error classes and factory functions (103 lines)
+  - Created `ember/core/path_utils.py`: Path normalization utilities (58 lines)
+  - Created `ember/core/editor.py`: Editor integration for opening files (109 lines)
+  - Created `ember/core/progress.py`: Progress bar and callback utilities (134 lines)
+  - Created `ember/core/result_lookup.py`: Cache/hash lookup functions (138 lines)
+  - Created `ember/core/result_display.py`: Content display with formatting (124 lines)
+  - Reduced `cli_utils.py` from 637 lines to 87 lines (facade re-exports)
+  - All modules now under 200 lines (was 637), following Single Responsibility Principle
+  - Existing imports continue to work via re-exports for backward compatibility
+
 - **Moved large `realistic_repo` fixture to separate module** (#273)
   - Created `tests/fixtures/realistic_repo_data.py` with all file content data
   - Reduced `conftest.py` from 1548 lines to 327 lines (79% smaller)
