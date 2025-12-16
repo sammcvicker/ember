@@ -3,13 +3,20 @@
 Command-line interface for Ember code search tool.
 """
 
+from __future__ import annotations
+
 import functools
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import blake3
 import click
+
+if TYPE_CHECKING:
+    from ember.core.config.init_usecase import InitResponse
+    from ember.core.hardware import SystemResources
 
 from ember.adapters.fs.local import LocalFileSystem
 from ember.adapters.vss.sqlite_vec_adapter import DimensionMismatchError
@@ -402,6 +409,124 @@ def cli(ctx: click.Context, verbose: bool, quiet: bool) -> None:
     ctx.obj["quiet"] = quiet
 
 
+def _select_embedding_model(
+    model: str | None,
+    quiet: bool,
+    yes: bool,
+) -> str:
+    """Select embedding model based on user input or system auto-detection.
+
+    Args:
+        model: User-specified model name, or None for auto-detection.
+        quiet: If True, suppress informational output.
+        yes: If True, accept recommended model without prompting.
+
+    Returns:
+        The selected model name.
+    """
+    from ember.core.hardware import (
+        detect_system_resources,
+        get_model_recommendation_reason,
+        recommend_model,
+    )
+
+    if model is not None:
+        return model
+
+    resources = detect_system_resources()
+    recommended = recommend_model(resources)
+    reason = get_model_recommendation_reason(recommended, resources)
+
+    if not quiet:
+        _display_system_resources(resources, recommended, reason)
+
+    if recommended != "jina-code-v2" and not yes:
+        return _prompt_for_model_choice(resources, recommended)
+
+    return recommended
+
+
+def _display_system_resources(
+    resources: SystemResources,
+    recommended: str,
+    reason: str,
+) -> None:
+    """Display detected system resources to user.
+
+    Args:
+        resources: Detected system resources.
+        recommended: Recommended model name.
+        reason: Human-readable reason for recommendation.
+    """
+    click.echo("\nDetecting system resources...")
+    click.echo(f"  Available RAM: {resources.available_ram_gb:.1f}GB")
+    if resources.gpu is not None:
+        gpu = resources.gpu
+        click.echo(
+            f"  GPU: {gpu.device_name} "
+            f"({gpu.total_vram_gb:.1f}GB VRAM, {gpu.free_vram_gb:.1f}GB free)"
+        )
+    click.echo(f"  Recommended model: {recommended}")
+    click.echo(f"  ({reason})")
+    click.echo()
+
+
+def _prompt_for_model_choice(resources: SystemResources, recommended: str) -> str:
+    """Prompt user to choose between recommended model and default.
+
+    Args:
+        resources: Detected system resources.
+        recommended: Recommended model name.
+
+    Returns:
+        The user's chosen model name.
+    """
+    if resources.gpu is not None and resources.gpu.free_vram_gb < resources.available_ram_gb:
+        click.echo(
+            "The default model (jina-code-v2) requires ~1.6GB VRAM and may cause GPU memory issues."
+        )
+    else:
+        click.echo(
+            "The default model (jina-code-v2) requires ~1.6GB RAM and may cause slowdowns."
+        )
+
+    use_recommended = click.confirm(
+        f"Use recommended model ({recommended}) instead?", default=True
+    )
+    return recommended if use_recommended else "jina-code-v2"
+
+
+def _report_init_results(
+    response: InitResponse,
+    selected_model: str,
+    quiet: bool,
+) -> None:
+    """Report init command results to user.
+
+    Args:
+        response: The InitResponse from the use case.
+        selected_model: The model that was selected.
+        quiet: If True, suppress detailed output.
+    """
+    if response.global_config_created and not quiet:
+        click.echo(f"Created global config at {response.global_config_path}")
+        click.echo(f"  ✓ Using model: {selected_model}")
+        click.echo("")
+
+    if response.was_reinitialized:
+        click.echo(f"Reinitialized existing ember index at {response.ember_dir}")
+    else:
+        click.echo(f"Initialized ember index at {response.ember_dir}")
+
+    if not quiet:
+        click.echo(f"  ✓ Created {response.config_path.name}")
+        click.echo(f"  ✓ Created {response.db_path.name}")
+        click.echo(f"  ✓ Created {response.state_path.name}")
+        if not response.global_config_created:
+            click.echo(f"  ✓ Using model: {selected_model} (from global config)")
+        click.echo("\nNext: Run 'ember sync' to index your codebase")
+
+
 @cli.command()
 @click.option(
     "--force",
@@ -432,89 +557,22 @@ def init(ctx: click.Context, force: bool, model: str | None, yes: bool) -> None:
     Detects available system RAM and GPU VRAM and suggests an appropriate
     embedding model. Use --model to override or --yes to accept the recommendation.
     """
-    # Lazy import - only load when init is actually called
     from ember.adapters.sqlite.initializer import SqliteDatabaseInitializer
     from ember.core.config.init_usecase import InitRequest, InitUseCase
-    from ember.core.hardware import (
-        detect_system_resources,
-        get_model_recommendation_reason,
-        recommend_model,
-    )
     from ember.core.repo_utils import find_repo_root_for_init
 
     repo_root = find_repo_root_for_init()
     quiet = ctx.obj.get("quiet", False)
 
-    # Determine which model to use
-    if model is not None:
-        # User explicitly specified a model
-        selected_model = model
-    else:
-        # Auto-detect and suggest
-        resources = detect_system_resources()
-        recommended = recommend_model(resources)
-        reason = get_model_recommendation_reason(recommended, resources)
+    selected_model = _select_embedding_model(model, quiet, yes)
 
-        if not quiet:
-            click.echo("\nDetecting system resources...")
-            click.echo(f"  Available RAM: {resources.available_ram_gb:.1f}GB")
-            if resources.gpu is not None:
-                gpu = resources.gpu
-                click.echo(
-                    f"  GPU: {gpu.device_name} "
-                    f"({gpu.total_vram_gb:.1f}GB VRAM, {gpu.free_vram_gb:.1f}GB free)"
-                )
-            click.echo(f"  Recommended model: {recommended}")
-            click.echo(f"  ({reason})")
-            click.echo()
-
-        # Check if the default (jina) is NOT recommended and we need to prompt
-        if recommended != "jina-code-v2" and not yes:
-            # Determine the limiting factor for the warning message
-            if resources.gpu is not None and resources.gpu.free_vram_gb < resources.available_ram_gb:
-                click.echo(
-                    "The default model (jina-code-v2) requires ~1.6GB VRAM and may cause GPU memory issues."
-                )
-            else:
-                click.echo(
-                    "The default model (jina-code-v2) requires ~1.6GB RAM and may cause slowdowns."
-                )
-            use_recommended = click.confirm(
-                f"Use recommended model ({recommended}) instead?", default=True
-            )
-            selected_model = recommended if use_recommended else "jina-code-v2"
-        else:
-            selected_model = recommended
-
-    # Create use case with injected dependencies
     db_initializer = SqliteDatabaseInitializer()
     use_case = InitUseCase(db_initializer=db_initializer, version="1.2.0")
     request = InitRequest(repo_root=repo_root, force=force, model=selected_model)
 
     try:
         response = use_case.execute(request)
-
-        # Report global config creation first (if this is first run)
-        if response.global_config_created and not quiet:
-            click.echo(f"Created global config at {response.global_config_path}")
-            click.echo(f"  ✓ Using model: {selected_model}")
-            click.echo("")
-
-        # Report success
-        if response.was_reinitialized:
-            click.echo(f"Reinitialized existing ember index at {response.ember_dir}")
-        else:
-            click.echo(f"Initialized ember index at {response.ember_dir}")
-
-        if not quiet:
-            click.echo(f"  ✓ Created {response.config_path.name}")
-            click.echo(f"  ✓ Created {response.db_path.name}")
-            click.echo(f"  ✓ Created {response.state_path.name}")
-            if not response.global_config_created:
-                # Only show model here if we didn't already show it above
-                click.echo(f"  ✓ Using model: {selected_model} (from global config)")
-            click.echo("\nNext: Run 'ember sync' to index your codebase")
-
+        _report_init_results(response, selected_model, quiet)
     except FileExistsError as e:
         raise EmberCliError(
             str(e),
@@ -1229,7 +1287,7 @@ def _display_path_status(path: Path, label: str) -> None:
 
 
 def _load_and_display_config(
-    title: str, loader: "Callable[[], EmberConfig]"  # noqa: F821
+    title: str, loader: Callable[[], EmberConfig]  # noqa: F821
 ) -> None:
     """Load config using the provided loader and display it with a title."""
     click.echo(f"\n{title}:")
@@ -1315,7 +1373,7 @@ def config_show(
     _show_effective_config(local_path, global_path, include_local, include_global)
 
 
-def _display_config_summary(config: "EmberConfig") -> None:  # noqa: F821
+def _display_config_summary(config: EmberConfig) -> None:  # noqa: F821
     """Display a summary of config settings."""
     click.echo("  [index]")
     click.echo(f"    model = {config.index.model}")

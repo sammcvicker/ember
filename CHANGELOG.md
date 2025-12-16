@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Reduced `init()` command complexity from 16 to 3** (#290)
+  - Extracted `_select_embedding_model()` helper for model selection logic
+  - Extracted `_display_system_resources()` for system resource output
+  - Extracted `_prompt_for_model_choice()` for user confirmation prompts
+  - Extracted `_report_init_results()` for success/failure reporting
+  - Added 14 unit tests for the extracted helpers
+  - Model selection logic now testable in isolation
+
 - **Split `cli_utils.py` into focused modules** (#289)
   - Created `ember/core/errors.py`: Error classes and factory functions (103 lines)
   - Created `ember/core/path_utils.py`: Path normalization utilities (58 lines)
