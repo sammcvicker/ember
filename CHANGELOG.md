@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Extracted factory functions from CLI to dedicated module** (#320)
+  - Created `ember/adapters/factory.py` with `EmbedderFactory`, `UseCaseFactory`, `RepositoryFactory`, `DaemonFactory`, and `ConfigFactory` classes
+  - CLI no longer directly imports 9+ adapter classes for use case instantiation
+  - Factory classes use lazy imports to avoid loading heavy dependencies at module level
+  - Enables easier testing by allowing factories to be mocked instead of individual adapters
+  - Better separation between presentation layer (CLI) and infrastructure (adapters)
 - **Extracted sync error classification to core layer** (#319)
   - Moved `SyncErrorType` and `SyncResult` from CLI to `ember.domain.entities`
   - Created `classify_sync_error()` function in `ember.core.sync` module

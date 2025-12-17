@@ -10,7 +10,6 @@ import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import blake3
 import click
 
 if TYPE_CHECKING:
@@ -112,46 +111,10 @@ def _create_embedder(config, show_progress: bool = True):
         RuntimeError: If daemon fails to start
         ValueError: If model name is not recognized
     """
-    # Get the configured model name and batch size
-    model_name = config.index.model
-    batch_size = config.index.batch_size
+    from ember.adapters.factory import EmbedderFactory
 
-    if config.model.mode == "daemon":
-        # Use daemon mode (default)
-        from ember.adapters.daemon.client import DaemonEmbedderClient
-        from ember.adapters.daemon.lifecycle import DaemonLifecycle
-        from ember.core.cli_utils import ensure_daemon_with_progress
-
-        # ALWAYS pre-start daemon before returning client
-        # This ensures errors are caught before TUI initialization (#126)
-        daemon_manager = DaemonLifecycle(
-            idle_timeout=config.model.daemon_timeout,
-            model_name=model_name,
-            batch_size=batch_size,
-        )
-
-        # If daemon is already running, nothing to do
-        if not daemon_manager.is_running():
-            # Use progress UI if requested, otherwise start silently
-            if show_progress:
-                ensure_daemon_with_progress(daemon_manager, quiet=False)
-            else:
-                # Start daemon without progress UI
-                # Let RuntimeError propagate to show clean error before TUI starts
-                daemon_manager.start(foreground=False)
-
-        return DaemonEmbedderClient(
-            fallback=True,
-            auto_start=False,  # Daemon already started above
-            daemon_timeout=config.model.daemon_timeout,
-            model_name=model_name,
-            batch_size=batch_size,
-        )
-    else:
-        # Use direct mode (fallback or explicit config)
-        from ember.adapters.local_models.registry import create_embedder
-
-        return create_embedder(model_name=model_name, batch_size=batch_size)
+    factory = EmbedderFactory(config)
+    return factory.create_embedder(show_progress=show_progress)
 
 
 def _create_search_usecase(db_path: Path, embedder) -> SearchUseCase:
@@ -167,21 +130,10 @@ def _create_search_usecase(db_path: Path, embedder) -> SearchUseCase:
     Returns:
         Configured SearchUseCase ready for search operations
     """
-    from ember.adapters.fts.sqlite_fts import SQLiteFTS
-    from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
-    from ember.adapters.vss.sqlite_vec_adapter import SqliteVecAdapter
-    from ember.core.retrieval.search_usecase import SearchUseCase
+    from ember.adapters.factory import UseCaseFactory
 
-    text_search = SQLiteFTS(db_path)
-    vector_search = SqliteVecAdapter(db_path, vector_dim=embedder.dim)
-    chunk_repo = SQLiteChunkRepository(db_path)
-
-    return SearchUseCase(
-        text_search=text_search,
-        vector_search=vector_search,
-        chunk_repo=chunk_repo,
-        embedder=embedder,
-    )
+    factory = UseCaseFactory()
+    return factory.create_search_usecase(db_path, embedder)
 
 
 def get_ember_repo_root() -> tuple[Path, Path]:
@@ -219,52 +171,13 @@ def _create_indexing_usecase(repo_root: Path, db_path: Path, config):
     Returns:
         Initialized IndexingUseCase instance.
     """
-    # Lazy imports - only load heavy dependencies when needed
-    from ember.adapters.fs.local import LocalFileSystem
-    from ember.adapters.git_cmd.git_adapter import GitAdapter
-    from ember.adapters.parsers.line_chunker import LineChunker
-    from ember.adapters.parsers.tree_sitter_chunker import TreeSitterChunker
-    from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
-    from ember.adapters.sqlite.file_repository import SQLiteFileRepository
-    from ember.adapters.sqlite.meta_repository import SQLiteMetaRepository
-    from ember.adapters.sqlite.vector_repository import SQLiteVectorRepository
-    from ember.core.chunking.chunk_usecase import ChunkFileUseCase
-    from ember.core.indexing.index_usecase import IndexingUseCase
+    from ember.adapters.factory import EmbedderFactory, UseCaseFactory
 
-    # Initialize dependencies
-    vcs = GitAdapter(repo_root)
-    fs = LocalFileSystem()
-    embedder = _create_embedder(config)
+    embedder_factory = EmbedderFactory(config)
+    embedder = embedder_factory.create_embedder()
 
-    # Initialize repositories
-    chunk_repo = SQLiteChunkRepository(db_path)
-    vector_repo = SQLiteVectorRepository(db_path, expected_dim=embedder.dim)
-    file_repo = SQLiteFileRepository(db_path)
-    meta_repo = SQLiteMetaRepository(db_path)
-
-    # Initialize chunking use case with config settings
-    tree_sitter = TreeSitterChunker()
-    line_chunker = LineChunker(
-        window_size=config.index.line_window,
-        stride=config.index.line_stride,
-    )
-    chunk_usecase = ChunkFileUseCase(tree_sitter, line_chunker)
-
-    # Compute project ID (hash of repo root path)
-    project_id = blake3.blake3(str(repo_root).encode("utf-8")).hexdigest()
-
-    # Create and return indexing use case
-    return IndexingUseCase(
-        vcs=vcs,
-        fs=fs,
-        chunk_usecase=chunk_usecase,
-        embedder=embedder,
-        chunk_repo=chunk_repo,
-        vector_repo=vector_repo,
-        file_repo=file_repo,
-        meta_repo=meta_repo,
-        project_id=project_id,
-    )
+    usecase_factory = UseCaseFactory()
+    return usecase_factory.create_indexing_usecase(repo_root, db_path, config, embedder)
 
 
 def ensure_synced(
@@ -305,12 +218,12 @@ def ensure_synced(
     """
     try:
         # Import dependencies
-        from ember.adapters.git_cmd.git_adapter import GitAdapter
-        from ember.adapters.sqlite.meta_repository import SQLiteMetaRepository
+        from ember.adapters.factory import RepositoryFactory
         from ember.core.indexing.index_usecase import IndexRequest
 
-        vcs = GitAdapter(repo_root)
-        meta_repo = SQLiteMetaRepository(db_path)
+        repo_factory = RepositoryFactory()
+        vcs = repo_factory.create_git_adapter(repo_root)
+        meta_repo = repo_factory.create_meta_repository(db_path)
 
         # Get current worktree tree SHA
         current_tree_sha = vcs.get_worktree_tree_sha()
@@ -584,7 +497,7 @@ def init(ctx: click.Context, force: bool, model: str | None, yes: bool) -> None:
     Detects available system RAM and GPU VRAM and suggests an appropriate
     embedding model. Use --model to override or --yes to accept the recommendation.
     """
-    from ember.adapters.sqlite.initializer import SqliteDatabaseInitializer
+    from ember.adapters.factory import ConfigFactory
     from ember.core.config.init_usecase import InitRequest, InitUseCase
     from ember.core.repo_utils import find_repo_root_for_init
 
@@ -593,7 +506,8 @@ def init(ctx: click.Context, force: bool, model: str | None, yes: bool) -> None:
 
     selected_model = _select_embedding_model(model, quiet, yes)
 
-    db_initializer = SqliteDatabaseInitializer()
+    config_factory = ConfigFactory()
+    db_initializer = config_factory.create_db_initializer()
     use_case = InitUseCase(db_initializer=db_initializer, version=__version__)
     request = InitRequest(repo_root=repo_root, force=force, model=selected_model)
 
@@ -658,11 +572,11 @@ def _quick_check_unchanged(
     if reindex or sync_mode != "worktree":
         return False
 
-    from ember.adapters.git_cmd.git_adapter import GitAdapter
-    from ember.adapters.sqlite.meta_repository import SQLiteMetaRepository
+    from ember.adapters.factory import RepositoryFactory
 
-    vcs = GitAdapter(repo_root)
-    meta_repo = SQLiteMetaRepository(db_path)
+    repo_factory = RepositoryFactory()
+    vcs = repo_factory.create_git_adapter(repo_root)
+    meta_repo = repo_factory.create_meta_repository(db_path)
     try:
         current_tree_sha = vcs.get_worktree_tree_sha()
         last_indexed_sha = meta_repo.get("last_tree_sha")
@@ -733,7 +647,7 @@ def sync(
     By default, indexes the current worktree.
     Can be run from any subdirectory within the repository.
     """
-    from ember.adapters.config.toml_config_provider import TomlConfigProvider
+    from ember.adapters.factory import ConfigFactory
     from ember.core.indexing.index_usecase import IndexRequest
 
     repo_root, ember_dir = get_ember_repo_root()
@@ -746,7 +660,8 @@ def sync(
         return
 
     # Load config and create indexing use case
-    config = TomlConfigProvider().load(ember_dir)
+    config_factory = ConfigFactory()
+    config = config_factory.create_config_provider().load(ember_dir)
     indexing_usecase = _create_indexing_usecase(repo_root, db_path, config)
 
     # Execute indexing with progress reporting
@@ -849,9 +764,10 @@ def find(
     )
 
     # Load config
-    from ember.adapters.config.toml_config_provider import TomlConfigProvider
+    from ember.adapters.factory import ConfigFactory
 
-    config_provider = TomlConfigProvider()
+    config_factory = ConfigFactory()
+    config_provider = config_factory.create_config_provider()
     config = config_provider.load(ember_dir)
 
     # Use config default for topk if not specified
@@ -990,9 +906,10 @@ def search(
     )
 
     # Load config
-    from ember.adapters.config.toml_config_provider import TomlConfigProvider
+    from ember.adapters.factory import ConfigFactory
 
-    config_provider = TomlConfigProvider()
+    config_factory = ConfigFactory()
+    config_provider = config_factory.create_config_provider()
     config = config_provider.load(ember_dir)
 
     # Use config default for topk if not specified
@@ -1066,10 +983,11 @@ def cat(ctx: click.Context, identifier: str, context: int) -> None:
       - Full chunk ID (e.g., 'blake3:a1b2c3d4...')
       - Short hash prefix (e.g., 'a1b2c3d4') - minimum 8 characters
     """
-    from ember.adapters.config.toml_config_provider import TomlConfigProvider
+    from ember.adapters.factory import ConfigFactory, RepositoryFactory
 
     repo_root, ember_dir = get_ember_repo_root()
-    config_provider = TomlConfigProvider()
+    config_factory = ConfigFactory()
+    config_provider = config_factory.create_config_provider()
     config = config_provider.load(ember_dir)
 
     # Look up result by numeric index or hash ID
@@ -1078,10 +996,9 @@ def cat(ctx: click.Context, identifier: str, context: int) -> None:
         cache_path = ember_dir / ".last_search.json"
         result = lookup_result_from_cache(identifier, cache_path)
     else:
-        from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
-
+        repo_factory = RepositoryFactory()
         db_path = ember_dir / "index.db"
-        chunk_repo = SQLiteChunkRepository(db_path)
+        chunk_repo = repo_factory.create_chunk_repository(db_path)
         result = lookup_result_by_hash(identifier, chunk_repo)
 
     # Display header
@@ -1196,23 +1113,22 @@ def status(ctx: click.Context) -> None:
     - Whether index is up to date
     - Current configuration
     """
-    from ember.adapters.config.toml_config_provider import TomlConfigProvider
-    from ember.adapters.git_cmd.git_adapter import GitAdapter
-    from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
-    from ember.adapters.sqlite.meta_repository import SQLiteMetaRepository
+    from ember.adapters.factory import ConfigFactory, RepositoryFactory
     from ember.core.status.status_usecase import StatusRequest, StatusUseCase
 
     repo_root, ember_dir = get_ember_repo_root()
 
     # Load configuration
-    config_provider = TomlConfigProvider()
+    config_factory = ConfigFactory()
+    config_provider = config_factory.create_config_provider()
     config = config_provider.load(ember_dir)
 
-    # Set up repositories
+    # Set up repositories using factory
     db_path = ember_dir / "index.db"
-    vcs = GitAdapter(repo_root)
-    chunk_repo = SQLiteChunkRepository(db_path)
-    meta_repo = SQLiteMetaRepository(db_path)
+    repo_factory = RepositoryFactory()
+    vcs = repo_factory.create_git_adapter(repo_root)
+    chunk_repo = repo_factory.create_chunk_repository(db_path)
+    meta_repo = repo_factory.create_meta_repository(db_path)
 
     # Execute status use case
     use_case = StatusUseCase(
@@ -1320,11 +1236,12 @@ def _show_effective_config(
     include_global: bool,
 ) -> None:
     """Show effective configuration content based on display mode."""
-    from ember.adapters.config.toml_config_provider import TomlConfigProvider
+    from ember.adapters.factory import ConfigFactory
     from ember.shared.config_io import load_config
 
     if local_path and include_local:
-        provider = TomlConfigProvider()
+        config_factory = ConfigFactory()
+        provider = config_factory.create_config_provider()
         _load_and_display_config(
             "Effective configuration (merged global + local)",
             lambda: provider.load(local_path.parent),
@@ -1499,20 +1416,21 @@ def daemon() -> None:
 @click.pass_context
 def start(ctx: click.Context, foreground: bool) -> None:
     """Start the daemon server."""
-    from ember.adapters.config.toml_config_provider import TomlConfigProvider
+    from ember.adapters.factory import ConfigFactory, DaemonFactory
     from ember.core.cli_utils import ensure_daemon_with_progress
 
     # Load config for daemon timeout
     ember_dir = Path.home() / ".ember"
     ember_dir.mkdir(parents=True, exist_ok=True)
-    config_provider = TomlConfigProvider()
+    config_factory = ConfigFactory()
+    config_provider = config_factory.create_config_provider()
     config = config_provider.load(ember_dir)
+
+    daemon_factory = DaemonFactory()
 
     if foreground:
         # Foreground mode uses direct lifecycle management
-        from ember.adapters.daemon.lifecycle import DaemonLifecycle
-
-        lifecycle = DaemonLifecycle(
+        lifecycle = daemon_factory.create_daemon_lifecycle(
             idle_timeout=config.model.daemon_timeout,
             model_name=config.index.model,
         )
@@ -1531,10 +1449,8 @@ def start(ctx: click.Context, foreground: bool) -> None:
             ) from e
     else:
         # Background mode with progress
-        from ember.adapters.daemon.lifecycle import DaemonLifecycle
-
         quiet = ctx.obj.get("quiet", False)
-        daemon_manager = DaemonLifecycle(
+        daemon_manager = daemon_factory.create_daemon_lifecycle(
             idle_timeout=config.model.daemon_timeout,
             model_name=config.index.model,
         )
@@ -1551,9 +1467,10 @@ def start(ctx: click.Context, foreground: bool) -> None:
 @daemon.command()
 def stop() -> None:
     """Stop the daemon server."""
-    from ember.adapters.daemon.lifecycle import DaemonLifecycle
+    from ember.adapters.factory import DaemonFactory
 
-    lifecycle = DaemonLifecycle()
+    daemon_factory = DaemonFactory()
+    lifecycle = daemon_factory.create_daemon_lifecycle()
 
     if not lifecycle.is_running():
         click.echo("Daemon is not running")
@@ -1573,15 +1490,16 @@ def stop() -> None:
 @click.pass_context
 def restart(ctx: click.Context) -> None:
     """Restart the daemon server."""
-    from ember.adapters.config.toml_config_provider import TomlConfigProvider
-    from ember.adapters.daemon.lifecycle import DaemonLifecycle
+    from ember.adapters.factory import ConfigFactory, DaemonFactory
 
     # Load config to get model name
     repo_root, ember_dir = get_ember_repo_root()
-    config_provider = TomlConfigProvider()
+    config_factory = ConfigFactory()
+    config_provider = config_factory.create_config_provider()
     config = config_provider.load(ember_dir)
 
-    lifecycle = DaemonLifecycle(
+    daemon_factory = DaemonFactory()
+    lifecycle = daemon_factory.create_daemon_lifecycle(
         idle_timeout=config.model.daemon_timeout,
         model_name=config.index.model,
     )
@@ -1599,9 +1517,10 @@ def restart(ctx: click.Context) -> None:
 @daemon.command(name="status")
 def daemon_status() -> None:
     """Show daemon status."""
-    from ember.adapters.daemon.lifecycle import DaemonLifecycle
+    from ember.adapters.factory import DaemonFactory
 
-    lifecycle = DaemonLifecycle()
+    daemon_factory = DaemonFactory()
+    lifecycle = daemon_factory.create_daemon_lifecycle()
     status = lifecycle.status()
 
     # Display status
