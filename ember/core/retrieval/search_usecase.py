@@ -7,7 +7,13 @@ with Reciprocal Rank Fusion for optimal retrieval quality.
 import logging
 from dataclasses import dataclass
 
-from ember.domain.entities import Chunk, Query, SearchResult, SearchResultSet
+from ember.domain.entities import (
+    Chunk,
+    Query,
+    SearchExplanation,
+    SearchResult,
+    SearchResultSet,
+)
 from ember.ports.embedders import Embedder
 from ember.ports.repositories import ChunkRepository
 from ember.ports.search import TextSearch, VectorSearch
@@ -116,11 +122,11 @@ class SearchUseCase:
                 score=score,
                 rank=rank,
                 preview=self._generate_preview(chunk),
-                explanation={
-                    "fused_score": score,
-                    "bm25_score": fts_score,
-                    "vector_score": vector_score,
-                },
+                explanation=SearchExplanation(
+                    fused_score=score,
+                    bm25_score=fts_score,
+                    vector_score=vector_score,
+                ),
             )
             results.append(result)
 

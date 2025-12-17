@@ -9,6 +9,7 @@ from ember.domain.entities import (
     Chunk,
     Query,
     RepoState,
+    SearchExplanation,
     SearchResult,
     SearchResultSet,
     SyncMode,
@@ -567,3 +568,143 @@ class TestRepoStateHelperMethods:
     def test_needs_model_update_true_when_empty_fingerprint(self, uninitialized_state):
         """Test needs_model_update returns True when current fingerprint is empty."""
         assert uninitialized_state.needs_model_update("any-model")
+
+
+# =============================================================================
+# SearchExplanation tests (#301)
+# =============================================================================
+
+
+class TestSearchExplanation:
+    """Tests for SearchExplanation dataclass."""
+
+    def test_search_explanation_creation(self):
+        """Test creating SearchExplanation with all scores."""
+        explanation = SearchExplanation(
+            fused_score=0.95,
+            bm25_score=0.8,
+            vector_score=0.7,
+        )
+        assert explanation.fused_score == 0.95
+        assert explanation.bm25_score == 0.8
+        assert explanation.vector_score == 0.7
+
+    def test_search_explanation_default_scores(self):
+        """Test that bm25_score and vector_score default to 0.0."""
+        explanation = SearchExplanation(fused_score=0.5)
+        assert explanation.fused_score == 0.5
+        assert explanation.bm25_score == 0.0
+        assert explanation.vector_score == 0.0
+
+    def test_search_explanation_is_frozen(self):
+        """Test that SearchExplanation is immutable (frozen)."""
+        explanation = SearchExplanation(fused_score=0.5)
+        with pytest.raises(AttributeError):
+            explanation.fused_score = 0.9
+
+    def test_search_explanation_to_dict(self):
+        """Test to_dict returns all scores."""
+        explanation = SearchExplanation(
+            fused_score=0.95,
+            bm25_score=0.8,
+            vector_score=0.7,
+        )
+        d = explanation.to_dict()
+        assert d == {
+            "fused_score": 0.95,
+            "bm25_score": 0.8,
+            "vector_score": 0.7,
+        }
+
+    def test_search_explanation_to_dict_with_defaults(self):
+        """Test to_dict includes default scores."""
+        explanation = SearchExplanation(fused_score=0.5)
+        d = explanation.to_dict()
+        assert d == {
+            "fused_score": 0.5,
+            "bm25_score": 0.0,
+            "vector_score": 0.0,
+        }
+
+    def test_search_explanation_equality(self):
+        """Test equality between SearchExplanation instances."""
+        exp1 = SearchExplanation(fused_score=0.5, bm25_score=0.3, vector_score=0.2)
+        exp2 = SearchExplanation(fused_score=0.5, bm25_score=0.3, vector_score=0.2)
+        assert exp1 == exp2
+
+    def test_search_explanation_inequality(self):
+        """Test inequality between different SearchExplanation instances."""
+        exp1 = SearchExplanation(fused_score=0.5)
+        exp2 = SearchExplanation(fused_score=0.6)
+        assert exp1 != exp2
+
+
+class TestSearchResultWithExplanation:
+    """Tests for SearchResult with typed SearchExplanation."""
+
+    @pytest.fixture
+    def sample_chunk(self) -> Chunk:
+        """Create a sample chunk for testing."""
+        return Chunk(
+            id="test_id",
+            project_id="proj",
+            path=Path("file.py"),
+            lang="py",
+            symbol="func",
+            start_line=1,
+            end_line=10,
+            content="def foo(): pass",
+            content_hash="hash",
+            file_hash="fhash",
+            tree_sha="tree",
+            rev="HEAD",
+        )
+
+    def test_search_result_with_explanation(self, sample_chunk: Chunk):
+        """Test creating SearchResult with typed explanation."""
+        explanation = SearchExplanation(
+            fused_score=0.95,
+            bm25_score=0.8,
+            vector_score=0.7,
+        )
+        result = SearchResult(
+            chunk=sample_chunk,
+            score=0.95,
+            rank=1,
+            explanation=explanation,
+        )
+        assert result.explanation.fused_score == 0.95
+        assert result.explanation.bm25_score == 0.8
+        assert result.explanation.vector_score == 0.7
+
+    def test_search_result_default_explanation(self, sample_chunk: Chunk):
+        """Test SearchResult has default explanation."""
+        result = SearchResult(
+            chunk=sample_chunk,
+            score=0.5,
+            rank=1,
+        )
+        assert result.explanation.fused_score == 0.0
+        assert result.explanation.bm25_score == 0.0
+        assert result.explanation.vector_score == 0.0
+
+    def test_search_result_explanation_provides_typed_access(self, sample_chunk: Chunk):
+        """Test that explanation provides IDE-friendly typed access."""
+        explanation = SearchExplanation(
+            fused_score=0.9,
+            bm25_score=0.7,
+            vector_score=0.6,
+        )
+        result = SearchResult(
+            chunk=sample_chunk,
+            score=0.9,
+            rank=1,
+            explanation=explanation,
+        )
+        # Type-safe attribute access (IDE autocomplete works)
+        fused = result.explanation.fused_score
+        bm25 = result.explanation.bm25_score
+        vector = result.explanation.vector_score
+        assert fused == 0.9
+        assert bm25 == 0.7
+        assert vector == 0.6

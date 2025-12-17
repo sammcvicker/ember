@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Typed SearchExplanation dataclass** (#301)
+  - Replaced untyped `dict[str, float | str]` with typed `SearchExplanation` dataclass
+  - Provides IDE autocomplete and compile-time error detection for score fields
+  - Fields: `fused_score`, `bm25_score`, `vector_score` with proper types
+  - Added `to_dict()` method for JSON serialization backward compatibility
+  - Immutable (frozen) dataclass for thread safety
+
+### Changed
 - **Single source of truth for version** (#299)
   - Created `ember/version.py` module with `__version__` constant
   - Version is now read from package metadata (`pyproject.toml`) using `importlib.metadata`

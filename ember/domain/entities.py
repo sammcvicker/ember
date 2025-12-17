@@ -237,6 +237,35 @@ class RepoState:
         return self.model_fingerprint != current_model_fingerprint
 
 
+@dataclass(frozen=True)
+class SearchExplanation:
+    """Explanation of why a search result matched the query.
+
+    Provides typed access to scoring details from hybrid search.
+
+    Attributes:
+        fused_score: Combined score from reciprocal rank fusion.
+        bm25_score: BM25 full-text search score.
+        vector_score: Semantic vector similarity score.
+    """
+
+    fused_score: float
+    bm25_score: float = 0.0
+    vector_score: float = 0.0
+
+    def to_dict(self) -> dict[str, float]:
+        """Convert to dictionary for JSON serialization.
+
+        Returns:
+            Dictionary with all score fields.
+        """
+        return {
+            "fused_score": self.fused_score,
+            "bm25_score": self.bm25_score,
+            "vector_score": self.vector_score,
+        }
+
+
 @dataclass
 class Query:
     """Search query with parameters.
@@ -301,14 +330,16 @@ class SearchResult:
         score: Relevance score (higher is better).
         rank: Result rank (1-indexed).
         preview: Short preview of matching content.
-        explanation: Optional explanation of why this matched.
+        explanation: Explanation of scoring breakdown.
     """
 
     chunk: Chunk
     score: float
     rank: int
     preview: str = field(default="")
-    explanation: dict[str, float | str] = field(default_factory=dict)
+    explanation: SearchExplanation = field(
+        default_factory=lambda: SearchExplanation(fused_score=0.0)
+    )
 
     def format_preview(self, max_lines: int = 3) -> str:
         """Generate preview text from chunk content.
