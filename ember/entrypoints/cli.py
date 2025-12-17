@@ -7,8 +7,6 @@ from __future__ import annotations
 
 import functools
 import sys
-from dataclasses import dataclass
-from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -39,6 +37,8 @@ from ember.core.cli_utils import (
 )
 from ember.core.indexing.index_usecase import ModelMismatchError
 from ember.core.presentation import ResultPresenter
+from ember.core.sync import classify_sync_error
+from ember.domain.entities import SyncErrorType, SyncResult
 from ember.version import __version__
 
 
@@ -267,39 +267,6 @@ def _create_indexing_usecase(repo_root: Path, db_path: Path, config):
     )
 
 
-class SyncErrorType(Enum):
-    """Classification of sync errors.
-
-    Allows callers to distinguish between different failure modes and respond
-    appropriately (e.g., warn vs. fail, retry vs. abort).
-    """
-
-    NONE = "none"  # No error occurred
-    GIT_ERROR = "git_error"  # Problem with git operations
-    DATABASE_ERROR = "database_error"  # Problem with SQLite database
-    PERMISSION_ERROR = "permission_error"  # File/directory access denied
-    UNKNOWN = "unknown"  # Unclassified error
-
-
-@dataclass
-class SyncResult:
-    """Result of an ensure_synced() call.
-
-    Provides information about whether a sync was performed and its outcome.
-
-    Attributes:
-        synced: True if a sync was performed, False if index was already up to date.
-        files_indexed: Number of files that were indexed (0 if no sync).
-        error: Error message if sync failed, None otherwise.
-        error_type: Classification of the error for programmatic handling.
-    """
-
-    synced: bool = False
-    files_indexed: int = 0
-    error: str | None = None
-    error_type: SyncErrorType = SyncErrorType.NONE
-
-
 def ensure_synced(
     repo_root: Path,
     db_path: Path,
@@ -393,61 +360,21 @@ def ensure_synced(
 
         return SyncResult(synced=True, files_indexed=response.files_indexed)
 
-    except PermissionError as e:
-        # File/directory access denied
+    except Exception as e:
+        # Classify and handle all errors uniformly
+        error_type = classify_sync_error(e)
+
         if verbose:
-            click.echo(f"Warning: Permission denied during sync: {e}", err=True)
+            if error_type == SyncErrorType.PERMISSION_ERROR:
+                click.echo(f"Warning: Permission denied during sync: {e}", err=True)
+            else:
+                click.echo(f"Warning: Could not check index staleness: {e}", err=True)
+
         return SyncResult(
             synced=False,
             files_indexed=0,
             error=str(e),
-            error_type=SyncErrorType.PERMISSION_ERROR,
-        )
-    except OSError as e:
-        # Check if it's a permission-related OSError
-        import errno
-
-        if e.errno in (errno.EACCES, errno.EPERM):
-            if verbose:
-                click.echo(f"Warning: Permission denied during sync: {e}", err=True)
-            return SyncResult(
-                synced=False,
-                files_indexed=0,
-                error=str(e),
-                error_type=SyncErrorType.PERMISSION_ERROR,
-            )
-        # Other OSError - classify as unknown
-        if verbose:
-            click.echo(f"Warning: Could not check index staleness: {e}", err=True)
-        return SyncResult(
-            synced=False, files_indexed=0, error=str(e), error_type=SyncErrorType.UNKNOWN
-        )
-    except Exception as e:
-        # Classify error based on exception type and message
-        import sqlite3
-        import subprocess
-
-        error_type = SyncErrorType.UNKNOWN
-
-        # Check for database errors
-        if isinstance(e, sqlite3.Error):
-            error_type = SyncErrorType.DATABASE_ERROR
-        # Check for git/subprocess errors
-        elif isinstance(e, subprocess.CalledProcessError):
-            error_type = SyncErrorType.GIT_ERROR
-        # Check RuntimeError messages for git-related errors
-        elif isinstance(e, RuntimeError):
-            error_msg = str(e).lower()
-            if any(
-                keyword in error_msg
-                for keyword in ["git", "repository", "ref", "commit", "tree"]
-            ):
-                error_type = SyncErrorType.GIT_ERROR
-
-        if verbose:
-            click.echo(f"Warning: Could not check index staleness: {e}", err=True)
-        return SyncResult(
-            synced=False, files_indexed=0, error=str(e), error_type=error_type
+            error_type=error_type,
         )
 
 
