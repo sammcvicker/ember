@@ -198,16 +198,17 @@ model = "broken"
         # Should log warning
         assert "Failed to parse config.toml" in caplog.text
 
-    def test_load_config_with_unknown_keys_returns_defaults(
+    def test_load_config_with_unknown_keys_ignores_them(
         self,
         provider: TomlConfigProvider,
         tmp_path: Path,
         no_global_config: Path,
-        caplog: pytest.LogCaptureFixture,
     ) -> None:
-        """Test that unknown keys in config fall back to defaults gracefully.
+        """Test that unknown keys in config are gracefully ignored.
 
         Uses no_global_config fixture to isolate from user's actual global config.
+        Unknown keys are simply ignored rather than causing errors - this allows
+        configs to be forward-compatible with future versions.
         """
         ember_dir = tmp_path / ".ember"
         ember_dir.mkdir()
@@ -220,16 +221,13 @@ unknown_future_key = "ignored"
 """
         )
 
-        # Unknown keys cause TypeError which is now caught and logged
         result = provider.load(ember_dir)
 
-        # Should return defaults
+        # Should use the valid values, ignoring unknown keys
+        assert result.search.topk == 42
+        # Other sections should have defaults
         default = EmberConfig.default()
-        assert result == default
-
-        # Should log warning about the invalid config
-        assert "Invalid config values" in caplog.text
-        assert "unknown_future_key" in caplog.text
+        assert result.index.model == default.index.model
 
 
 class TestPartialConfig:

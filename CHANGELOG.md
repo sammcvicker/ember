@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Domain-level config merging** (#302)
+  - Moved config merge logic from I/O layer to domain model
+  - Added `from_partial()` methods to all config dataclasses for type-safe merging
+  - `EmberConfig.from_partial(base, data)` merges partial config data with validation
+  - Sub-config classes (`IndexConfig`, `SearchConfig`, etc.) also have `from_partial()`
+  - Ensures merged configs are validated at each merge step
+  - Unknown config keys are now gracefully ignored (forward compatibility)
+  - Deprecated `merge_config_data()` in favor of domain merging
 - **RepoState factory methods** (#303)
   - Added `RepoState.uninitialized(version)` factory for creating initial states
   - Added `RepoState.from_sync(tree_sha, sync_mode, model_fingerprint, version)` factory for post-sync states
