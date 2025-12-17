@@ -503,24 +503,17 @@ class TestRepoStateHelperMethods:
     @pytest.fixture
     def initialized_state(self) -> RepoState:
         """Create an initialized RepoState for testing."""
-        return RepoState(
-            last_tree_sha="a" * 40,
-            last_sync_mode=SyncMode.WORKTREE,
+        return RepoState.from_sync(
+            tree_sha="a" * 40,
+            sync_mode=SyncMode.WORKTREE,
             model_fingerprint="jina-v2-code",
             version="1.0.0",
-            indexed_at=datetime.now(UTC).isoformat(),
         )
 
     @pytest.fixture
     def uninitialized_state(self) -> RepoState:
         """Create an uninitialized RepoState for testing."""
-        return RepoState(
-            last_tree_sha="",
-            last_sync_mode=SyncMode.NONE,
-            model_fingerprint="",
-            version="1.0.0",
-            indexed_at=datetime.now(UTC).isoformat(),
-        )
+        return RepoState.uninitialized(version="1.0.0")
 
     def test_is_uninitialized_true_when_no_tree_sha(self, uninitialized_state):
         """Test is_uninitialized returns True when tree_sha is empty."""
@@ -568,6 +561,105 @@ class TestRepoStateHelperMethods:
     def test_needs_model_update_true_when_empty_fingerprint(self, uninitialized_state):
         """Test needs_model_update returns True when current fingerprint is empty."""
         assert uninitialized_state.needs_model_update("any-model")
+
+
+# =============================================================================
+# RepoState factory method tests (#303)
+# =============================================================================
+
+
+class TestRepoStateFactoryMethods:
+    """Tests for RepoState factory methods."""
+
+    def test_uninitialized_factory_creates_empty_state(self):
+        """Test that uninitialized() creates a state with empty tree_sha."""
+        state = RepoState.uninitialized(version="1.2.0")
+        assert state.last_tree_sha == ""
+        assert state.last_sync_mode == SyncMode.NONE
+        assert state.model_fingerprint == ""
+        assert state.version == "1.2.0"
+        assert state.is_uninitialized
+
+    def test_uninitialized_factory_sets_timestamp(self):
+        """Test that uninitialized() sets indexed_at to current time."""
+        before = datetime.now(UTC)
+        state = RepoState.uninitialized(version="1.2.0")
+        after = datetime.now(UTC)
+
+        # indexed_at is ISO8601Timestamp, use .value to get the datetime
+        timestamp = state.indexed_at.value
+        assert before <= timestamp <= after
+
+    def test_from_sync_factory_creates_initialized_state(self):
+        """Test that from_sync() creates a properly initialized state."""
+        tree_sha = "a" * 40
+        state = RepoState.from_sync(
+            tree_sha=tree_sha,
+            sync_mode=SyncMode.WORKTREE,
+            model_fingerprint="jina-v2-code",
+            version="1.2.0",
+        )
+        assert state.last_tree_sha == tree_sha
+        assert state.last_sync_mode == SyncMode.WORKTREE
+        assert state.model_fingerprint == "jina-v2-code"
+        assert state.version == "1.2.0"
+        assert not state.is_uninitialized
+
+    def test_from_sync_factory_accepts_string_sync_mode(self):
+        """Test that from_sync() accepts string sync mode."""
+        state = RepoState.from_sync(
+            tree_sha="b" * 40,
+            sync_mode="staged",
+            model_fingerprint="model",
+            version="1.0.0",
+        )
+        assert state.last_sync_mode == SyncMode.STAGED
+
+    def test_from_sync_factory_accepts_commit_sha(self):
+        """Test that from_sync() accepts commit SHA as sync mode."""
+        commit_sha = "abc123def456789012345678901234567890abcd"
+        state = RepoState.from_sync(
+            tree_sha="c" * 40,
+            sync_mode=commit_sha,
+            model_fingerprint="model",
+            version="1.0.0",
+        )
+        assert state.last_sync_mode == commit_sha
+
+    def test_from_sync_factory_sets_timestamp(self):
+        """Test that from_sync() sets indexed_at to current time."""
+        before = datetime.now(UTC)
+        state = RepoState.from_sync(
+            tree_sha="d" * 40,
+            sync_mode=SyncMode.WORKTREE,
+            model_fingerprint="model",
+            version="1.0.0",
+        )
+        after = datetime.now(UTC)
+
+        # indexed_at is ISO8601Timestamp, use .value to get the datetime
+        timestamp = state.indexed_at.value
+        assert before <= timestamp <= after
+
+    def test_from_sync_factory_validates_tree_sha(self):
+        """Test that from_sync() validates tree_sha format."""
+        with pytest.raises(ValueError, match="tree_sha must be empty or a valid"):
+            RepoState.from_sync(
+                tree_sha="invalid",
+                sync_mode=SyncMode.WORKTREE,
+                model_fingerprint="model",
+                version="1.0.0",
+            )
+
+    def test_from_sync_factory_validates_version(self):
+        """Test that from_sync() validates version is not empty."""
+        with pytest.raises(ValueError, match="version cannot be empty"):
+            RepoState.from_sync(
+                tree_sha="e" * 40,
+                sync_mode=SyncMode.WORKTREE,
+                model_fingerprint="model",
+                version="",
+            )
 
 
 # =============================================================================

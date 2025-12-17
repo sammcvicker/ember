@@ -4,8 +4,11 @@ Core domain models representing the business concepts of Ember.
 These are pure Python dataclasses with no dependencies on infrastructure.
 """
 
+from __future__ import annotations
+
 import re
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 
@@ -235,6 +238,57 @@ class RepoState:
             True if the stored fingerprint differs from current model.
         """
         return self.model_fingerprint != current_model_fingerprint
+
+    @classmethod
+    def uninitialized(cls, version: str) -> RepoState:
+        """Create an uninitialized repo state.
+
+        Factory method for creating a RepoState representing a repository
+        that has never been indexed.
+
+        Args:
+            version: Ember version string (e.g., "1.2.0").
+
+        Returns:
+            RepoState with empty tree_sha and default values.
+        """
+        return cls(
+            last_tree_sha="",
+            last_sync_mode=SyncMode.NONE,
+            model_fingerprint="",
+            version=version,
+            indexed_at=datetime.now(UTC).isoformat(),
+        )
+
+    @classmethod
+    def from_sync(
+        cls,
+        tree_sha: str,
+        sync_mode: str | SyncMode,
+        model_fingerprint: str,
+        version: str,
+    ) -> RepoState:
+        """Create state after a successful sync.
+
+        Factory method for creating a RepoState representing a repository
+        that has been successfully indexed.
+
+        Args:
+            tree_sha: Git tree SHA that was indexed.
+            sync_mode: Sync mode used (SyncMode enum or commit SHA string).
+            model_fingerprint: Fingerprint of embedding model used.
+            version: Ember version string (e.g., "1.2.0").
+
+        Returns:
+            RepoState with the provided sync information and current timestamp.
+        """
+        return cls(
+            last_tree_sha=tree_sha,
+            last_sync_mode=sync_mode,
+            model_fingerprint=model_fingerprint,
+            version=version,
+            indexed_at=datetime.now(UTC).isoformat(),
+        )
 
 
 @dataclass(frozen=True)
