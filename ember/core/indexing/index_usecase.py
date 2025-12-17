@@ -742,7 +742,9 @@ class IndexingUseCase:
                 mtime=time.time(),
             )
         except Exception as e:
-            logger.warning(f"Failed to track file {preprocessed.rel_path}: {e}")
+            logger.warning(
+                f"Failed to track file {preprocessed.rel_path}: {e}", exc_info=True
+            )
             # Continue - file tracking is not critical
 
     def _create_chunks(

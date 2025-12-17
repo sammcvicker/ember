@@ -4,6 +4,7 @@ Provides Rich-based progress bars and context managers for visual feedback
 during long-running operations.
 """
 
+import logging
 from collections.abc import Generator
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
@@ -18,6 +19,8 @@ from rich.progress import (
 
 if TYPE_CHECKING:
     from ember.ports.daemon import DaemonManager
+
+logger = logging.getLogger(__name__)
 
 
 class RichProgressCallback:
@@ -129,6 +132,8 @@ def ensure_daemon_with_progress(
             if result:
                 progress.update(task, description="Daemon started")
             return result
-        except Exception as e:
+        except (OSError, RuntimeError) as e:
+            # OSError: socket/process failures, RuntimeError: daemon startup failures
+            logger.warning("Failed to start daemon", exc_info=True)
             progress.update(task, description=f"Failed to start daemon: {e}")
             return False

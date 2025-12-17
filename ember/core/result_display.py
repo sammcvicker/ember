@@ -4,12 +4,15 @@ Handles formatting headers and displaying content with context and
 syntax highlighting.
 """
 
+import logging
 from pathlib import Path
 from typing import Any
 
 import click
 
 from ember.core.presentation.colors import EmberColors
+
+logger = logging.getLogger(__name__)
 
 
 def format_result_header(
@@ -82,9 +85,18 @@ def display_content_with_context(
             else:
                 click.echo(click.style(f"{line_num:5} | {line_content}", dim=True))
         return True
-    except Exception as e:
+    except OSError as e:
+        # File read errors (permission denied, I/O errors, etc.)
+        logger.warning(f"Could not read context from {result['path']}", exc_info=True)
         click.echo(
             f"Warning: Could not read context from {result['path']}: {e}", err=True
+        )
+        return False
+    except (KeyError, IndexError) as e:
+        # Missing or invalid line numbers in result dict
+        logger.warning(f"Invalid result data for {result.get('path', 'unknown')}", exc_info=True)
+        click.echo(
+            f"Warning: Could not display context: {e}", err=True
         )
         return False
 
@@ -116,6 +128,9 @@ def display_content_with_highlighting(
             click.echo(highlighted)
         except Exception as e:
             # Fallback to plain text if highlighting fails
+            # Keep broad exception since highlighting can fail in many ways
+            # (lexer not found, invalid syntax, etc.) and fallback is always safe
+            logger.debug("Syntax highlighting failed, falling back to plain text", exc_info=True)
             if verbose:
                 click.echo(f"Warning: Syntax highlighting failed: {e}", err=True)
             click.echo(content)

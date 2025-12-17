@@ -168,8 +168,9 @@ class DaemonEmbedderClient:
             )
             self._daemon_start_attempted = True
             return lifecycle.ensure_running()
-        except Exception as e:
-            logger.error(f"Failed to start daemon: {e}")
+        except (OSError, RuntimeError) as e:
+            # OSError: process/socket errors, RuntimeError: daemon startup failures
+            logger.error(f"Failed to start daemon: {e}", exc_info=True)
             return False
 
     def _connect(self) -> socket.socket:

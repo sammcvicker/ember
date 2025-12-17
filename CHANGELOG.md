@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Narrowed exception handling in error-prone paths** (#298)
+  - Replaced broad `except Exception` with specific exception types where possible
+  - Added `exc_info=True` logging to preserve full tracebacks for debugging
+  - Affected modules: `progress.py`, `result_display.py`, `lifecycle.py`, `client.py`, `chunk_storage.py`, `index_usecase.py`, `status_usecase.py`
+  - Improves debuggability while preventing masking of unexpected errors
+
 ### Performance
 - **Optimized DefinitionMatcher AST traversal** (#295)
   - Added memoization to `match()` method for ancestor lookups
