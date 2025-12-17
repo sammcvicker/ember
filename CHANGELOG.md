@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **RepoState factory methods** (#303)
+  - Added `RepoState.uninitialized(version)` factory for creating initial states
+  - Added `RepoState.from_sync(tree_sha, sync_mode, model_fingerprint, version)` factory for post-sync states
+  - Eliminates verbose constructor calls with magic values
+  - Encapsulates common construction patterns for better maintainability
+  - Migrated `state_io.create_initial_state()` and test fixtures to use factories
 - **Typed SearchExplanation dataclass** (#301)
   - Replaced untyped `dict[str, float | str]` with typed `SearchExplanation` dataclass
   - Provides IDE autocomplete and compile-time error detection for score fields

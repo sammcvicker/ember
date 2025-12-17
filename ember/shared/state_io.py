@@ -5,7 +5,6 @@ The state file tracks what has been indexed and enables incremental sync.
 """
 
 import json
-from datetime import UTC
 from pathlib import Path
 
 from ember.domain.entities import RepoState, SyncMode
@@ -78,14 +77,5 @@ def create_initial_state(path: Path, version: str = "0.1.0") -> None:
         path: Destination path for state.json
         version: Ember version string
     """
-    from datetime import datetime
-
-    state = RepoState(
-        last_tree_sha="",
-        last_sync_mode="none",
-        model_fingerprint="",
-        version=version,
-        indexed_at=datetime.now(UTC).isoformat(),
-    )
-
+    state = RepoState.uninitialized(version=version)
     save_state(state, path)
