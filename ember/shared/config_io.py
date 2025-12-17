@@ -72,6 +72,11 @@ def load_config_data(path: Path) -> dict[str, Any]:
 def merge_config_data(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     """Merge two config dictionaries, with override values taking precedence.
 
+    .. deprecated::
+        Use EmberConfig.from_partial() for config merging. This function performs
+        merging at the dict level without domain validation. The domain method
+        ensures validation at each merge step.
+
     Performs a shallow merge at the section level - if a section exists in override,
     its values completely replace the base section's values.
 

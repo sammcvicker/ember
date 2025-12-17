@@ -13,10 +13,9 @@ from pathlib import Path
 
 from ember.domain.config import EmberConfig
 from ember.shared.config_io import (
-    config_data_to_ember_config,
+    _validate_model_name,
     get_global_config_path,
     load_config_data,
-    merge_config_data,
 )
 
 logger = logging.getLogger(__name__)
@@ -37,6 +36,9 @@ class TomlConfigProvider:
     def load(self, ember_dir: Path) -> EmberConfig:
         """Load configuration with global fallback.
 
+        Uses domain-level merging via EmberConfig.from_partial to ensure
+        validation happens at each merge step.
+
         Args:
             ember_dir: Path to .ember directory containing config.toml
 
@@ -46,14 +48,14 @@ class TomlConfigProvider:
         local_path = ember_dir / "config.toml"
         global_path = get_global_config_path()
 
-        # Start with empty data (defaults will be applied by dataclasses)
-        merged_data: dict = {}
+        # Start with built-in defaults
+        config = EmberConfig.default()
 
-        # Load global config if exists
+        # Apply global config overrides if exists
         if global_path.exists():
             try:
                 global_data = load_config_data(global_path)
-                merged_data = global_data
+                config = EmberConfig.from_partial(config, global_data)
                 logger.debug("Loaded global config from %s", global_path)
             except (FileNotFoundError, ValueError) as e:
                 logger.warning(
@@ -62,11 +64,11 @@ class TomlConfigProvider:
                     e,
                 )
 
-        # Load and merge local config if exists
+        # Apply local config overrides if exists
         if local_path.exists():
             try:
                 local_data = load_config_data(local_path)
-                merged_data = merge_config_data(merged_data, local_data)
+                config = EmberConfig.from_partial(config, local_data)
                 logger.debug("Loaded local config from %s", local_path)
             except (FileNotFoundError, ValueError) as e:
                 logger.warning(
@@ -74,16 +76,15 @@ class TomlConfigProvider:
                     e,
                 )
 
-        # If no config was loaded, return defaults
-        if not merged_data:
-            return EmberConfig.default()
-
-        # Convert merged data to EmberConfig
+        # Validate model name at config boundary (adapter layer)
+        # Model validation involves the registry (adapter), so it stays here
         try:
-            return config_data_to_ember_config(merged_data)
-        except (TypeError, ValueError) as e:
+            _validate_model_name(config.index.model)
+        except ValueError as e:
             logger.warning(
-                "Invalid config values: %s. Using default configuration.",
+                "Invalid model configuration: %s. Using default model.",
                 e,
             )
             return EmberConfig.default()
+
+        return config
