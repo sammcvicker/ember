@@ -139,7 +139,7 @@ def test_search_exact_keyword_match(search_usecase: SearchUseCase) -> None:
     assert results[0].chunk.symbol == "multiply"
     assert "multiply" in results[0].chunk.content.lower()
     # Should have BM25 score
-    assert results[0].explanation["bm25_score"] > 0
+    assert results[0].explanation.bm25_score > 0
 
 
 @pytest.mark.slow
@@ -153,7 +153,7 @@ def test_search_semantic_similarity(search_usecase: SearchUseCase) -> None:
     result_symbols = {r.chunk.symbol for r in results}
     assert result_symbols & {"greet", "farewell"}  # At least one should match
     # Should have vector score
-    assert results[0].explanation["vector_score"] > 0
+    assert results[0].explanation.vector_score > 0
 
 
 @pytest.mark.slow
@@ -163,13 +163,14 @@ def test_search_hybrid_fusion(search_usecase: SearchUseCase) -> None:
     results = search_usecase.search(query)
 
     assert len(results) > 0
-    # Should have both BM25 and vector scores
+    # Should have both BM25 and vector scores (typed access)
     for result in results:
-        assert "bm25_score" in result.explanation
-        assert "vector_score" in result.explanation
-        assert "fused_score" in result.explanation
+        # Typed fields always exist - no need to check "in"
+        assert hasattr(result.explanation, "bm25_score")
+        assert hasattr(result.explanation, "vector_score")
+        assert hasattr(result.explanation, "fused_score")
         # Fused score should be positive
-        assert result.explanation["fused_score"] > 0
+        assert result.explanation.fused_score > 0
 
 
 @pytest.mark.slow
