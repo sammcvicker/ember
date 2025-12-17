@@ -53,6 +53,39 @@ class SyncMode(str, Enum):
         return bool(re.match(r"^[a-f0-9]{7,40}$", value))
 
 
+class SyncErrorType(str, Enum):
+    """Classification of sync errors.
+
+    Allows callers to distinguish between different failure modes and respond
+    appropriately (e.g., warn vs. fail, retry vs. abort).
+    """
+
+    NONE = "none"  # No error occurred
+    GIT_ERROR = "git_error"  # Problem with git operations
+    DATABASE_ERROR = "database_error"  # Problem with SQLite database
+    PERMISSION_ERROR = "permission_error"  # File/directory access denied
+    UNKNOWN = "unknown"  # Unclassified error
+
+
+@dataclass
+class SyncResult:
+    """Result of a sync operation.
+
+    Provides information about whether a sync was performed and its outcome.
+
+    Attributes:
+        synced: True if a sync was performed, False if index was already up to date.
+        files_indexed: Number of files that were indexed (0 if no sync).
+        error: Error message if sync failed, None otherwise.
+        error_type: Classification of the error for programmatic handling.
+    """
+
+    synced: bool = False
+    files_indexed: int = 0
+    error: str | None = None
+    error_type: SyncErrorType = field(default=SyncErrorType.NONE)
+
+
 @dataclass(frozen=True)
 class Chunk:
     """A chunk of code with metadata.

@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Extracted sync error classification to core layer** (#319)
+  - Moved `SyncErrorType` and `SyncResult` from CLI to `ember.domain.entities`
+  - Created `classify_sync_error()` function in `ember.core.sync` module
+  - Reduced `ensure_synced()` cyclomatic complexity from 21 to ~8
+  - Business logic now testable independently of CLI layer
+  - Error classification follows same logic but is now reusable
 - **Domain-level config merging** (#302)
   - Moved config merge logic from I/O layer to domain model
   - Added `from_partial()` methods to all config dataclasses for type-safe merging
