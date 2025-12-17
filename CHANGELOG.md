@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Single source of truth for version** (#299)
+  - Created `ember/version.py` module with `__version__` constant
+  - Version is now read from package metadata (`pyproject.toml`) using `importlib.metadata`
+  - Removed hardcoded version strings from CLI entrypoint
+  - Reduces maintenance burden and eliminates risk of version drift
 - **Narrowed exception handling in error-prone paths** (#298)
   - Replaced broad `except Exception` with specific exception types where possible
   - Added `exc_info=True` logging to preserve full tracebacks for debugging
