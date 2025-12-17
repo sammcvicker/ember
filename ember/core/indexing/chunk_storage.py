@@ -93,7 +93,7 @@ class ChunkStorageService:
             self.chunk_repo.delete_all_for_path(path=rel_path)
             return True
         except Exception as e:
-            logger.error(f"Failed to delete old chunks for {rel_path}: {e}")
+            logger.error(f"Failed to delete old chunks for {rel_path}: {e}", exc_info=True)
             return False
 
     def store_chunks_and_embeddings(
@@ -173,7 +173,9 @@ class ChunkStorageService:
 
         except Exception as e:
             # Rollback: delete any chunks we added
-            logger.error(f"Error storing chunks for {rel_path}: {e}. Rolling back.")
+            logger.error(
+                f"Error storing chunks for {rel_path}: {e}. Rolling back.", exc_info=True
+            )
             self._rollback_chunks(added_chunk_ids)
             return StorageResult.failure()
 

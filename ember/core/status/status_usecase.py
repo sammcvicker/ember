@@ -114,7 +114,7 @@ class StatusUseCase:
             )
 
         except Exception as e:
-            logger.error(f"Failed to get status: {e}")
+            logger.error(f"Failed to get status: {e}", exc_info=True)
             return StatusResponse(
                 initialized=True,
                 repo_root=request.repo_root,

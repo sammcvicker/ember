@@ -249,7 +249,7 @@ class DaemonLifecycle:
         try:
             self.pid_file.write_text(str(process.pid))
             logger.info(f"Daemon started with PID {process.pid}")
-        except Exception as e:
+        except OSError as e:
             # Failed to write PID file - terminate process to avoid orphan
             process.terminate()
             raise RuntimeError(f"Failed to write PID file: {e}") from e
@@ -373,7 +373,11 @@ class DaemonLifecycle:
 
             self._handle_startup_timeout(process)
 
-        except Exception as e:
+        except RuntimeError:
+            # Re-raise RuntimeError from helper methods (already formatted)
+            raise
+        except (OSError, subprocess.CalledProcessError) as e:
+            # OSError: process spawn failures, CalledProcessError: foreground mode failure
             raise RuntimeError(f"Failed to start daemon: {e}") from e
 
         # This return is unreachable but satisfies type checker
