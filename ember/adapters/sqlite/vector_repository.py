@@ -1,11 +1,12 @@
 """SQLite adapter implementing VectorRepository protocol for embedding storage."""
 
-import sqlite3
 import struct
 from pathlib import Path
 
+from ember.adapters.sqlite.base_repository import SQLiteBaseRepository
 
-class SQLiteVectorRepository:
+
+class SQLiteVectorRepository(SQLiteBaseRepository):
     """SQLite implementation of VectorRepository for storing embeddings.
 
     Stores vectors as BLOBs using simple binary encoding (array of floats).
@@ -21,37 +22,8 @@ class SQLiteVectorRepository:
             expected_dim: Expected embedding dimension for validation (e.g., 768 for Jina v2).
                          If provided, validates that all embeddings have this dimension.
         """
-        self.db_path = db_path
+        super().__init__(db_path, foreign_keys=True)
         self.expected_dim = expected_dim
-        self._conn: sqlite3.Connection | None = None
-
-    def _get_connection(self) -> sqlite3.Connection:
-        """Get a database connection with foreign keys enabled.
-
-        Reuses an existing connection if available, otherwise creates a new one.
-
-        Returns:
-            SQLite connection object.
-        """
-        if self._conn is None:
-            self._conn = sqlite3.connect(self.db_path)
-            self._conn.execute("PRAGMA foreign_keys = ON")
-        return self._conn
-
-    def close(self) -> None:
-        """Close the database connection if open."""
-        if self._conn is not None:
-            self._conn.close()
-            self._conn = None
-
-    def __enter__(self) -> "SQLiteVectorRepository":
-        """Enter context manager."""
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
-        """Exit context manager, closing the database connection."""
-        self.close()
-        return False
 
     def _encode_vector(self, vector: list[float]) -> bytes:
         """Encode a vector as binary BLOB.

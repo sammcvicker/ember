@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Extracted SQLite base repository class to reduce duplication** (#321)
+  - Created `SQLiteBaseRepository` base class with thread-safe connection management
+  - All six SQLite adapters now inherit from this class instead of duplicating code
+  - Standardized thread-safety: all repositories now use double-checked locking
+  - Consistent cross-thread access via `check_same_thread=False`
+  - Configurable foreign keys and custom connection setup callbacks
+  - Removed ~150 lines of duplicate connection management code
+  - Affected: `chunk_repository`, `file_repository`, `vector_repository`, `meta_repository`, `sqlite_fts`, `sqlite_vec_adapter`
 - **Extracted factory functions from CLI to dedicated module** (#320)
   - Created `ember/adapters/factory.py` with `EmbedderFactory`, `UseCaseFactory`, `RepositoryFactory`, `DaemonFactory`, and `ConfigFactory` classes
   - CLI no longer directly imports 9+ adapter classes for use case instantiation
