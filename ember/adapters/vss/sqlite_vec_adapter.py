@@ -8,10 +8,11 @@ especially for larger datasets.
 import re
 import sqlite3
 import struct
-import threading
 from pathlib import Path
 
 import sqlite_vec
+
+from ember.adapters.sqlite.base_repository import SQLiteBaseRepository
 
 
 class DimensionMismatchError(Exception):
@@ -30,7 +31,14 @@ class DimensionMismatchError(Exception):
         )
 
 
-class SqliteVecAdapter:
+def _load_sqlite_vec(conn: sqlite3.Connection) -> None:
+    """Load the sqlite-vec extension into a connection."""
+    conn.enable_load_extension(True)
+    sqlite_vec.load(conn)
+    conn.enable_load_extension(False)
+
+
+class SqliteVecAdapter(SQLiteBaseRepository):
     """Vector search adapter using sqlite-vec extension.
 
     This adapter uses the sqlite-vec extension (https://github.com/asg017/sqlite-vec)
@@ -48,50 +56,9 @@ class SqliteVecAdapter:
             db_path: Path to SQLite database file.
             vector_dim: Dimension of embedding vectors (default 768 for Jina v2 Code).
         """
-        self.db_path = db_path
+        super().__init__(db_path, connection_setup=_load_sqlite_vec)
         self.vector_dim = vector_dim
-        self._conn: sqlite3.Connection | None = None
-        self._conn_lock = threading.Lock()
         self._ensure_vec_table()
-
-    def close(self) -> None:
-        """Close the database connection if open."""
-        if self._conn is not None:
-            self._conn.close()
-            self._conn = None
-
-    def __enter__(self) -> "SqliteVecAdapter":
-        """Enter context manager."""
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
-        """Exit context manager."""
-        self.close()
-        return False
-
-    def _get_connection(self) -> sqlite3.Connection:
-        """Get a database connection with sqlite-vec extension loaded.
-
-        Reuses an existing connection if available, otherwise creates a new one.
-        The sqlite-vec extension is loaded only once when the connection is created.
-        Uses check_same_thread=False to allow use from different threads, which
-        is required for interactive search where queries run in a thread executor.
-
-        Thread-safe: Uses double-checked locking to prevent race conditions
-        where multiple threads could create separate connections simultaneously.
-
-        Returns:
-            SQLite connection object with vec extension enabled.
-        """
-        if self._conn is None:
-            with self._conn_lock:
-                # Double-check pattern: re-check after acquiring lock
-                if self._conn is None:
-                    self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
-                    self._conn.enable_load_extension(True)
-                    sqlite_vec.load(self._conn)
-                    self._conn.enable_load_extension(False)
-        return self._conn
 
     def _ensure_vec_table(self) -> None:
         """Ensure the vec0 virtual table exists and is populated.
