@@ -13,6 +13,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Version is now read from package metadata (`pyproject.toml`) using `importlib.metadata`
   - Removed hardcoded version strings from CLI entrypoint
   - Reduces maintenance burden and eliminates risk of version drift
+- **Improved SyncResult error classification** (#300)
+  - Added `SyncErrorType` enum to distinguish error types (git, database, permission, unknown)
+  - `SyncResult.error_type` allows callers to handle errors appropriately
+  - Git errors detected from `RuntimeError` messages and `subprocess.CalledProcessError`
+  - Database errors detected from `sqlite3.Error` exceptions
+  - Permission errors detected from `PermissionError` and `OSError` with EACCES/EPERM
 - **Narrowed exception handling in error-prone paths** (#298)
   - Replaced broad `except Exception` with specific exception types where possible
   - Added `exc_info=True` logging to preserve full tracebacks for debugging
