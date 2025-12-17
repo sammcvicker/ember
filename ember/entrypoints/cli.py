@@ -38,6 +38,7 @@ from ember.core.cli_utils import (
 )
 from ember.core.indexing.index_usecase import ModelMismatchError
 from ember.core.presentation import ResultPresenter
+from ember.version import __version__
 
 
 def handle_cli_errors(command_name: str):
@@ -416,7 +417,7 @@ def check_and_auto_sync(
 
 
 @click.group()
-@click.version_option(version="1.2.0", prog_name="ember")
+@click.version_option(version=__version__, prog_name="ember")
 @click.option(
     "--verbose",
     "-v",
@@ -598,7 +599,7 @@ def init(ctx: click.Context, force: bool, model: str | None, yes: bool) -> None:
     selected_model = _select_embedding_model(model, quiet, yes)
 
     db_initializer = SqliteDatabaseInitializer()
-    use_case = InitUseCase(db_initializer=db_initializer, version="1.2.0")
+    use_case = InitUseCase(db_initializer=db_initializer, version=__version__)
     request = InitRequest(repo_root=repo_root, force=force, model=selected_model)
 
     try:
