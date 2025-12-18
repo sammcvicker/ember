@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Reusable mock embedder and chunk factory fixtures** (#325)
+  - Added `mock_embedder` fixture: Standard mock with deterministic embeddings based on text hash
+  - Added `mock_embedder_factory` fixture: Factory for creating customized mock embedders
+  - Added `chunk_factory` fixture: Factory for creating test chunks with sensible defaults
+  - Updated `test_chunk_storage.py` to use global `mock_embedder` fixture
+  - Reduces test code duplication and ensures consistent mock behavior
 - **Concurrent sync and recovery scenario tests** (#323)
   - Added integration tests for critical concurrent access and recovery behaviors
   - Concurrent operations: sequential chunk additions, concurrent reads from multiple threads, sequential meta updates
