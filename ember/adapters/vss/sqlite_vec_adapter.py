@@ -47,6 +47,10 @@ class SqliteVecAdapter(SQLiteBaseRepository):
 
     The adapter creates a vec0 virtual table that stores vectors and provides
     fast k-nearest-neighbors search using cosine similarity.
+
+    Performance optimization: The adapter tracks whether vectors need syncing
+    via a dirty flag. Sync only runs when new vectors have been added since
+    the last sync, avoiding unnecessary database scans on read-heavy workloads.
     """
 
     def __init__(self, db_path: Path, vector_dim: int = 768) -> None:
@@ -58,6 +62,8 @@ class SqliteVecAdapter(SQLiteBaseRepository):
         """
         super().__init__(db_path, connection_setup=_load_sqlite_vec)
         self.vector_dim = vector_dim
+        # Track whether vectors need syncing (assume dirty on init)
+        self._needs_sync = True
         self._ensure_vec_table()
 
     def _ensure_vec_table(self) -> None:
@@ -107,6 +113,9 @@ class SqliteVecAdapter(SQLiteBaseRepository):
         Uses batch inserts with executemany() for significantly better performance
         when syncing large numbers of vectors. For 1000 vectors, this reduces
         database calls from 2000 individual executes to 2 batch operations.
+
+        After syncing, clears the _needs_sync flag to avoid redundant syncs
+        on subsequent queries.
         """
         conn = self._get_connection()
         cursor = conn.cursor()
@@ -150,6 +159,8 @@ class SqliteVecAdapter(SQLiteBaseRepository):
             vectors_to_add.append((vector, project_id, path, start_line, end_line, chunk_db_id))
 
         if not vectors_to_add:
+            # No new vectors to sync, clear the flag
+            self._needs_sync = False
             return
 
         # Get the current max rowid to calculate new rowids after batch insert
@@ -191,6 +202,9 @@ class SqliteVecAdapter(SQLiteBaseRepository):
 
         conn.commit()
 
+        # Clear the sync flag after successful sync
+        self._needs_sync = False
+
     def _encode_vector(self, vector: list[float]) -> bytes:
         """Encode a vector to binary format for sqlite-vec.
 
@@ -217,6 +231,28 @@ class SqliteVecAdapter(SQLiteBaseRepository):
         # The _sync_vectors method handles populating vec_chunks
         pass
 
+    def mark_dirty(self) -> None:
+        """Mark vectors as needing sync.
+
+        Call this after adding vectors via VectorRepository to ensure
+        the next query will sync the new vectors to the vec_chunks table.
+
+        This is more efficient than syncing on every query, as it allows
+        batch operations to complete before a single sync.
+        """
+        self._needs_sync = True
+
+    def sync_if_needed(self) -> bool:
+        """Manually trigger sync if needed.
+
+        Returns:
+            True if sync was performed, False if already up to date.
+        """
+        if self._needs_sync:
+            self._sync_vectors()
+            return True
+        return False
+
     def query(
         self,
         vector: list[float],
@@ -225,7 +261,9 @@ class SqliteVecAdapter(SQLiteBaseRepository):
     ) -> list[tuple[str, float]]:
         """Query for nearest neighbors using sqlite-vec.
 
-        Automatically syncs any new vectors from the vectors table before querying.
+        Syncs new vectors from the vectors table only if needed (when vectors
+        have been added since the last sync). This avoids expensive database
+        scans on read-heavy workloads.
 
         Args:
             vector: Query embedding vector.
@@ -239,8 +277,9 @@ class SqliteVecAdapter(SQLiteBaseRepository):
         Raises:
             DimensionMismatchError: If query vector dimension doesn't match index.
         """
-        # Sync any new vectors before querying
-        self._sync_vectors()
+        # Only sync if vectors have been added since last sync
+        if self._needs_sync:
+            self._sync_vectors()
 
         conn = self._get_connection()
         cursor = conn.cursor()

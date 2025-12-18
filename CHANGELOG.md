@@ -100,6 +100,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Improves debuggability while preventing masking of unexpected errors
 
 ### Performance
+- **Optimized VSS sync to avoid redundant database scans** (#327)
+  - Added dirty flag tracking to `SqliteVecAdapter` to skip sync when vectors haven't changed
+  - `_sync_vectors()` only runs when `_needs_sync` flag is set (true on init, cleared after sync)
+  - `query()` now checks dirty flag before syncing instead of always syncing
+  - Added `mark_dirty()` method for external callers to trigger sync after adding vectors
+  - Added `sync_if_needed()` method for manual sync control
+  - Reduces overhead on read-heavy workloads where vectors don't change between queries
+
 - **Optimized DefinitionMatcher AST traversal** (#295)
   - Added memoization to `match()` method for ancestor lookups
   - Reduces complexity from O(n*m) to O(n+m) where n=nodes, m=name nodes

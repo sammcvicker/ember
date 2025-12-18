@@ -259,6 +259,9 @@ def test_sync_vectors_incremental_sync(db_path: Path) -> None:
     conn.commit()
     conn.close()
 
+    # Mark dirty to trigger sync on next query (simulates external vector addition)
+    adapter.mark_dirty()
+
     # Query triggers sync
     query_vector = [1.0 / (vector_dim ** 0.5)] * vector_dim
     adapter.query(query_vector, topk=10)
