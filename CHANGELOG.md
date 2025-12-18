@@ -29,6 +29,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `RepoState` validates initialized state (non-empty tree_sha) requires model_fingerprint
 
 ### Changed
+- **Consolidated daemon socket connection pattern** (#326)
+  - Created `daemon_socket_connection` context manager for consistent socket handling
+  - Refactored `is_daemon_running()`, `get_daemon_pid()`, and `_daemon_embed()` to use it
+  - Single place to manage socket setup, timeout, and cleanup
+  - Easier to add features like retry logic or connection pooling in the future
 - **Consistent error handling across all CLI commands** (#324)
   - Applied `@handle_cli_errors` decorator to all 17 CLI commands
   - Commands without decorator: `init`, `export`, `import`, `audit`, `status`, `config show/edit/path`, `daemon start/stop/restart/status`
