@@ -196,7 +196,7 @@ class TestModelConfigValidation:
 
 
 # =============================================================================
-# DisplayConfig validation tests (no validation needed, just literal types)
+# DisplayConfig validation tests
 # =============================================================================
 
 
@@ -218,6 +218,22 @@ class TestDisplayConfigValidation:
         assert config.syntax_highlighting is False
         assert config.color_scheme == "always"
         assert config.theme == "monokai"
+
+    def test_display_config_valid_pygments_themes(self):
+        """Test that common Pygments themes are accepted."""
+        for theme in ["ansi", "monokai", "github-dark", "dracula", "solarized-dark"]:
+            config = DisplayConfig(theme=theme)
+            assert config.theme == theme
+
+    def test_display_config_invalid_theme_raises_error(self):
+        """Test that invalid theme raises ValueError."""
+        with pytest.raises(ValueError, match="Unknown theme 'invalid-theme'"):
+            DisplayConfig(theme="invalid-theme")
+
+    def test_display_config_empty_theme_raises_error(self):
+        """Test that empty theme raises ValueError."""
+        with pytest.raises(ValueError, match="Unknown theme ''"):
+            DisplayConfig(theme="")
 
 
 # =============================================================================
@@ -357,6 +373,12 @@ class TestDisplayConfigFromPartial:
 
         assert result.syntax_highlighting is True  # Unchanged
         assert result.theme == "github-dark"
+
+    def test_from_partial_validates_result(self):
+        """Test that merged config is validated."""
+        base = DisplayConfig()
+        with pytest.raises(ValueError, match="Unknown theme"):
+            DisplayConfig.from_partial(base, {"theme": "not-a-real-theme"})
 
 
 class TestEmberConfigFromPartial:

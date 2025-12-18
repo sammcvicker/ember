@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **DisplayConfig validation for theme names** (#333)
+  - `DisplayConfig` now validates theme against valid Pygments themes plus "ansi"
+  - Invalid themes raise `ValueError` with helpful error message
+  - Consistent with validation pattern used by all other config classes
+
 ### Changed
 - **Consolidated model registry to single source of truth** (#332)
   - Created `ModelSpec` dataclass containing all model metadata (id, presets, dim, params, memory, max_seq_length, description)

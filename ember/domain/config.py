@@ -8,6 +8,11 @@ models that represent validated configuration state.
 from dataclasses import dataclass, field
 from typing import Literal
 
+from pygments.styles import get_all_styles
+
+# Valid Pygments themes plus "ansi" for terminal-native colors
+VALID_THEMES: frozenset[str] = frozenset(get_all_styles()) | {"ansi"}
+
 
 @dataclass(frozen=True)
 class IndexConfig:
@@ -256,11 +261,22 @@ class DisplayConfig:
         theme: Syntax highlighting theme (default: "ansi" for terminal colors)
               Use "ansi" to respect terminal color scheme, or specific theme names
               like "monokai", "github-dark", etc. for fixed colors
+
+    Raises:
+        ValueError: If theme is not a valid Pygments theme or "ansi".
     """
 
     syntax_highlighting: bool = True
     color_scheme: Literal["auto", "always", "never"] = "auto"
     theme: str = "ansi"
+
+    def __post_init__(self) -> None:
+        """Validate display config after initialization."""
+        if self.theme not in VALID_THEMES:
+            raise ValueError(
+                f"Unknown theme '{self.theme}'. Valid themes: ansi, monokai, "
+                f"github-dark, dracula, solarized-dark, etc."
+            )
 
     @staticmethod
     def from_partial(base: "DisplayConfig", partial: dict) -> "DisplayConfig":

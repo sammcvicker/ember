@@ -314,20 +314,21 @@ patterns = []
     def test_load_config_with_unicode(
         self, provider: TomlConfigProvider, tmp_path: Path
     ) -> None:
-        """Test config with unicode characters."""
+        """Test config with unicode characters in string fields."""
         ember_dir = tmp_path / ".ember"
         ember_dir.mkdir()
         config_file = ember_dir / "config.toml"
         config_file.write_text(
             """
-[display]
-theme = "日本語テーマ"
+[index]
+ignore = ["日本語ディレクトリ/", "中文文件夹/"]
 """
         )
 
         result = provider.load(ember_dir)
 
-        assert result.display.theme == "日本語テーマ"
+        assert "日本語ディレクトリ/" in result.index.ignore
+        assert "中文文件夹/" in result.index.ignore
 
     def test_load_config_with_special_characters_in_patterns(
         self, provider: TomlConfigProvider, tmp_path: Path
