@@ -24,12 +24,7 @@ def mock_vector_repo() -> Mock:
     return Mock()
 
 
-@pytest.fixture
-def mock_embedder() -> Mock:
-    """Create a mock Embedder."""
-    embedder = Mock()
-    embedder.fingerprint.return_value = "test-model:384"
-    return embedder
+# Note: mock_embedder fixture is provided by conftest.py
 
 
 @pytest.fixture
@@ -213,7 +208,9 @@ class TestStoreChunksAndEmbeddings:
         """store_chunks_and_embeddings() should fail if embedding count mismatches."""
         chunk = create_test_chunk()
         mock_chunk_repo.find_by_content_hash.return_value = []
-        mock_embedder.embed_texts.return_value = []  # Wrong count
+        # Override side_effect to return empty list (wrong count)
+        mock_embedder.embed_texts.side_effect = None
+        mock_embedder.embed_texts.return_value = []
 
         result = storage_service.store_chunks_and_embeddings([chunk], Path("test.py"))
 
