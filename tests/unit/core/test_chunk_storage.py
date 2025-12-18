@@ -239,13 +239,14 @@ class TestStoreChunksAndEmbeddings:
 class TestRollback:
     """Tests for rollback functionality on failure."""
 
-    def test_embedding_failure_triggers_rollback(
+    def test_embedding_failure_prevents_any_storage(
         self,
         storage_service: ChunkStorageService,
         mock_chunk_repo: Mock,
+        mock_vector_repo: Mock,
         mock_embedder: Mock,
     ) -> None:
-        """When embedding fails, added chunks should be rolled back."""
+        """When embedding fails, no chunks or vectors should be stored (embeddings-first)."""
         chunk = create_test_chunk()
         mock_chunk_repo.find_by_content_hash.return_value = []
         mock_embedder.embed_texts.side_effect = RuntimeError("GPU OOM")
@@ -253,8 +254,11 @@ class TestRollback:
         result = storage_service.store_chunks_and_embeddings([chunk], Path("test.py"))
 
         assert result.failed == 1
-        # Should have attempted to delete the chunk
-        mock_chunk_repo.delete.assert_called_once_with(chunk.id)
+        # With embeddings-first approach, chunk_repo.add should never be called
+        mock_chunk_repo.add.assert_not_called()
+        mock_vector_repo.add.assert_not_called()
+        # No rollback needed since nothing was stored
+        mock_chunk_repo.delete.assert_not_called()
 
     def test_chunk_add_failure_triggers_rollback(
         self,
@@ -292,21 +296,84 @@ class TestRollback:
         self,
         storage_service: ChunkStorageService,
         mock_chunk_repo: Mock,
+        mock_vector_repo: Mock,
         mock_embedder: Mock,
     ) -> None:
         """Rollback should continue even if individual deletes fail."""
         chunk1 = create_test_chunk("chunk1", "content1")
         chunk2 = create_test_chunk("chunk2", "content2")
         mock_chunk_repo.find_by_content_hash.return_value = []
-        mock_embedder.embed_texts.side_effect = RuntimeError("Error")
+        mock_embedder.embed_texts.return_value = [[0.1] * 384, [0.2] * 384]
 
-        # First delete fails, second succeeds
+        # First chunk/vector succeeds, second vector add fails
+        mock_vector_repo.add.side_effect = [None, RuntimeError("DB full")]
+
+        # First chunk delete fails, second succeeds
         mock_chunk_repo.delete.side_effect = [RuntimeError("Delete failed"), None]
+        # Vector deletes succeed
+        mock_vector_repo.delete.return_value = None
 
         result = storage_service.store_chunks_and_embeddings(
             [chunk1, chunk2], Path("test.py")
         )
 
         assert result.failed == 1
-        # Should have tried to delete both chunks
+        # Should have tried to delete both chunks (even though first failed)
         assert mock_chunk_repo.delete.call_count == 2
+        # Should have tried to delete both vectors too
+        assert mock_vector_repo.delete.call_count == 2
+
+    def test_vector_add_failure_rolls_back_both_chunks_and_vectors(
+        self,
+        storage_service: ChunkStorageService,
+        mock_chunk_repo: Mock,
+        mock_vector_repo: Mock,
+        mock_embedder: Mock,
+    ) -> None:
+        """When vector_repo.add() fails partway through, both chunks AND vectors are rolled back."""
+        chunk1 = create_test_chunk("chunk1", "content1")
+        chunk2 = create_test_chunk("chunk2", "content2")
+        mock_chunk_repo.find_by_content_hash.return_value = []
+        mock_embedder.embed_texts.return_value = [[0.1] * 384, [0.2] * 384]
+
+        # First vector add succeeds, second fails
+        mock_vector_repo.add.side_effect = [None, RuntimeError("DB full")]
+
+        result = storage_service.store_chunks_and_embeddings(
+            [chunk1, chunk2], Path("test.py")
+        )
+
+        assert result.failed == 1
+        # Both chunks should be rolled back
+        assert mock_chunk_repo.delete.call_count == 2
+        # The successfully stored vector should also be rolled back
+        mock_vector_repo.delete.assert_called()
+
+    def test_rollback_deletes_vectors_for_all_chunks(
+        self,
+        storage_service: ChunkStorageService,
+        mock_chunk_repo: Mock,
+        mock_vector_repo: Mock,
+        mock_embedder: Mock,
+    ) -> None:
+        """Rollback should delete vectors for all chunk IDs, not just chunks."""
+        chunk1 = create_test_chunk("chunk1", "content1")
+        chunk2 = create_test_chunk("chunk2", "content2")
+        chunk3 = create_test_chunk("chunk3", "content3")
+        mock_chunk_repo.find_by_content_hash.return_value = []
+        mock_embedder.embed_texts.return_value = [[0.1] * 384] * 3
+
+        # All vector adds succeed, but then final operation fails
+        # Simulate by making the last vector add raise
+        mock_vector_repo.add.side_effect = [None, None, RuntimeError("Disk full")]
+
+        result = storage_service.store_chunks_and_embeddings(
+            [chunk1, chunk2, chunk3], Path("test.py")
+        )
+
+        assert result.failed == 1
+        # All 3 chunks should be deleted
+        assert mock_chunk_repo.delete.call_count == 3
+        # All 3 vectors should be deleted (even though only 2 were successfully added)
+        # Rollback is best-effort for all, so we attempt all
+        assert mock_vector_repo.delete.call_count == 3

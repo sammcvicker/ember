@@ -371,12 +371,25 @@ class TestTransactionRollbackVerification:
         """Rollback should attempt to delete all chunks even if some fail.
 
         Tests resilience of the rollback process itself.
+        With embeddings-first approach, we need storage to start before triggering failure.
         """
         mock_embedder = Mock()
         mock_embedder.fingerprint.return_value = "test-model:384"
-        mock_embedder.embed_texts.side_effect = RuntimeError("Error")
+        mock_embedder.embed_texts.return_value = [[0.1] * 384] * 3
 
-        # Make some deletes fail
+        # Make vector_repo.add fail on the third call (after chunks are stored)
+        original_vector_add = vector_repo.add
+        vector_add_count = [0]
+
+        def failing_vector_add(*args, **kwargs):
+            vector_add_count[0] += 1
+            if vector_add_count[0] == 3:  # Fail on third vector add
+                raise RuntimeError("Vector storage failed")
+            return original_vector_add(*args, **kwargs)
+
+        vector_repo.add = failing_vector_add
+
+        # Make some chunk deletes fail during rollback
         original_delete = chunk_repo.delete
         delete_count = [0]
 
@@ -398,7 +411,7 @@ class TestTransactionRollbackVerification:
         result = service.store_chunks_and_embeddings(chunks, Path("test.py"))
 
         assert result.failed == 1
-        # Should have attempted to delete all 3 chunks
+        # Should have attempted to delete all 3 chunks (rollback continues on failure)
         assert delete_count[0] == 3
 
 

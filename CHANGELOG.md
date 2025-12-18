@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Complete transaction rollback in ChunkStorageService** (#329)
+  - Embeddings are now generated before any database writes (prevents orphaned chunks if embedding fails)
+  - Rollback now deletes both chunks AND vectors (previously only deleted chunks)
+  - Prevents index inconsistency from partial failures during indexing
+
 ### Added
 - **Reusable mock embedder and chunk factory fixtures** (#325)
   - Added `mock_embedder` fixture: Standard mock with deterministic embeddings based on text hash
