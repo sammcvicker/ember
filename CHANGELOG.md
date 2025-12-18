@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Consolidated model registry to single source of truth** (#332)
+  - Created `ModelSpec` dataclass containing all model metadata (id, presets, dim, params, memory, max_seq_length, description)
+  - `MODEL_REGISTRY` is now the single source of truth for all supported embedding models
+  - `MODEL_PRESETS` and `SUPPORTED_MODELS` are now derived from `MODEL_REGISTRY` (no duplication)
+  - `get_model_info()` now uses registry lookup instead of hardcoded if/elif chain
+  - Adding a new embedding model now requires changes in only one place
 - **Moved anemic domain logic from core to entities** (#331)
   - Added `Chunk.generate_preview()` method for creating content previews
   - Added `Chunk.matches_language()` method for language filtering

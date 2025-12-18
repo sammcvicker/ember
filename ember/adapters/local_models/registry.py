@@ -4,6 +4,7 @@ Maps user-friendly preset names and HuggingFace model IDs to embedder classes.
 Provides a factory function to create the appropriate embedder based on config.
 """
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
@@ -26,29 +27,63 @@ class Embedder(Protocol):
     def ensure_loaded(self) -> None: ...
 
 
-# Preset names map to HuggingFace model IDs
-# Users can use either the preset name or the full HF ID
+@dataclass(frozen=True)
+class ModelSpec:
+    """Single source of truth for model metadata.
+
+    All model information is defined here once and derived elsewhere.
+    """
+
+    id: str
+    presets: tuple[str, ...]
+    dim: int
+    params: str
+    memory: str
+    max_seq_length: int
+    description: str
+
+
+# Single source of truth for all supported models
+MODEL_REGISTRY: dict[str, ModelSpec] = {
+    "jinaai/jina-embeddings-v2-base-code": ModelSpec(
+        id="jinaai/jina-embeddings-v2-base-code",
+        presets=("jina-code-v2", "local-default-code-embed"),
+        dim=768,
+        params="161M",
+        memory="~1.6GB",
+        max_seq_length=8192,
+        description="Code-optimized model with excellent code understanding",
+    ),
+    "sentence-transformers/all-MiniLM-L6-v2": ModelSpec(
+        id="sentence-transformers/all-MiniLM-L6-v2",
+        presets=("minilm", "all-minilm-l6-v2"),
+        dim=384,
+        params="22M",
+        memory="~100MB",
+        max_seq_length=256,
+        description="Lightweight general-purpose model, very fast",
+    ),
+    "BAAI/bge-small-en-v1.5": ModelSpec(
+        id="BAAI/bge-small-en-v1.5",
+        presets=("bge-small", "bge-small-en-v1.5"),
+        dim=384,
+        params="33M",
+        memory="~130MB",
+        max_seq_length=512,
+        description="Small retrieval-optimized model, good accuracy",
+    ),
+}
+
+# Derived from MODEL_REGISTRY - preset names map to HuggingFace model IDs
 MODEL_PRESETS: dict[str, str] = {
-    # Default code-optimized model (161M params, 768 dims, ~1.6GB)
-    "jina-code-v2": "jinaai/jina-embeddings-v2-base-code",
-    "local-default-code-embed": "jinaai/jina-embeddings-v2-base-code",  # Legacy name
-    # Lightweight option (22M params, 384 dims, ~100MB)
-    "minilm": "sentence-transformers/all-MiniLM-L6-v2",
-    "all-minilm-l6-v2": "sentence-transformers/all-MiniLM-L6-v2",
-    # Small retrieval-optimized (33M params, 384 dims, ~130MB)
-    "bge-small": "BAAI/bge-small-en-v1.5",
-    "bge-small-en-v1.5": "BAAI/bge-small-en-v1.5",
+    preset: spec.id for spec in MODEL_REGISTRY.values() for preset in spec.presets
 }
 
 # Special model name for auto-selection based on hardware
 AUTO_MODEL = "auto"
 
-# Full HuggingFace model IDs that we support directly
-SUPPORTED_MODELS: set[str] = {
-    "jinaai/jina-embeddings-v2-base-code",
-    "sentence-transformers/all-MiniLM-L6-v2",
-    "BAAI/bge-small-en-v1.5",
-}
+# Derived from MODEL_REGISTRY - full HuggingFace model IDs that we support
+SUPPORTED_MODELS: set[str] = set(MODEL_REGISTRY.keys())
 
 # Default model when none specified
 DEFAULT_MODEL = "jinaai/jina-embeddings-v2-base-code"
@@ -188,38 +223,17 @@ def get_model_info(model_name: str) -> dict:
         ValueError: If model name is not recognized
     """
     resolved = resolve_model_name(model_name)
+    spec = MODEL_REGISTRY[resolved]
 
-    info = {
+    return {
         "name": resolved,
         "preset": model_name if model_name.lower() in MODEL_PRESETS else None,
+        "dim": spec.dim,
+        "params": spec.params,
+        "memory": spec.memory,
+        "max_seq_length": spec.max_seq_length,
+        "description": spec.description,
     }
-
-    if resolved == "jinaai/jina-embeddings-v2-base-code":
-        info.update({
-            "dim": 768,
-            "params": "161M",
-            "memory": "~1.6GB",
-            "max_seq_length": 8192,
-            "description": "Code-optimized model with excellent code understanding",
-        })
-    elif resolved == "sentence-transformers/all-MiniLM-L6-v2":
-        info.update({
-            "dim": 384,
-            "params": "22M",
-            "memory": "~100MB",
-            "max_seq_length": 256,
-            "description": "Lightweight general-purpose model, very fast",
-        })
-    elif resolved == "BAAI/bge-small-en-v1.5":
-        info.update({
-            "dim": 384,
-            "params": "33M",
-            "memory": "~130MB",
-            "max_seq_length": 512,
-            "description": "Small retrieval-optimized model, good accuracy",
-        })
-
-    return info
 
 
 def list_available_models() -> list[dict]:
@@ -228,18 +242,16 @@ def list_available_models() -> list[dict]:
     Returns:
         List of model info dictionaries
     """
-    # Use unique resolved model names
-    seen = set()
     models = []
-
-    for preset in sorted(MODEL_PRESETS.keys()):
-        resolved = MODEL_PRESETS[preset]
-        if resolved not in seen:
-            seen.add(resolved)
-            info = get_model_info(preset)
-            # Find all presets for this model
-            presets = [p for p, r in MODEL_PRESETS.items() if r == resolved]
-            info["presets"] = presets
-            models.append(info)
-
+    for spec in MODEL_REGISTRY.values():
+        models.append({
+            "name": spec.id,
+            "preset": spec.presets[0] if spec.presets else None,
+            "dim": spec.dim,
+            "params": spec.params,
+            "memory": spec.memory,
+            "max_seq_length": spec.max_seq_length,
+            "description": spec.description,
+            "presets": list(spec.presets),
+        })
     return models
