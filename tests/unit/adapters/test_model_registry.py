@@ -7,7 +7,9 @@ import pytest
 from ember.adapters.local_models.registry import (
     DEFAULT_MODEL,
     MODEL_PRESETS,
+    MODEL_REGISTRY,
     SUPPORTED_MODELS,
+    ModelSpec,
     _build_embedder_kwargs,
     create_embedder,
     get_model_info,
@@ -288,3 +290,84 @@ class TestDefaultModel:
     def test_default_is_supported(self):
         """Test that default model is in supported models."""
         assert DEFAULT_MODEL in SUPPORTED_MODELS
+
+
+class TestModelSpec:
+    """Tests for ModelSpec dataclass."""
+
+    def test_model_spec_is_frozen(self):
+        """Test that ModelSpec instances are immutable."""
+        from dataclasses import FrozenInstanceError
+
+        spec = ModelSpec(
+            id="test/model",
+            presets=("test",),
+            dim=128,
+            params="1M",
+            memory="~10MB",
+            max_seq_length=256,
+            description="Test model",
+        )
+        with pytest.raises(FrozenInstanceError):
+            spec.dim = 256
+
+    def test_model_spec_has_all_required_fields(self):
+        """Test that ModelSpec has all expected fields."""
+        spec = list(MODEL_REGISTRY.values())[0]
+        assert hasattr(spec, "id")
+        assert hasattr(spec, "presets")
+        assert hasattr(spec, "dim")
+        assert hasattr(spec, "params")
+        assert hasattr(spec, "memory")
+        assert hasattr(spec, "max_seq_length")
+        assert hasattr(spec, "description")
+
+
+class TestModelRegistry:
+    """Tests for MODEL_REGISTRY as single source of truth."""
+
+    def test_registry_contains_all_supported_models(self):
+        """Test that SUPPORTED_MODELS is derived from MODEL_REGISTRY."""
+        assert set(MODEL_REGISTRY.keys()) == SUPPORTED_MODELS
+
+    def test_presets_derived_from_registry(self):
+        """Test that MODEL_PRESETS is derived from MODEL_REGISTRY."""
+        for model_id, spec in MODEL_REGISTRY.items():
+            for preset in spec.presets:
+                assert preset in MODEL_PRESETS
+                assert MODEL_PRESETS[preset] == model_id
+
+    def test_all_preset_names_in_registry(self):
+        """Test that all preset names come from MODEL_REGISTRY specs."""
+        all_presets_from_registry = set()
+        for spec in MODEL_REGISTRY.values():
+            all_presets_from_registry.update(spec.presets)
+        assert set(MODEL_PRESETS.keys()) == all_presets_from_registry
+
+    def test_get_model_info_uses_registry_data(self):
+        """Test that get_model_info returns data from MODEL_REGISTRY."""
+        for model_id, spec in MODEL_REGISTRY.items():
+            info = get_model_info(model_id)
+            assert info["name"] == spec.id
+            assert info["dim"] == spec.dim
+            assert info["params"] == spec.params
+            assert info["memory"] == spec.memory
+            assert info["max_seq_length"] == spec.max_seq_length
+            assert info["description"] == spec.description
+
+    def test_registry_model_ids_match_spec_ids(self):
+        """Test that registry keys match their spec.id values."""
+        for model_id, spec in MODEL_REGISTRY.items():
+            assert model_id == spec.id
+
+    def test_each_model_has_at_least_one_preset(self):
+        """Test that each model in registry has at least one preset name."""
+        for model_id, spec in MODEL_REGISTRY.items():
+            assert len(spec.presets) > 0, f"Model {model_id} has no presets"
+
+    def test_list_available_models_uses_registry(self):
+        """Test that list_available_models returns all registry models."""
+        models = list_available_models()
+        assert len(models) == len(MODEL_REGISTRY)
+        model_ids = {m["name"] for m in models}
+        assert model_ids == set(MODEL_REGISTRY.keys())
