@@ -5,13 +5,28 @@ with Reciprocal Rank Fusion for optimal retrieval quality.
 """
 
 import logging
+from dataclasses import dataclass
 
-from ember.domain.entities import Chunk, Query, SearchResult
+from ember.domain.entities import (
+    Chunk,
+    Query,
+    SearchExplanation,
+    SearchResult,
+    SearchResultSet,
+)
 from ember.ports.embedders import Embedder
 from ember.ports.repositories import ChunkRepository
 from ember.ports.search import TextSearch, VectorSearch
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _RetrievalResult:
+    """Internal result from chunk retrieval with metadata."""
+
+    chunks: list[Chunk]
+    missing_count: int
 
 
 class SearchUseCase:
@@ -48,14 +63,14 @@ class SearchUseCase:
         self.embedder = embedder
         self.rrf_k = rrf_k
 
-    def search(self, query: Query) -> list[SearchResult]:
+    def search(self, query: Query) -> SearchResultSet:
         """Execute hybrid search and return ranked results.
 
         Args:
             query: Search query with parameters.
 
         Returns:
-            List of SearchResult objects, ranked by relevance.
+            SearchResultSet with results and metadata about retrieval quality.
         """
         # 1. Embed query text
         query_embedding = self.embedder.embed_texts([query.text])[0]
@@ -65,12 +80,12 @@ class SearchUseCase:
         # Pass path_filter to filter during SQL query (not after)
         retrieval_pool = max(query.topk * 5, 100)
         fts_results = self.text_search.query(
-            query.text, topk=retrieval_pool, path_filter=query.path_filter
+            query.text, topk=retrieval_pool, path_filter=query.path_filter_str
         )
 
         # 3. Get vector search results
         vector_results = self.vector_search.query(
-            query_embedding, topk=retrieval_pool, path_filter=query.path_filter
+            query_embedding, topk=retrieval_pool, path_filter=query.path_filter_str
         )
 
         # 4. Fuse results using Reciprocal Rank Fusion
@@ -82,14 +97,14 @@ class SearchUseCase:
         # 5. Get top-k chunk IDs
         top_chunk_ids = [cid for cid, _ in fused_scores[: query.topk]]
 
-        # 6. Retrieve full chunk objects
-        chunks = self._retrieve_chunks(top_chunk_ids)
+        # 6. Retrieve full chunk objects (with metadata)
+        retrieval = self._retrieve_chunks(top_chunk_ids)
 
         # 7. Apply filters if specified
         filtered_chunks = self._apply_filters(
-            chunks,
-            path_filter=query.path_filter,
-            lang_filter=query.lang_filter,
+            retrieval.chunks,
+            path_filter=query.path_filter_str,
+            lang_filter=query.lang_filter_str,
         )
 
         # 8. Create SearchResult objects with scores
@@ -107,15 +122,28 @@ class SearchUseCase:
                 score=score,
                 rank=rank,
                 preview=self._generate_preview(chunk),
-                explanation={
-                    "fused_score": score,
-                    "bm25_score": fts_score,
-                    "vector_score": vector_score,
-                },
+                explanation=SearchExplanation(
+                    fused_score=score,
+                    bm25_score=fts_score,
+                    vector_score=vector_score,
+                ),
             )
             results.append(result)
 
-        return results
+        # 9. Build result set with metadata
+        warning = None
+        if retrieval.missing_count > 0:
+            warning = (
+                f"Warning: {retrieval.missing_count} chunks could not be retrieved. "
+                f"Index may be corrupted or stale. Run 'ember sync --force' to rebuild."
+            )
+
+        return SearchResultSet(
+            results=results,
+            requested_count=query.topk,
+            missing_chunks=retrieval.missing_count,
+            warning=warning,
+        )
 
     def _reciprocal_rank_fusion(
         self,
@@ -144,14 +172,14 @@ class SearchUseCase:
         fused = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)
         return fused
 
-    def _retrieve_chunks(self, chunk_ids: list[str]) -> list[Chunk]:
+    def _retrieve_chunks(self, chunk_ids: list[str]) -> _RetrievalResult:
         """Retrieve chunk objects for given IDs.
 
         Args:
             chunk_ids: List of chunk identifiers.
 
         Returns:
-            List of Chunk objects in the same order as chunk_ids.
+            _RetrievalResult with chunks and count of missing chunks.
         """
         chunks = []
         missing_ids = []
@@ -175,7 +203,7 @@ class SearchUseCase:
                 + ("..." if len(missing_ids) > 5 else "")
             )
 
-        return chunks
+        return _RetrievalResult(chunks=chunks, missing_count=len(missing_ids))
 
     def _apply_filters(
         self,

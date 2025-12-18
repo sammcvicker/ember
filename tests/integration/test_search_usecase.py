@@ -15,7 +15,7 @@ from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
 from ember.adapters.sqlite.vector_repository import SQLiteVectorRepository
 from ember.adapters.vss.sqlite_vec_adapter import SqliteVecAdapter
 from ember.core.retrieval.search_usecase import SearchUseCase
-from ember.domain.entities import Chunk, Query
+from ember.domain.entities import Chunk, Query, SearchResultSet
 
 # Note: db_path fixture is now in tests/conftest.py
 
@@ -31,7 +31,7 @@ def sample_chunks() -> list[Chunk]:
             "end_line": 3,
             "content": "def add(a, b):\n    return a + b",
             "symbol": "add",
-            "lang": "python",
+            "lang": "py",
         },
         {
             "project_id": "test",
@@ -40,7 +40,7 @@ def sample_chunks() -> list[Chunk]:
             "end_line": 7,
             "content": "def multiply(a, b):\n    return a * b",
             "symbol": "multiply",
-            "lang": "python",
+            "lang": "py",
         },
         {
             "project_id": "test",
@@ -49,7 +49,7 @@ def sample_chunks() -> list[Chunk]:
             "end_line": 5,
             "content": "function greet(name: string): string {\n  return `Hello, ${name}!`;\n}",
             "symbol": "greet",
-            "lang": "typescript",
+            "lang": "ts",
         },
         {
             "project_id": "test",
@@ -58,7 +58,7 @@ def sample_chunks() -> list[Chunk]:
             "end_line": 11,
             "content": "function farewell(name: string): string {\n  return `Goodbye, ${name}!`;\n}",
             "symbol": "farewell",
-            "lang": "typescript",
+            "lang": "ts",
         },
     ]
 
@@ -82,7 +82,7 @@ def sample_chunks() -> list[Chunk]:
             content=data["content"],
             content_hash=content_hash,
             file_hash=file_hash,
-            tree_sha="abc123",
+            tree_sha="a" * 40,
             rev="worktree",
         )
         chunks.append(chunk)
@@ -139,7 +139,7 @@ def test_search_exact_keyword_match(search_usecase: SearchUseCase) -> None:
     assert results[0].chunk.symbol == "multiply"
     assert "multiply" in results[0].chunk.content.lower()
     # Should have BM25 score
-    assert results[0].explanation["bm25_score"] > 0
+    assert results[0].explanation.bm25_score > 0
 
 
 @pytest.mark.slow
@@ -153,7 +153,7 @@ def test_search_semantic_similarity(search_usecase: SearchUseCase) -> None:
     result_symbols = {r.chunk.symbol for r in results}
     assert result_symbols & {"greet", "farewell"}  # At least one should match
     # Should have vector score
-    assert results[0].explanation["vector_score"] > 0
+    assert results[0].explanation.vector_score > 0
 
 
 @pytest.mark.slow
@@ -163,13 +163,14 @@ def test_search_hybrid_fusion(search_usecase: SearchUseCase) -> None:
     results = search_usecase.search(query)
 
     assert len(results) > 0
-    # Should have both BM25 and vector scores
+    # Should have both BM25 and vector scores (typed access)
     for result in results:
-        assert "bm25_score" in result.explanation
-        assert "vector_score" in result.explanation
-        assert "fused_score" in result.explanation
+        # Typed fields always exist - no need to check "in"
+        assert hasattr(result.explanation, "bm25_score")
+        assert hasattr(result.explanation, "vector_score")
+        assert hasattr(result.explanation, "fused_score")
         # Fused score should be positive
-        assert result.explanation["fused_score"] > 0
+        assert result.explanation.fused_score > 0
 
 
 @pytest.mark.slow
@@ -242,13 +243,9 @@ def test_search_topk_limit(search_usecase: SearchUseCase) -> None:
 @pytest.mark.slow
 def test_search_empty_query(search_usecase: SearchUseCase) -> None:
     """Test behavior with empty query."""
-    import sqlite3
-
-    query = Query(text="", topk=5)
-    # Empty query causes FTS5 syntax error (expected behavior)
-    # This is a known limitation of FTS5
-    with pytest.raises((sqlite3.OperationalError, Exception)):
-        search_usecase.search(query)
+    # Empty query is rejected by Query entity validation
+    with pytest.raises(ValueError, match="Query text cannot be empty"):
+        Query(text="", topk=5)
 
 
 @pytest.mark.slow
@@ -388,28 +385,21 @@ def test_search_with_different_path_and_language(search_usecase: SearchUseCase) 
 def test_search_with_special_characters_in_query(search_usecase: SearchUseCase) -> None:
     """Test search handles basic special characters.
 
-    Verifies that queries with some common special characters work.
-    Note: Current FTS5 implementation may have limitations with certain characters.
+    Verifies that queries with some common special characters work in FTS5.
+    Note: Hyphens and square brackets have special meaning in FTS5 and aren't
+    supported as literal characters (hyphen is NOT operator, brackets are column filters).
     """
-    # Test characters that should work in FTS5
+    # Characters that work in FTS5
     safe_queries = [
-        "function test",  # Space
-        "function-test",  # Hyphen
-        "function_test",  # Underscore
-        "(function)",  # Parentheses
-        "[function]",  # Brackets
+        "function test",  # Space (implicit AND)
+        "function_test",  # Underscore (part of token)
+        "(function)",  # Parentheses (grouping, no boolean operators)
     ]
 
     for safe_query in safe_queries:
         query = Query(text=safe_query, topk=10)
-        # Should not crash
-        try:
-            results = search_usecase.search(query)
-            assert isinstance(results, list)  # Should return a list
-        except Exception:
-            # Document if certain queries fail
-            # This helps identify FTS5 limitations to fix later
-            pass
+        results = search_usecase.search(query)
+        assert isinstance(results, SearchResultSet)
 
 
 @pytest.mark.slow
@@ -535,6 +525,8 @@ def test_missing_chunks_logged(db_path: Path, caplog: pytest.LogCaptureFixture) 
 
     # Create a mock chunk repository that returns None for some chunks
     chunk_repo = MagicMock()
+    content1 = "def test1(): pass"
+    content2 = "def test2(): pass"
     real_chunks = {
         "chunk_1": Chunk(
             id="chunk_1",
@@ -542,12 +534,12 @@ def test_missing_chunks_logged(db_path: Path, caplog: pytest.LogCaptureFixture) 
             path=Path("test.py"),
             start_line=1,
             end_line=3,
-            content="def test1(): pass",
+            content=content1,
             symbol="test1",
-            lang="python",
-            content_hash="hash1",
-            file_hash="file_hash1",
-            tree_sha="abc123",
+            lang="py",
+            content_hash=Chunk.compute_content_hash(content1),
+            file_hash=Chunk.compute_content_hash("file1"),
+            tree_sha="a" * 40,
             rev="worktree",
         ),
         "chunk_2": Chunk(
@@ -556,12 +548,12 @@ def test_missing_chunks_logged(db_path: Path, caplog: pytest.LogCaptureFixture) 
             path=Path("test.py"),
             start_line=5,
             end_line=7,
-            content="def test2(): pass",
+            content=content2,
             symbol="test2",
-            lang="python",
-            content_hash="hash2",
-            file_hash="file_hash2",
-            tree_sha="abc123",
+            lang="py",
+            content_hash=Chunk.compute_content_hash(content2),
+            file_hash=Chunk.compute_content_hash("file2"),
+            tree_sha="a" * 40,
             rev="worktree",
         ),
     }
@@ -589,12 +581,13 @@ def test_missing_chunks_logged(db_path: Path, caplog: pytest.LogCaptureFixture) 
 
     # Enable logging capture at WARNING level
     with caplog.at_level(logging.WARNING):
-        chunks = use_case._retrieve_chunks(chunk_ids)
+        result = use_case._retrieve_chunks(chunk_ids)
 
     # Should return only the 2 found chunks
-    assert len(chunks) == 2
-    assert chunks[0].id == "chunk_1"
-    assert chunks[1].id == "chunk_2"
+    assert len(result.chunks) == 2
+    assert result.chunks[0].id == "chunk_1"
+    assert result.chunks[1].id == "chunk_2"
+    assert result.missing_count == 3
 
     # Should have logged a warning about missing chunks
     assert len(caplog.records) == 1

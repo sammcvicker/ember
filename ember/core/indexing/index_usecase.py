@@ -12,9 +12,9 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import blake3
-
 from ember.core.chunking.chunk_usecase import ChunkFileRequest, ChunkFileUseCase
+from ember.core.indexing.chunk_storage import ChunkStorageService
+from ember.core.indexing.file_preprocessor import FilePreprocessor, PreprocessedFile
 from ember.domain.entities import Chunk
 from ember.ports.chunkers import ChunkData
 from ember.ports.embedders import Embedder
@@ -29,6 +29,22 @@ from ember.ports.repositories import (
 from ember.ports.vcs import VCS
 
 logger = logging.getLogger(__name__)
+
+
+class ModelMismatchError(Exception):
+    """Raised when embedding model differs from the one used to build the index.
+
+    This error prevents dimension mismatch errors during search by requiring
+    an explicit --force flag to rebuild the index with the new model.
+    """
+
+    def __init__(self, stored_model: str, current_model: str) -> None:
+        self.stored_model = stored_model
+        self.current_model = current_model
+        super().__init__(
+            f"Embedding model changed: {stored_model} → {current_model}. "
+            f"Run 'ember sync --force' to rebuild the index with the new model."
+        )
 
 # Code file extensions to index (whitelist approach)
 # Only source code files are indexed - data, config, docs, and binary files are skipped
@@ -148,6 +164,9 @@ class IndexingUseCase:
         file_repo: FileRepository,
         meta_repo: MetaRepository,
         project_id: str,
+        *,
+        file_preprocessor: FilePreprocessor | None = None,
+        chunk_storage: ChunkStorageService | None = None,
     ) -> None:
         """Initialize indexing use case.
 
@@ -161,6 +180,8 @@ class IndexingUseCase:
             file_repo: Repository for tracking indexed files.
             meta_repo: Repository for metadata (last tree SHA, etc.).
             project_id: Project identifier (typically repo root hash).
+            file_preprocessor: Optional preprocessor service (created if not provided).
+            chunk_storage: Optional chunk storage service (created if not provided).
         """
         self.vcs = vcs
         self.fs = fs
@@ -171,6 +192,12 @@ class IndexingUseCase:
         self.file_repo = file_repo
         self.meta_repo = meta_repo
         self.project_id = project_id
+
+        # Create services if not provided (dependency injection with defaults)
+        self.file_preprocessor = file_preprocessor or FilePreprocessor(fs)
+        self.chunk_storage = chunk_storage or ChunkStorageService(
+            chunk_repo, vector_repo, embedder
+        )
 
     def _create_error_response(self, error: str) -> IndexResponse:
         """Create a standardized error response with zero counts.
@@ -193,23 +220,32 @@ class IndexingUseCase:
             error=error,
         )
 
-    def _verify_model_compatibility(self) -> None:
+    def _verify_model_compatibility(self, force_reindex: bool) -> None:
         """Verify embedding model compatibility with stored fingerprint.
 
-        Logs a warning if the model has changed, indicating that existing
-        vectors may be incompatible and a force reindex should be considered.
+        Raises ModelMismatchError if the model has changed and force_reindex is False,
+        to prevent dimension mismatch errors during search.
+
+        Args:
+            force_reindex: If True, allow model change (will rebuild index).
+
+        Raises:
+            ModelMismatchError: If model changed and force_reindex is False.
         """
         stored_fingerprint = self.meta_repo.get("model_fingerprint")
         current_fingerprint = self.embedder.fingerprint()
 
         if stored_fingerprint and stored_fingerprint != current_fingerprint:
-            logger.warning(
-                f"Embedding model changed: {stored_fingerprint} → {current_fingerprint}"
-            )
-            logger.warning(
-                "Existing vectors may be incompatible with the new model. "
-                "Run 'ember sync --force' to rebuild the index with the new model."
-            )
+            if force_reindex:
+                logger.info(
+                    f"Embedding model changed: {stored_fingerprint} → {current_fingerprint}. "
+                    "Rebuilding index with new model."
+                )
+            else:
+                raise ModelMismatchError(
+                    stored_model=stored_fingerprint,
+                    current_model=current_fingerprint,
+                )
 
     def _ensure_model_loaded(self, progress: ProgressCallback | None) -> None:
         """Eagerly load embedding model before indexing.
@@ -366,8 +402,8 @@ class IndexingUseCase:
         logger.info(f"Starting indexing for {request.repo_root} (mode: {request.sync_mode})")
 
         try:
-            # Check if embedding model has changed
-            self._verify_model_compatibility()
+            # Check if embedding model has changed (fails if mismatch without --force)
+            self._verify_model_compatibility(request.force_reindex)
 
             # Get current tree SHA based on sync mode
             tree_sha = self._get_tree_sha(request.repo_root, request.sync_mode)
@@ -428,35 +464,22 @@ class IndexingUseCase:
             logger.info("Indexing interrupted by user")
             raise
 
-        except FileNotFoundError as e:
-            # File was deleted between detection and indexing
-            logger.warning(f"File not found during indexing: {e}")
-            return self._create_error_response(
-                f"File not found: {e}. The file may have been deleted during indexing."
-            )
-
-        except PermissionError as e:
-            # Permission denied reading file or accessing repository
-            logger.error(f"Permission denied during indexing: {e}")
-            return self._create_error_response(
-                f"Permission denied: {e}. Check file and directory permissions."
-            )
+        except ModelMismatchError as e:
+            # Model changed - provide clear error message
+            logger.error(str(e))
+            return self._create_error_response(str(e))
 
         except OSError as e:
-            # I/O errors (disk full, network filesystem issues, etc.)
+            # I/O errors: FileNotFoundError, PermissionError, disk full, etc.
+            # OSError is the base class for all I/O-related exceptions
             logger.error(f"I/O error during indexing: {e}")
             return self._create_error_response(
-                f"I/O error: {e}. Check disk space and filesystem access."
+                f"I/O error: {e}. Check file permissions, disk space, and filesystem access."
             )
 
-        except ValueError as e:
-            # Invalid configuration or parameters
-            logger.error(f"Invalid configuration during indexing: {e}")
-            return self._create_error_response(f"Configuration error: {e}")
-
-        except RuntimeError as e:
-            # Git errors, repository state errors, etc.
-            logger.error(f"Runtime error during indexing: {e}")
+        except (ValueError, RuntimeError) as e:
+            # Execution errors: invalid config, git errors, repository state, etc.
+            logger.error(f"Error during indexing: {e}")
             return self._create_error_response(f"Indexing error: {e}")
 
         except Exception:
@@ -637,6 +660,12 @@ class IndexingUseCase:
     ) -> dict[str, int]:
         """Index a single file.
 
+        This method orchestrates the file indexing pipeline:
+        1. Preprocess file (read, hash, decode, detect language)
+        2. Chunk the file content
+        3. Delete old chunks and store new ones with embeddings
+        4. Track file metadata
+
         Args:
             file_path: Absolute path to file.
             repo_root: Repository root path.
@@ -644,114 +673,79 @@ class IndexingUseCase:
             sync_mode: Sync mode (for rev field).
 
         Returns:
-            Dict with counts: chunks_created, chunks_updated, vectors_stored.
+            Dict with counts: chunks_created, chunks_updated, vectors_stored, failed.
+            On failure, failed=1 and other counts are 0.
         """
-        # Get relative path
-        rel_path = file_path.relative_to(repo_root)
+        # Step 1: Preprocess file (I/O, hashing, decoding, language detection)
+        preprocessed = self.file_preprocessor.preprocess(file_path, repo_root)
 
-        # Read file content (returns bytes)
-        content_bytes = self.fs.read(file_path)
-
-        # Compute file hash and size from original bytes (avoids re-encoding)
-        file_hash = blake3.blake3(content_bytes).hexdigest()
-        file_size = len(content_bytes)
-
-        # Decode to string for chunking (decode once)
-        try:
-            content = content_bytes.decode("utf-8")
-        except UnicodeDecodeError:
-            # Fall back to replace mode if strict UTF-8 fails
-            content = content_bytes.decode("utf-8", errors="replace")
-
-        # Detect language from file extension
-        lang = self._detect_language(file_path)
-
-        # Chunk the file
+        # Step 2: Chunk the file
         chunk_request = ChunkFileRequest(
-            content=content,
-            path=rel_path,
-            lang=lang,
+            content=preprocessed.content,
+            path=preprocessed.rel_path,
+            lang=preprocessed.lang,
         )
         chunk_response = self.chunk_usecase.execute(chunk_request)
 
         if not chunk_response.success:
-            # Log warning with file path and error for debugging
             logger.warning(
-                f"Failed to chunk {rel_path}: {chunk_response.error}. "
+                f"Failed to chunk {preprocessed.rel_path}: {chunk_response.error}. "
                 f"Preserving existing chunks to avoid data loss."
             )
-            # Skip files that fail to chunk - preserve existing chunks to avoid data loss
             return {"chunks_created": 0, "chunks_updated": 0, "vectors_stored": 0, "failed": 1}
 
-        # Clean up ALL old chunks for this file from any previous tree SHA
-        # This prevents accumulation of duplicate chunks across multiple syncs
-        # Since we're re-indexing this file now, we want to completely replace
-        # all old chunks with the new chunks
-        # NOTE: This is done AFTER validation to prevent data loss if chunking fails
-        self.chunk_repo.delete_all_for_path(path=rel_path)
+        # Step 3: Delete old chunks (done AFTER chunking succeeds to prevent data loss)
+        if not self.chunk_storage.delete_old_chunks(preprocessed.rel_path):
+            return {"chunks_created": 0, "chunks_updated": 0, "vectors_stored": 0, "failed": 1}
 
-        # Create Chunk entities from ChunkData
+        # Step 4: Create Chunk entities from ChunkData
         chunks = self._create_chunks(
             chunk_data_list=chunk_response.chunks,
-            rel_path=rel_path,
-            file_hash=file_hash,
+            rel_path=preprocessed.rel_path,
+            file_hash=preprocessed.file_hash,
             tree_sha=tree_sha,
             rev=sync_mode if sync_mode != "worktree" else "worktree",
         )
 
-        # Store chunks and embed
-        chunks_created = 0
-        chunks_updated = 0
-        vectors_stored = 0
-
-        # First pass: store all chunks and track statistics
-        for chunk in chunks:
-            # Check if chunk already exists (by content hash)
-            existing = self.chunk_repo.find_by_content_hash(chunk.content_hash)
-            is_new = len(existing) == 0
-
-            # Store chunk
-            self.chunk_repo.add(chunk)
-
-            if is_new:
-                chunks_created += 1
-            else:
-                chunks_updated += 1
-
-        # Second pass: batch embed all chunks at once for efficiency
-        if chunks:
-            # Collect all chunk contents
-            contents = [chunk.content for chunk in chunks]
-
-            # Single batch embedding call
-            embeddings = self.embedder.embed_texts(contents)
-
-            # Compute fingerprint once (avoids repeated function calls)
-            model_fingerprint = self.embedder.fingerprint()
-
-            # Store vectors for each chunk
-            for chunk, embedding in zip(chunks, embeddings, strict=True):
-                self.vector_repo.add(
-                    chunk_id=chunk.id,
-                    embedding=embedding,
-                    model_fingerprint=model_fingerprint,
-                )
-                vectors_stored += 1
-
-        # Track file (use pre-computed file_size, avoids re-encoding)
-        self.file_repo.track_file(
-            path=file_path,
-            file_hash=file_hash,
-            size=file_size,
-            mtime=time.time(),
+        # Step 5: Store chunks and embeddings (with rollback on failure)
+        result = self.chunk_storage.store_chunks_and_embeddings(
+            chunks, preprocessed.rel_path
         )
 
+        if result.failed:
+            return {"chunks_created": 0, "chunks_updated": 0, "vectors_stored": 0, "failed": 1}
+
+        # Step 6: Track file metadata (non-critical, failures logged but don't fail indexing)
+        self._track_file_metadata(file_path, preprocessed)
+
         return {
-            "chunks_created": chunks_created,
-            "chunks_updated": chunks_updated,
-            "vectors_stored": vectors_stored,
+            "chunks_created": result.chunks_created,
+            "chunks_updated": result.chunks_updated,
+            "vectors_stored": result.vectors_stored,
             "failed": 0,
         }
+
+    def _track_file_metadata(
+        self, file_path: Path, preprocessed: PreprocessedFile
+    ) -> None:
+        """Track file metadata after successful indexing.
+
+        Args:
+            file_path: Absolute path to file.
+            preprocessed: Preprocessed file data.
+        """
+        try:
+            self.file_repo.track_file(
+                path=file_path,
+                file_hash=preprocessed.file_hash,
+                size=preprocessed.file_size,
+                mtime=time.time(),
+            )
+        except Exception as e:
+            logger.warning(
+                f"Failed to track file {preprocessed.rel_path}: {e}", exc_info=True
+            )
+            # Continue - file tracking is not critical
 
     def _create_chunks(
         self,
@@ -813,32 +807,3 @@ class IndexingUseCase:
         suffix = file_path.suffix.lower()
         return suffix in CODE_FILE_EXTENSIONS
 
-    def _detect_language(self, file_path: Path) -> str:
-        """Detect language from file extension.
-
-        Args:
-            file_path: Path to file.
-
-        Returns:
-            Language code (py, ts, go, rs, txt, etc.).
-        """
-        # Simple mapping based on extension
-        ext_map = {
-            ".py": "py",
-            ".ts": "ts",
-            ".tsx": "ts",
-            ".js": "js",
-            ".jsx": "js",
-            ".go": "go",
-            ".rs": "rs",
-            ".java": "java",
-            ".c": "c",
-            ".cpp": "cpp",
-            ".h": "c",
-            ".hpp": "cpp",
-            ".md": "txt",
-            ".txt": "txt",
-        }
-
-        suffix = file_path.suffix.lower()
-        return ext_map.get(suffix, "txt")

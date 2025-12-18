@@ -15,7 +15,7 @@ import tree_sitter_python
 import tree_sitter_ruby
 import tree_sitter_rust
 import tree_sitter_typescript
-from tree_sitter import Language, Parser
+from tree_sitter import Language, Parser, Query
 
 
 @dataclass
@@ -287,6 +287,7 @@ class LanguageRegistry:
         # Lazy initialization caches
         self._language_cache: dict[str, Language] = {}
         self._parser_cache: dict[str, Parser] = {}
+        self._query_cache: dict[str, Query] = {}
 
     @property
     def supported_identifiers(self) -> set[str]:
@@ -357,3 +358,30 @@ class LanguageRegistry:
         parser = Parser(language)
         self._parser_cache[name] = parser
         return parser
+
+    def get_query(self, name: str) -> Query | None:
+        """Get compiled tree-sitter Query for a language (lazy initialization).
+
+        Query compilation is expensive, so queries are cached per language.
+
+        Args:
+            name: Canonical language name.
+
+        Returns:
+            Query object if found, None otherwise.
+        """
+        if name in self._query_cache:
+            return self._query_cache[name]
+
+        config = self.get_by_name(name)
+        if not config:
+            return None
+
+        language = self.get_language(name)
+        if not language:
+            return None
+
+        # Compile and cache the query
+        query = Query(language, config.query)
+        self._query_cache[name] = query
+        return query

@@ -5,10 +5,9 @@ The state file tracks what has been indexed and enables incremental sync.
 """
 
 import json
-from datetime import UTC
 from pathlib import Path
 
-from ember.domain.entities import RepoState
+from ember.domain.entities import RepoState, SyncMode
 
 
 def load_state(path: Path) -> RepoState:
@@ -49,12 +48,17 @@ def save_state(state: RepoState, path: Path) -> None:
         state: RepoState to save
         path: Destination path for state.json
     """
+    # Convert SyncMode enum to string for JSON serialization
+    sync_mode = state.last_sync_mode
+    if isinstance(sync_mode, SyncMode):
+        sync_mode = sync_mode.value
+
     data = {
         "last_tree_sha": state.last_tree_sha,
-        "last_sync_mode": state.last_sync_mode,
+        "last_sync_mode": sync_mode,
         "model_fingerprint": state.model_fingerprint,
         "version": state.version,
-        "indexed_at": state.indexed_at,
+        "indexed_at": state.indexed_at_str,
     }
 
     # Ensure parent directory exists
@@ -73,14 +77,5 @@ def create_initial_state(path: Path, version: str = "0.1.0") -> None:
         path: Destination path for state.json
         version: Ember version string
     """
-    from datetime import datetime
-
-    state = RepoState(
-        last_tree_sha="",
-        last_sync_mode="none",
-        model_fingerprint="",
-        version=version,
-        indexed_at=datetime.now(UTC).isoformat(),
-    )
-
+    state = RepoState.uninitialized(version=version)
     save_state(state, path)

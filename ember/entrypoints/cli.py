@@ -3,30 +3,42 @@
 Command-line interface for Ember code search tool.
 """
 
+from __future__ import annotations
+
 import functools
 import sys
-from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import blake3
 import click
 
+if TYPE_CHECKING:
+    from ember.core.config.init_usecase import InitResponse
+    from ember.core.hardware import SystemResources
+    from ember.core.retrieval.search_usecase import SearchUseCase
+
 from ember.adapters.fs.local import LocalFileSystem
+from ember.adapters.vss.sqlite_vec_adapter import DimensionMismatchError
 from ember.core.cli_utils import (
     EmberCliError,
     display_content_with_context,
     display_content_with_highlighting,
     format_result_header,
+    get_editor,
     load_cached_results,
     lookup_result_by_hash,
     lookup_result_from_cache,
+    normalize_path_filter,
     open_file_in_editor,
-    path_not_in_repo_error,
     progress_context,
     repo_not_found_error,
     validate_result_index,
 )
+from ember.core.indexing.index_usecase import ModelMismatchError
 from ember.core.presentation import ResultPresenter
+from ember.core.sync import classify_sync_error
+from ember.domain.entities import SyncErrorType, SyncResult
+from ember.version import __version__
 
 
 def handle_cli_errors(command_name: str):
@@ -51,6 +63,18 @@ def handle_cli_errors(command_name: str):
             except EmberCliError:
                 # Let EmberCliError propagate to use its format_message()
                 raise
+            except ModelMismatchError as e:
+                # Embedding model changed - clear action required
+                raise EmberCliError(
+                    str(e),
+                    hint="The embedding model in your config differs from the one used to build the index.",
+                ) from e
+            except DimensionMismatchError as e:
+                # Vector dimension mismatch - clear action required
+                raise EmberCliError(
+                    str(e),
+                    hint="The embedding model in your config differs from the one used to build the index.",
+                ) from e
             except RuntimeError as e:
                 # Convert RuntimeError to EmberCliError with generic hint
                 raise EmberCliError(
@@ -73,6 +97,24 @@ def handle_cli_errors(command_name: str):
     return decorator
 
 
+def _load_config(ember_dir: Path):
+    """Load configuration for the given ember directory.
+
+    Centralizes config loading to avoid code duplication across CLI commands.
+    Uses ConfigFactory to create the config provider and load merged config.
+
+    Args:
+        ember_dir: Path to the .ember directory (or parent containing config).
+
+    Returns:
+        EmberConfig with merged global and local settings.
+    """
+    from ember.adapters.factory import ConfigFactory
+
+    config_factory = ConfigFactory()
+    return config_factory.create_config_provider().load(ember_dir)
+
+
 def _create_embedder(config, show_progress: bool = True):
     """Create embedder based on configuration.
 
@@ -87,43 +129,29 @@ def _create_embedder(config, show_progress: bool = True):
         RuntimeError: If daemon fails to start
         ValueError: If model name is not recognized
     """
-    # Get the configured model name
-    model_name = config.index.model
+    from ember.adapters.factory import EmbedderFactory
 
-    if config.model.mode == "daemon":
-        # Use daemon mode (default)
-        from ember.adapters.daemon.client import DaemonEmbedderClient
-        from ember.adapters.daemon.lifecycle import DaemonLifecycle
-        from ember.core.cli_utils import ensure_daemon_with_progress
+    factory = EmbedderFactory(config)
+    return factory.create_embedder(show_progress=show_progress)
 
-        # ALWAYS pre-start daemon before returning client
-        # This ensures errors are caught before TUI initialization (#126)
-        daemon_manager = DaemonLifecycle(
-            idle_timeout=config.model.daemon_timeout,
-            model_name=model_name,
-        )
 
-        # If daemon is already running, nothing to do
-        if not daemon_manager.is_running():
-            # Use progress UI if requested, otherwise start silently
-            if show_progress:
-                ensure_daemon_with_progress(daemon_manager, quiet=False)
-            else:
-                # Start daemon without progress UI
-                # Let RuntimeError propagate to show clean error before TUI starts
-                daemon_manager.start(foreground=False)
+def _create_search_usecase(db_path: Path, embedder) -> SearchUseCase:
+    """Create search use case with all required dependencies.
 
-        return DaemonEmbedderClient(
-            fallback=True,
-            auto_start=False,  # Daemon already started above
-            daemon_timeout=config.model.daemon_timeout,
-            model_name=model_name,
-        )
-    else:
-        # Use direct mode (fallback or explicit config)
-        from ember.adapters.local_models.registry import create_embedder
+    Centralizes the dependency setup for find/search commands to avoid
+    duplication and ensure consistent initialization.
 
-        return create_embedder(model_name=model_name)
+    Args:
+        db_path: Path to the SQLite database
+        embedder: Embedder instance for query vectorization
+
+    Returns:
+        Configured SearchUseCase ready for search operations
+    """
+    from ember.adapters.factory import UseCaseFactory
+
+    factory = UseCaseFactory()
+    return factory.create_search_usecase(db_path, embedder)
 
 
 def get_ember_repo_root() -> tuple[Path, Path]:
@@ -161,69 +189,13 @@ def _create_indexing_usecase(repo_root: Path, db_path: Path, config):
     Returns:
         Initialized IndexingUseCase instance.
     """
-    # Lazy imports - only load heavy dependencies when needed
-    from ember.adapters.fs.local import LocalFileSystem
-    from ember.adapters.git_cmd.git_adapter import GitAdapter
-    from ember.adapters.parsers.line_chunker import LineChunker
-    from ember.adapters.parsers.tree_sitter_chunker import TreeSitterChunker
-    from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
-    from ember.adapters.sqlite.file_repository import SQLiteFileRepository
-    from ember.adapters.sqlite.meta_repository import SQLiteMetaRepository
-    from ember.adapters.sqlite.vector_repository import SQLiteVectorRepository
-    from ember.core.chunking.chunk_usecase import ChunkFileUseCase
-    from ember.core.indexing.index_usecase import IndexingUseCase
+    from ember.adapters.factory import EmbedderFactory, UseCaseFactory
 
-    # Initialize dependencies
-    vcs = GitAdapter(repo_root)
-    fs = LocalFileSystem()
-    embedder = _create_embedder(config)
+    embedder_factory = EmbedderFactory(config)
+    embedder = embedder_factory.create_embedder()
 
-    # Initialize repositories
-    chunk_repo = SQLiteChunkRepository(db_path)
-    vector_repo = SQLiteVectorRepository(db_path, expected_dim=embedder.dim)
-    file_repo = SQLiteFileRepository(db_path)
-    meta_repo = SQLiteMetaRepository(db_path)
-
-    # Initialize chunking use case with config settings
-    tree_sitter = TreeSitterChunker()
-    line_chunker = LineChunker(
-        window_size=config.index.line_window,
-        stride=config.index.line_stride,
-    )
-    chunk_usecase = ChunkFileUseCase(tree_sitter, line_chunker)
-
-    # Compute project ID (hash of repo root path)
-    project_id = blake3.blake3(str(repo_root).encode("utf-8")).hexdigest()
-
-    # Create and return indexing use case
-    return IndexingUseCase(
-        vcs=vcs,
-        fs=fs,
-        chunk_usecase=chunk_usecase,
-        embedder=embedder,
-        chunk_repo=chunk_repo,
-        vector_repo=vector_repo,
-        file_repo=file_repo,
-        meta_repo=meta_repo,
-        project_id=project_id,
-    )
-
-
-@dataclass
-class SyncResult:
-    """Result of an ensure_synced() call.
-
-    Provides information about whether a sync was performed and its outcome.
-
-    Attributes:
-        synced: True if a sync was performed, False if index was already up to date.
-        files_indexed: Number of files that were indexed (0 if no sync).
-        error: Error message if sync failed, None otherwise.
-    """
-
-    synced: bool = False
-    files_indexed: int = 0
-    error: str | None = None
+    usecase_factory = UseCaseFactory()
+    return usecase_factory.create_indexing_usecase(repo_root, db_path, config, embedder)
 
 
 def ensure_synced(
@@ -264,12 +236,12 @@ def ensure_synced(
     """
     try:
         # Import dependencies
-        from ember.adapters.git_cmd.git_adapter import GitAdapter
-        from ember.adapters.sqlite.meta_repository import SQLiteMetaRepository
+        from ember.adapters.factory import RepositoryFactory
         from ember.core.indexing.index_usecase import IndexRequest
 
-        vcs = GitAdapter(repo_root)
-        meta_repo = SQLiteMetaRepository(db_path)
+        repo_factory = RepositoryFactory()
+        vcs = repo_factory.create_git_adapter(repo_root)
+        meta_repo = repo_factory.create_meta_repository(db_path)
 
         # Get current worktree tree SHA
         current_tree_sha = vcs.get_worktree_tree_sha()
@@ -320,10 +292,21 @@ def ensure_synced(
         return SyncResult(synced=True, files_indexed=response.files_indexed)
 
     except Exception as e:
-        # If staleness check fails, continue with search anyway
+        # Classify and handle all errors uniformly
+        error_type = classify_sync_error(e)
+
         if verbose:
-            click.echo(f"Warning: Could not check index staleness: {e}", err=True)
-        return SyncResult(synced=False, files_indexed=0, error=str(e))
+            if error_type == SyncErrorType.PERMISSION_ERROR:
+                click.echo(f"Warning: Permission denied during sync: {e}", err=True)
+            else:
+                click.echo(f"Warning: Could not check index staleness: {e}", err=True)
+
+        return SyncResult(
+            synced=False,
+            files_indexed=0,
+            error=str(e),
+            error_type=error_type,
+        )
 
 
 def check_and_auto_sync(
@@ -360,7 +343,7 @@ def check_and_auto_sync(
 
 
 @click.group()
-@click.version_option(version="1.2.0", prog_name="ember")
+@click.version_option(version=__version__, prog_name="ember")
 @click.option(
     "--verbose",
     "-v",
@@ -384,6 +367,124 @@ def cli(ctx: click.Context, verbose: bool, quiet: bool) -> None:
     ctx.obj["quiet"] = quiet
 
 
+def _select_embedding_model(
+    model: str | None,
+    quiet: bool,
+    yes: bool,
+) -> str:
+    """Select embedding model based on user input or system auto-detection.
+
+    Args:
+        model: User-specified model name, or None for auto-detection.
+        quiet: If True, suppress informational output.
+        yes: If True, accept recommended model without prompting.
+
+    Returns:
+        The selected model name.
+    """
+    from ember.core.hardware import (
+        detect_system_resources,
+        get_model_recommendation_reason,
+        recommend_model,
+    )
+
+    if model is not None:
+        return model
+
+    resources = detect_system_resources()
+    recommended = recommend_model(resources)
+    reason = get_model_recommendation_reason(recommended, resources)
+
+    if not quiet:
+        _display_system_resources(resources, recommended, reason)
+
+    if recommended != "jina-code-v2" and not yes:
+        return _prompt_for_model_choice(resources, recommended)
+
+    return recommended
+
+
+def _display_system_resources(
+    resources: SystemResources,
+    recommended: str,
+    reason: str,
+) -> None:
+    """Display detected system resources to user.
+
+    Args:
+        resources: Detected system resources.
+        recommended: Recommended model name.
+        reason: Human-readable reason for recommendation.
+    """
+    click.echo("\nDetecting system resources...")
+    click.echo(f"  Available RAM: {resources.available_ram_gb:.1f}GB")
+    if resources.gpu is not None:
+        gpu = resources.gpu
+        click.echo(
+            f"  GPU: {gpu.device_name} "
+            f"({gpu.total_vram_gb:.1f}GB VRAM, {gpu.free_vram_gb:.1f}GB free)"
+        )
+    click.echo(f"  Recommended model: {recommended}")
+    click.echo(f"  ({reason})")
+    click.echo()
+
+
+def _prompt_for_model_choice(resources: SystemResources, recommended: str) -> str:
+    """Prompt user to choose between recommended model and default.
+
+    Args:
+        resources: Detected system resources.
+        recommended: Recommended model name.
+
+    Returns:
+        The user's chosen model name.
+    """
+    if resources.gpu is not None and resources.gpu.free_vram_gb < resources.available_ram_gb:
+        click.echo(
+            "The default model (jina-code-v2) requires ~1.6GB VRAM and may cause GPU memory issues."
+        )
+    else:
+        click.echo(
+            "The default model (jina-code-v2) requires ~1.6GB RAM and may cause slowdowns."
+        )
+
+    use_recommended = click.confirm(
+        f"Use recommended model ({recommended}) instead?", default=True
+    )
+    return recommended if use_recommended else "jina-code-v2"
+
+
+def _report_init_results(
+    response: InitResponse,
+    selected_model: str,
+    quiet: bool,
+) -> None:
+    """Report init command results to user.
+
+    Args:
+        response: The InitResponse from the use case.
+        selected_model: The model that was selected.
+        quiet: If True, suppress detailed output.
+    """
+    if response.global_config_created and not quiet:
+        click.echo(f"Created global config at {response.global_config_path}")
+        click.echo(f"  ✓ Using model: {selected_model}")
+        click.echo("")
+
+    if response.was_reinitialized:
+        click.echo(f"Reinitialized existing ember index at {response.ember_dir}")
+    else:
+        click.echo(f"Initialized ember index at {response.ember_dir}")
+
+    if not quiet:
+        click.echo(f"  ✓ Created {response.config_path.name}")
+        click.echo(f"  ✓ Created {response.db_path.name}")
+        click.echo(f"  ✓ Created {response.state_path.name}")
+        if not response.global_config_created:
+            click.echo(f"  ✓ Using model: {selected_model} (from global config)")
+        click.echo("\nNext: Run 'ember sync' to index your codebase")
+
+
 @cli.command()
 @click.option(
     "--force",
@@ -405,78 +506,33 @@ def cli(ctx: click.Context, verbose: bool, quiet: bool) -> None:
     help="Accept recommended model without prompting.",
 )
 @click.pass_context
+@handle_cli_errors("init")
 def init(ctx: click.Context, force: bool, model: str | None, yes: bool) -> None:
     """Initialize Ember in the current directory.
 
     Creates .ember/ directory with configuration and database.
     If in a git repository, initializes at the git root.
 
-    Detects available system RAM and suggests an appropriate embedding model.
-    Use --model to override or --yes to accept the recommendation.
+    Detects available system RAM and GPU VRAM and suggests an appropriate
+    embedding model. Use --model to override or --yes to accept the recommendation.
     """
-    # Lazy import - only load when init is actually called
-    from ember.adapters.sqlite.initializer import SqliteDatabaseInitializer
+    from ember.adapters.factory import ConfigFactory
     from ember.core.config.init_usecase import InitRequest, InitUseCase
-    from ember.core.hardware import (
-        detect_system_resources,
-        get_model_recommendation_reason,
-        recommend_model,
-    )
     from ember.core.repo_utils import find_repo_root_for_init
 
     repo_root = find_repo_root_for_init()
     quiet = ctx.obj.get("quiet", False)
 
-    # Determine which model to use
-    if model is not None:
-        # User explicitly specified a model
-        selected_model = model
-    else:
-        # Auto-detect and suggest
-        resources = detect_system_resources()
-        recommended = recommend_model(resources)
-        reason = get_model_recommendation_reason(recommended, resources)
+    selected_model = _select_embedding_model(model, quiet, yes)
 
-        if not quiet:
-            click.echo("\nDetecting system resources...")
-            click.echo(f"  Available RAM: {resources.available_ram_gb:.1f}GB")
-            click.echo(f"  Recommended model: {recommended}")
-            click.echo(f"  ({reason})")
-            click.echo()
-
-        # Check if the default (jina) is NOT recommended and we need to prompt
-        if recommended != "jina-code-v2" and not yes:
-            click.echo(
-                "The default model (jina-code-v2) requires ~1.6GB RAM and may cause slowdowns."
-            )
-            use_recommended = click.confirm(
-                f"Use recommended model ({recommended}) instead?", default=True
-            )
-            selected_model = recommended if use_recommended else "jina-code-v2"
-        else:
-            selected_model = recommended
-
-    # Create use case with injected dependencies
-    db_initializer = SqliteDatabaseInitializer()
-    use_case = InitUseCase(db_initializer=db_initializer, version="1.2.0")
+    config_factory = ConfigFactory()
+    db_initializer = config_factory.create_db_initializer()
+    use_case = InitUseCase(db_initializer=db_initializer, version=__version__)
     request = InitRequest(repo_root=repo_root, force=force, model=selected_model)
 
     try:
         response = use_case.execute(request)
-
-        # Report success
-        if response.was_reinitialized:
-            click.echo(f"Reinitialized existing ember index at {response.ember_dir}")
-        else:
-            click.echo(f"Initialized ember index at {response.ember_dir}")
-
-        if not quiet:
-            click.echo(f"  ✓ Created {response.config_path.name}")
-            click.echo(f"  ✓ Created {response.db_path.name}")
-            click.echo(f"  ✓ Created {response.state_path.name}")
-            click.echo(f"  ✓ Using model: {selected_model}")
-            click.echo("\nNext: Run 'ember sync' to index your codebase")
-
+        _report_init_results(response, selected_model, quiet)
     except FileExistsError as e:
         raise EmberCliError(
             str(e),
@@ -535,11 +591,11 @@ def _quick_check_unchanged(
     if reindex or sync_mode != "worktree":
         return False
 
-    from ember.adapters.git_cmd.git_adapter import GitAdapter
-    from ember.adapters.sqlite.meta_repository import SQLiteMetaRepository
+    from ember.adapters.factory import RepositoryFactory
 
-    vcs = GitAdapter(repo_root)
-    meta_repo = SQLiteMetaRepository(db_path)
+    repo_factory = RepositoryFactory()
+    vcs = repo_factory.create_git_adapter(repo_root)
+    meta_repo = repo_factory.create_meta_repository(db_path)
     try:
         current_tree_sha = vcs.get_worktree_tree_sha()
         last_indexed_sha = meta_repo.get("last_tree_sha")
@@ -610,7 +666,6 @@ def sync(
     By default, indexes the current worktree.
     Can be run from any subdirectory within the repository.
     """
-    from ember.adapters.config.toml_config_provider import TomlConfigProvider
     from ember.core.indexing.index_usecase import IndexRequest
 
     repo_root, ember_dir = get_ember_repo_root()
@@ -623,7 +678,7 @@ def sync(
         return
 
     # Load config and create indexing use case
-    config = TomlConfigProvider().load(ember_dir)
+    config = _load_config(ember_dir)
     indexing_usecase = _create_indexing_usecase(repo_root, db_path, config)
 
     # Execute indexing with progress reporting
@@ -717,33 +772,16 @@ def find(
     repo_root, ember_dir = get_ember_repo_root()
     db_path = ember_dir / "index.db"
 
-    # Handle path argument: convert from CWD-relative to repo-relative glob
-    if path is not None:
-        # Convert path argument to absolute, then to relative from repo root
-        cwd = Path.cwd().resolve()
-        path_abs = (cwd / path).resolve()
-
-        # Check if path is within repo
-        try:
-            path_rel_to_repo = path_abs.relative_to(repo_root)
-        except ValueError:
-            path_not_in_repo_error(path)
-
-        # Check for mutually exclusive filter options
-        if path_filter:
-            raise EmberCliError(
-                f"Cannot use both PATH argument ('{path}') and --in filter ('{path_filter}')",
-                hint="Use PATH to search a directory subtree, OR --in for glob patterns, but not both",
-            )
-
-        # Create glob pattern for this path subtree
-        path_filter = f"{path_rel_to_repo}/**" if path_rel_to_repo != Path(".") else "*/**"
+    # Normalize path argument to path filter glob pattern
+    path_filter = normalize_path_filter(
+        path=path,
+        existing_filter=path_filter,
+        repo_root=repo_root,
+        cwd=Path.cwd().resolve(),
+    )
 
     # Load config
-    from ember.adapters.config.toml_config_provider import TomlConfigProvider
-
-    config_provider = TomlConfigProvider()
-    config = config_provider.load(ember_dir)
+    config = _load_config(ember_dir)
 
     # Use config default for topk if not specified
     if topk is None:
@@ -760,26 +798,12 @@ def find(
             verbose=ctx.obj.get("verbose", False),
         )
 
-    # Lazy imports - only load heavy dependencies when find is actually called
-    from ember.adapters.fts.sqlite_fts import SQLiteFTS
-    from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
-    from ember.adapters.vss.sqlite_vec_adapter import SqliteVecAdapter
-    from ember.core.retrieval.search_usecase import SearchUseCase
+    # Lazy import for Query entity
     from ember.domain.entities import Query
 
-    # Initialize dependencies
-    text_search = SQLiteFTS(db_path)
-    vector_search = SqliteVecAdapter(db_path)
-    chunk_repo = SQLiteChunkRepository(db_path)
+    # Initialize search dependencies
     embedder = _create_embedder(config)
-
-    # Create search use case
-    search_usecase = SearchUseCase(
-        text_search=text_search,
-        vector_search=vector_search,
-        chunk_repo=chunk_repo,
-        embedder=embedder,
-    )
+    search_usecase = _create_search_usecase(db_path, embedder)
 
     # Create query object
     query_obj = Query(
@@ -791,14 +815,18 @@ def find(
     )
 
     # Execute search
-    results = search_usecase.search(query_obj)
+    result_set = search_usecase.search(query_obj)
+
+    # Display warning if results are degraded (missing chunks)
+    if result_set.warning:
+        click.secho(result_set.warning, fg="yellow", err=True)
 
     # Cache results for cat/open commands
     cache_path = ember_dir / ".last_search.json"
     try:
         import json
 
-        cache_data = ResultPresenter.serialize_for_cache(query, results)
+        cache_data = ResultPresenter.serialize_for_cache(query, result_set.results)
         cache_path.write_text(json.dumps(cache_data, indent=2))
     except Exception as e:
         # Log cache errors but don't fail the command
@@ -808,9 +836,9 @@ def find(
     # Display results
     presenter = ResultPresenter(LocalFileSystem())
     if json_output:
-        click.echo(presenter.format_json_output(results, context=context, repo_root=repo_root))
+        click.echo(presenter.format_json_output(result_set.results, context=context, repo_root=repo_root))
     else:
-        presenter.format_human_output(results, context=context, repo_root=repo_root, config=config)
+        presenter.format_human_output(result_set.results, context=context, repo_root=repo_root, config=config)
 
 
 @cli.command()
@@ -879,38 +907,19 @@ def search(
     repo_root, ember_dir = get_ember_repo_root()
     db_path = ember_dir / "index.db"
 
-    # Handle path argument: convert from CWD-relative to repo-relative glob
-    path_filter: str | None = None
-    if path is not None:
-        # Convert path argument to absolute, then to relative from repo root
-        cwd = Path.cwd().resolve()
-        path_abs = (cwd / path).resolve()
+    # Convert file_pattern to path_filter format (e.g., "*.py" -> "**/*.py")
+    existing_filter = f"**/{file_pattern}" if file_pattern else None
 
-        # Check if path is within repo
-        try:
-            path_rel_to_repo = path_abs.relative_to(repo_root)
-        except ValueError:
-            path_not_in_repo_error(path)
-
-        # Check for mutually exclusive filter options
-        if file_pattern:
-            raise EmberCliError(
-                f"Cannot use both PATH argument ('{path}') and --in filter ('{file_pattern}')",
-                hint="Use PATH to search a directory subtree, OR --in for glob patterns, but not both",
-            )
-
-        # Create glob pattern for this path subtree
-        path_filter = f"{path_rel_to_repo}/**" if path_rel_to_repo != Path(".") else "*/**"
-
-    # Convert file_pattern to path_filter format
-    if file_pattern:
-        path_filter = f"**/{file_pattern}"
+    # Normalize path argument to path filter glob pattern
+    path_filter = normalize_path_filter(
+        path=path,
+        existing_filter=existing_filter,
+        repo_root=repo_root,
+        cwd=Path.cwd().resolve(),
+    )
 
     # Load config
-    from ember.adapters.config.toml_config_provider import TomlConfigProvider
-
-    config_provider = TomlConfigProvider()
-    config = config_provider.load(ember_dir)
+    config = _load_config(ember_dir)
 
     # Use config default for topk if not specified
     if topk is None:
@@ -929,30 +938,17 @@ def search(
         )
 
     # Lazy imports
-    from ember.adapters.fts.sqlite_fts import SQLiteFTS
-    from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
     from ember.adapters.tui.search_ui import InteractiveSearchUI
-    from ember.adapters.vss.sqlite_vec_adapter import SqliteVecAdapter
-    from ember.core.retrieval.search_usecase import SearchUseCase
     from ember.domain.entities import Query
 
     # Initialize search dependencies
-    text_search = SQLiteFTS(db_path)
-    vector_search = SqliteVecAdapter(db_path)
-    chunk_repo = SQLiteChunkRepository(db_path)
     embedder = _create_embedder(config, show_progress=False)  # No progress for interactive
+    search_usecase = _create_search_usecase(db_path, embedder)
 
-    # Create search use case
-    search_usecase = SearchUseCase(
-        text_search=text_search,
-        vector_search=vector_search,
-        chunk_repo=chunk_repo,
-        embedder=embedder,
-    )
-
-    # Create search function wrapper
+    # Create search function wrapper (returns list for TUI compatibility)
     def search_fn(query: Query) -> list:
-        return search_usecase.search(query)
+        result_set = search_usecase.search(query)
+        return result_set.results
 
     # Create and run interactive UI
     ui = InteractiveSearchUI(
@@ -996,11 +992,10 @@ def cat(ctx: click.Context, identifier: str, context: int) -> None:
       - Full chunk ID (e.g., 'blake3:a1b2c3d4...')
       - Short hash prefix (e.g., 'a1b2c3d4') - minimum 8 characters
     """
-    from ember.adapters.config.toml_config_provider import TomlConfigProvider
+    from ember.adapters.factory import RepositoryFactory
 
     repo_root, ember_dir = get_ember_repo_root()
-    config_provider = TomlConfigProvider()
-    config = config_provider.load(ember_dir)
+    config = _load_config(ember_dir)
 
     # Look up result by numeric index or hash ID
     is_numeric = identifier.isdigit()
@@ -1008,10 +1003,9 @@ def cat(ctx: click.Context, identifier: str, context: int) -> None:
         cache_path = ember_dir / ".last_search.json"
         result = lookup_result_from_cache(identifier, cache_path)
     else:
-        from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
-
+        repo_factory = RepositoryFactory()
         db_path = ember_dir / "index.db"
-        chunk_repo = SQLiteChunkRepository(db_path)
+        chunk_repo = repo_factory.create_chunk_repository(db_path)
         result = lookup_result_by_hash(identifier, chunk_repo)
 
     # Display header
@@ -1047,8 +1041,6 @@ def open_result(ctx: click.Context, index: int) -> None:
     Opens file at the correct line in $EDITOR.
     Can be run from any subdirectory within the repository.
     """
-    import os
-
     repo_root, ember_dir = get_ember_repo_root()
     cache_path = ember_dir / ".last_search.json"
 
@@ -1065,8 +1057,7 @@ def open_result(ctx: click.Context, index: int) -> None:
 
     # Show what we're doing (if not quiet)
     if not ctx.obj.get("quiet", False):
-        editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "vim"
-        click.echo(f"Opening in {editor}:")
+        click.echo(f"Opening in {get_editor()}:")
         format_result_header(result, index, show_symbol=True)
 
     # Open in editor
@@ -1081,6 +1072,7 @@ def open_result(ctx: click.Context, index: int) -> None:
     help="Strip content from export (embeddings only).",
 )
 @click.pass_context
+@handle_cli_errors("export")
 def export(ctx: click.Context, output_path: str, no_preview: bool) -> None:
     """Export index to a bundle.
 
@@ -1093,6 +1085,7 @@ def export(ctx: click.Context, output_path: str, no_preview: bool) -> None:
 @cli.command()
 @click.argument("bundle_path", type=click.Path(exists=True))
 @click.pass_context
+@handle_cli_errors("import")
 def import_bundle(ctx: click.Context, bundle_path: str) -> None:
     """Import index from a bundle.
 
@@ -1104,6 +1097,7 @@ def import_bundle(ctx: click.Context, bundle_path: str) -> None:
 
 @cli.command()
 @click.pass_context
+@handle_cli_errors("audit")
 def audit(ctx: click.Context) -> None:
     """Audit indexed content for potential secrets.
 
@@ -1120,6 +1114,7 @@ cli.add_command(open_result, name="open")
 
 @cli.command()
 @click.pass_context
+@handle_cli_errors("status")
 def status(ctx: click.Context) -> None:
     """Show ember index status and configuration.
 
@@ -1129,23 +1124,20 @@ def status(ctx: click.Context) -> None:
     - Whether index is up to date
     - Current configuration
     """
-    from ember.adapters.config.toml_config_provider import TomlConfigProvider
-    from ember.adapters.git_cmd.git_adapter import GitAdapter
-    from ember.adapters.sqlite.chunk_repository import SQLiteChunkRepository
-    from ember.adapters.sqlite.meta_repository import SQLiteMetaRepository
+    from ember.adapters.factory import RepositoryFactory
     from ember.core.status.status_usecase import StatusRequest, StatusUseCase
 
     repo_root, ember_dir = get_ember_repo_root()
 
     # Load configuration
-    config_provider = TomlConfigProvider()
-    config = config_provider.load(ember_dir)
+    config = _load_config(ember_dir)
 
-    # Set up repositories
+    # Set up repositories using factory
     db_path = ember_dir / "index.db"
-    vcs = GitAdapter(repo_root)
-    chunk_repo = SQLiteChunkRepository(db_path)
-    meta_repo = SQLiteMetaRepository(db_path)
+    repo_factory = RepositoryFactory()
+    vcs = repo_factory.create_git_adapter(repo_root)
+    chunk_repo = repo_factory.create_chunk_repository(db_path)
+    meta_repo = repo_factory.create_meta_repository(db_path)
 
     # Execute status use case
     use_case = StatusUseCase(
@@ -1208,6 +1200,65 @@ def config() -> None:
     pass
 
 
+def _display_path_status(path: Path, label: str) -> None:
+    """Display a config path with its existence status."""
+    status = "exists" if path.exists() else "not created"
+    color = "green" if path.exists() else "yellow"
+    click.echo(f"{label}{path}")
+    click.echo(f"  Status: {click.style(status, fg=color)}")
+
+
+def _load_and_display_config(
+    title: str, loader: Callable[[], EmberConfig]  # noqa: F821
+) -> None:
+    """Load config using the provided loader and display it with a title."""
+    click.echo(f"\n{title}:")
+    try:
+        config = loader()
+        _display_config_summary(config)
+    except Exception as e:
+        click.echo(f"  Error loading config: {e}")
+
+
+def _get_local_config_path() -> Path | None:
+    """Get the local config path if in a repository, or None otherwise."""
+    try:
+        _, ember_dir = get_ember_repo_root()
+        return ember_dir / "config.toml"
+    except EmberCliError:
+        # Not in an ember repository
+        return None
+
+
+def _display_local_config_info(local_path: Path | None, show_local: bool) -> None:
+    """Display local config path and status."""
+    if local_path:
+        _display_path_status(local_path, "Local config:  ")
+    elif show_local:
+        click.echo("Local config: Not in an Ember repository")
+
+
+def _show_effective_config(
+    local_path: Path | None,
+    global_path: Path,
+    include_local: bool,
+    include_global: bool,
+) -> None:
+    """Show effective configuration content based on display mode."""
+    from ember.shared.config_io import load_config
+
+    if local_path and include_local:
+        _load_and_display_config(
+            "Effective configuration (merged global + local)",
+            lambda: _load_config(local_path.parent),
+        )
+    elif include_global and not include_local and global_path.exists():
+        _load_and_display_config(
+            "Global configuration",
+            lambda: load_config(global_path),
+        )
+
+
 @config.command(name="show")
 @click.option(
     "--global", "-g", "show_global", is_flag=True, help="Show global config location"
@@ -1216,6 +1267,7 @@ def config() -> None:
     "--local", "-l", "show_local", is_flag=True, help="Show local config location"
 )
 @click.pass_context
+@handle_cli_errors("config show")
 def config_show(
     ctx: click.Context, show_global: bool, show_local: bool
 ) -> None:
@@ -1223,53 +1275,38 @@ def config_show(
 
     By default shows both locations. Use --global or --local to show specific one.
     """
-    from ember.adapters.config.toml_config_provider import TomlConfigProvider
     from ember.shared.config_io import get_global_config_path
 
     global_path = get_global_config_path()
+    local_path = _get_local_config_path()
 
-    # Try to find local config if we're in a repo
-    local_path = None
-    try:
-        _, ember_dir = get_ember_repo_root()
-        local_path = ember_dir / "config.toml"
-    except Exception:
-        pass  # Not in a repo, local config doesn't apply
+    # Determine what to display - default is both
+    include_global = show_global or not show_local
+    include_local = show_local or not show_global
 
-    show_both = not show_global and not show_local
+    # Display path info
+    if include_global:
+        _display_path_status(global_path, "Global config: ")
+    if include_local:
+        _display_local_config_info(local_path, show_local)
 
-    if show_global or show_both:
-        click.echo(f"Global config: {global_path}")
-        if global_path.exists():
-            click.echo(f"  Status: {click.style('exists', fg='green')}")
-        else:
-            click.echo(f"  Status: {click.style('not created', fg='yellow')}")
+    # Show effective configuration content
+    _show_effective_config(local_path, global_path, include_local, include_global)
 
-    if show_local or show_both:
-        if local_path:
-            click.echo(f"Local config:  {local_path}")
-            if local_path.exists():
-                click.echo(f"  Status: {click.style('exists', fg='green')}")
-            else:
-                click.echo(f"  Status: {click.style('not created', fg='yellow')}")
-        elif show_local:
-            click.echo("Local config: Not in an Ember repository")
 
-    # Show effective config if we're in a repo
-    if (show_both or show_local) and local_path:
-        click.echo("\nEffective configuration (merged):")
-        provider = TomlConfigProvider()
-        try:
-            config = provider.load(local_path.parent)
-            click.echo("  [index]")
-            click.echo(f"    model = {config.index.model}")
-            click.echo(f"    chunk = {config.index.chunk}")
-            click.echo("  [search]")
-            click.echo(f"    topk = {config.search.topk}")
-            click.echo("  [display]")
-            click.echo(f"    theme = {config.display.theme}")
-        except Exception as e:
-            click.echo(f"  Error loading config: {e}")
+def _display_config_summary(config: EmberConfig) -> None:  # noqa: F821
+    """Display a summary of config settings."""
+    click.echo("  [index]")
+    click.echo(f"    model = {config.index.model}")
+    click.echo(f"    chunk = {config.index.chunk}")
+    click.echo("  [model]")
+    click.echo(f"    mode = {config.model.mode}")
+    click.echo(f"    daemon_timeout = {config.model.daemon_timeout}")
+    click.echo("  [search]")
+    click.echo(f"    topk = {config.search.topk}")
+    click.echo("  [display]")
+    click.echo(f"    theme = {config.display.theme}")
+    click.echo(f"    syntax_highlighting = {config.display.syntax_highlighting}")
 
 
 @config.command(name="edit")
@@ -1277,16 +1314,20 @@ def config_show(
     "--global", "-g", "edit_global", is_flag=True, help="Edit global config file"
 )
 @click.pass_context
+@handle_cli_errors("config edit")
 def config_edit(ctx: click.Context, edit_global: bool) -> None:
     """Open configuration file in your default editor.
 
     Opens the local config by default. Use --global to edit global config.
     Creates the config file if it doesn't exist.
     """
-    import os
     import subprocess
 
-    from ember.shared.config_io import create_default_config_file, get_global_config_path
+    from ember.shared.config_io import (
+        create_global_config_file,
+        create_minimal_project_config,
+        get_global_config_path,
+    )
 
     if edit_global:
         config_path = get_global_config_path()
@@ -1306,10 +1347,13 @@ def config_edit(ctx: click.Context, edit_global: bool) -> None:
     # Create config file if it doesn't exist
     if not config_path.exists():
         click.echo(f"Creating {config_type} config at {config_path}...")
-        create_default_config_file(config_path)
+        if edit_global:
+            create_global_config_file(config_path)
+        else:
+            create_minimal_project_config(config_path)
 
     # Open in editor
-    editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "vi"
+    editor = get_editor()
     click.echo(f"Opening {config_path} in {editor}...")
     try:
         subprocess.run([editor, str(config_path)], check=True)
@@ -1332,6 +1376,7 @@ def config_edit(ctx: click.Context, edit_global: bool) -> None:
 @click.option(
     "--local", "-l", "show_local", is_flag=True, help="Show only local config path"
 )
+@handle_cli_errors("config path")
 def config_path(show_global: bool, show_local: bool) -> None:
     """Print config file path(s) for use in scripts.
 
@@ -1349,8 +1394,8 @@ def config_path(show_global: bool, show_local: bool) -> None:
         try:
             _, ember_dir = get_ember_repo_root()
             click.echo(ember_dir / "config.toml")
-        except Exception:
-            # Exit silently with no output if not in repo
+        except EmberCliError:
+            # Not in an ember repository, exit silently with no output
             pass
         return
 
@@ -1359,7 +1404,8 @@ def config_path(show_global: bool, show_local: bool) -> None:
     try:
         _, ember_dir = get_ember_repo_root()
         click.echo(f"local:{ember_dir / 'config.toml'}")
-    except Exception:
+    except EmberCliError:
+        # Not in an ember repository, only show global config
         pass
 
 
@@ -1377,22 +1423,25 @@ def daemon() -> None:
 @daemon.command()
 @click.option("--foreground", "-f", is_flag=True, help="Run in foreground (blocks)")
 @click.pass_context
+@handle_cli_errors("daemon start")
 def start(ctx: click.Context, foreground: bool) -> None:
     """Start the daemon server."""
-    from ember.adapters.config.toml_config_provider import TomlConfigProvider
+    from ember.adapters.factory import DaemonFactory
     from ember.core.cli_utils import ensure_daemon_with_progress
 
     # Load config for daemon timeout
     ember_dir = Path.home() / ".ember"
     ember_dir.mkdir(parents=True, exist_ok=True)
-    config_provider = TomlConfigProvider()
-    config = config_provider.load(ember_dir)
+    config = _load_config(ember_dir)
+
+    daemon_factory = DaemonFactory()
 
     if foreground:
         # Foreground mode uses direct lifecycle management
-        from ember.adapters.daemon.lifecycle import DaemonLifecycle
-
-        lifecycle = DaemonLifecycle(idle_timeout=config.model.daemon_timeout)
+        lifecycle = daemon_factory.create_daemon_lifecycle(
+            idle_timeout=config.model.daemon_timeout,
+            model_name=config.index.model,
+        )
 
         if lifecycle.is_running():
             click.echo("✓ Daemon is already running")
@@ -1408,10 +1457,11 @@ def start(ctx: click.Context, foreground: bool) -> None:
             ) from e
     else:
         # Background mode with progress
-        from ember.adapters.daemon.lifecycle import DaemonLifecycle
-
         quiet = ctx.obj.get("quiet", False)
-        daemon_manager = DaemonLifecycle(idle_timeout=config.model.daemon_timeout)
+        daemon_manager = daemon_factory.create_daemon_lifecycle(
+            idle_timeout=config.model.daemon_timeout,
+            model_name=config.index.model,
+        )
         if ensure_daemon_with_progress(daemon_manager, quiet=quiet):
             if not quiet:
                 click.echo("✓ Daemon started successfully")
@@ -1423,11 +1473,13 @@ def start(ctx: click.Context, foreground: bool) -> None:
 
 
 @daemon.command()
+@handle_cli_errors("daemon stop")
 def stop() -> None:
     """Stop the daemon server."""
-    from ember.adapters.daemon.lifecycle import DaemonLifecycle
+    from ember.adapters.factory import DaemonFactory
 
-    lifecycle = DaemonLifecycle()
+    daemon_factory = DaemonFactory()
+    lifecycle = daemon_factory.create_daemon_lifecycle()
 
     if not lifecycle.is_running():
         click.echo("Daemon is not running")
@@ -1444,11 +1496,21 @@ def stop() -> None:
 
 
 @daemon.command()
-def restart() -> None:
+@click.pass_context
+@handle_cli_errors("daemon restart")
+def restart(ctx: click.Context) -> None:
     """Restart the daemon server."""
-    from ember.adapters.daemon.lifecycle import DaemonLifecycle
+    from ember.adapters.factory import DaemonFactory
 
-    lifecycle = DaemonLifecycle()
+    # Load config to get model name
+    repo_root, ember_dir = get_ember_repo_root()
+    config = _load_config(ember_dir)
+
+    daemon_factory = DaemonFactory()
+    lifecycle = daemon_factory.create_daemon_lifecycle(
+        idle_timeout=config.model.daemon_timeout,
+        model_name=config.index.model,
+    )
     click.echo("Restarting daemon...")
 
     if lifecycle.restart():
@@ -1461,11 +1523,13 @@ def restart() -> None:
 
 
 @daemon.command(name="status")
+@handle_cli_errors("daemon status")
 def daemon_status() -> None:
     """Show daemon status."""
-    from ember.adapters.daemon.lifecycle import DaemonLifecycle
+    from ember.adapters.factory import DaemonFactory
 
-    lifecycle = DaemonLifecycle()
+    daemon_factory = DaemonFactory()
+    lifecycle = daemon_factory.create_daemon_lifecycle()
     status = lifecycle.status()
 
     # Display status

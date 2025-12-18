@@ -19,12 +19,15 @@ class IndexConfig:
         line_window: Lines per chunk when using line-based chunking
         line_stride: Stride between chunks when using line-based chunking
         overlap_lines: Overlap lines between chunks for context preservation
+        batch_size: Batch size for embedding (default: 32). Lower values use less
+                   GPU memory. Will be automatically reduced on CUDA OOM errors.
         include: Glob patterns for files to include (e.g., ["**/*.py"])
         ignore: Patterns for files/dirs to ignore (e.g., ["node_modules/"])
 
     Raises:
         ValueError: If line_window, line_stride are not positive,
-                   overlap_lines is negative, or overlap_lines >= line_window.
+                   line_stride > line_window, overlap_lines is negative,
+                   or overlap_lines >= line_window.
     """
 
     model: str = "local-default-code-embed"
@@ -32,6 +35,7 @@ class IndexConfig:
     line_window: int = 120
     line_stride: int = 100
     overlap_lines: int = 15
+    batch_size: int = 32
     include: list[str] = field(
         default_factory=lambda: [
             "**/*.py",
@@ -68,6 +72,11 @@ class IndexConfig:
             raise ValueError(f"line_window must be positive, got {self.line_window}")
         if self.line_stride <= 0:
             raise ValueError(f"line_stride must be positive, got {self.line_stride}")
+        if self.line_stride > self.line_window:
+            raise ValueError(
+                f"line_stride ({self.line_stride}) cannot exceed "
+                f"line_window ({self.line_window})"
+            )
         if self.overlap_lines < 0:
             raise ValueError(
                 f"overlap_lines cannot be negative, got {self.overlap_lines}"
@@ -77,22 +86,32 @@ class IndexConfig:
                 f"overlap_lines ({self.overlap_lines}) must be less than "
                 f"line_window ({self.line_window})"
             )
-        # Validate model name
-        self._validate_model()
+        if self.batch_size <= 0:
+            raise ValueError(f"batch_size must be positive, got {self.batch_size}")
 
-    def _validate_model(self) -> None:
-        """Validate that the model name is recognized.
+    @staticmethod
+    def from_partial(
+        base: "IndexConfig", partial: dict
+    ) -> "IndexConfig":
+        """Create IndexConfig from base config with partial overrides.
 
-        Raises:
-            ValueError: If model name is not a known preset or supported model
+        Args:
+            base: Base config providing defaults
+            partial: Dict with override values (only provided keys override)
+
+        Returns:
+            New IndexConfig with merged values (validated on creation)
         """
-        # Import here to avoid circular imports
-        from ember.adapters.local_models.registry import resolve_model_name
-
-        try:
-            resolve_model_name(self.model)
-        except ValueError as e:
-            raise ValueError(f"Invalid model configuration: {e}") from e
+        return IndexConfig(
+            model=partial.get("model", base.model),
+            chunk=partial.get("chunk", base.chunk),
+            line_window=partial.get("line_window", base.line_window),
+            line_stride=partial.get("line_stride", base.line_stride),
+            overlap_lines=partial.get("overlap_lines", base.overlap_lines),
+            batch_size=partial.get("batch_size", base.batch_size),
+            include=partial.get("include", base.include),
+            ignore=partial.get("ignore", base.ignore),
+        )
 
 
 @dataclass(frozen=True)
@@ -116,6 +135,23 @@ class SearchConfig:
         """Validate search config after initialization."""
         if self.topk <= 0:
             raise ValueError(f"topk must be positive, got {self.topk}")
+
+    @staticmethod
+    def from_partial(base: "SearchConfig", partial: dict) -> "SearchConfig":
+        """Create SearchConfig from base config with partial overrides.
+
+        Args:
+            base: Base config providing defaults
+            partial: Dict with override values (only provided keys override)
+
+        Returns:
+            New SearchConfig with merged values (validated on creation)
+        """
+        return SearchConfig(
+            topk=partial.get("topk", base.topk),
+            rerank=partial.get("rerank", base.rerank),
+            filters=partial.get("filters", base.filters),
+        )
 
 
 @dataclass(frozen=True)
@@ -143,6 +179,22 @@ class RedactionConfig:
         """Validate redaction config after initialization."""
         if self.max_file_mb <= 0:
             raise ValueError(f"max_file_mb must be positive, got {self.max_file_mb}")
+
+    @staticmethod
+    def from_partial(base: "RedactionConfig", partial: dict) -> "RedactionConfig":
+        """Create RedactionConfig from base config with partial overrides.
+
+        Args:
+            base: Base config providing defaults
+            partial: Dict with override values (only provided keys override)
+
+        Returns:
+            New RedactionConfig with merged values (validated on creation)
+        """
+        return RedactionConfig(
+            patterns=partial.get("patterns", base.patterns),
+            max_file_mb=partial.get("max_file_mb", base.max_file_mb),
+        )
 
 
 @dataclass(frozen=True)
@@ -174,6 +226,25 @@ class ModelConfig:
                 f"got {self.daemon_startup_timeout}"
             )
 
+    @staticmethod
+    def from_partial(base: "ModelConfig", partial: dict) -> "ModelConfig":
+        """Create ModelConfig from base config with partial overrides.
+
+        Args:
+            base: Base config providing defaults
+            partial: Dict with override values (only provided keys override)
+
+        Returns:
+            New ModelConfig with merged values (validated on creation)
+        """
+        return ModelConfig(
+            mode=partial.get("mode", base.mode),
+            daemon_timeout=partial.get("daemon_timeout", base.daemon_timeout),
+            daemon_startup_timeout=partial.get(
+                "daemon_startup_timeout", base.daemon_startup_timeout
+            ),
+        )
+
 
 @dataclass(frozen=True)
 class DisplayConfig:
@@ -190,6 +261,25 @@ class DisplayConfig:
     syntax_highlighting: bool = True
     color_scheme: Literal["auto", "always", "never"] = "auto"
     theme: str = "ansi"
+
+    @staticmethod
+    def from_partial(base: "DisplayConfig", partial: dict) -> "DisplayConfig":
+        """Create DisplayConfig from base config with partial overrides.
+
+        Args:
+            base: Base config providing defaults
+            partial: Dict with override values (only provided keys override)
+
+        Returns:
+            New DisplayConfig with merged values
+        """
+        return DisplayConfig(
+            syntax_highlighting=partial.get(
+                "syntax_highlighting", base.syntax_highlighting
+            ),
+            color_scheme=partial.get("color_scheme", base.color_scheme),
+            theme=partial.get("theme", base.theme),
+        )
 
 
 @dataclass(frozen=True)
@@ -222,4 +312,37 @@ class EmberConfig:
             redaction=RedactionConfig(),
             model=ModelConfig(),
             display=DisplayConfig(),
+        )
+
+    @staticmethod
+    def from_partial(
+        base: "EmberConfig", data: dict
+    ) -> "EmberConfig":
+        """Create EmberConfig from base config with partial overrides.
+
+        Merges partial config data onto a base config. Only keys present in
+        the data dict override the base values. Validation is performed on
+        the resulting config.
+
+        Args:
+            base: Base config providing defaults for missing values
+            data: Dict with section keys (index, search, etc.) containing
+                  partial override values
+
+        Returns:
+            New EmberConfig with merged values (validated on creation)
+
+        Example:
+            >>> base = EmberConfig.default()
+            >>> override_data = {"index": {"model": "minilm"}, "search": {"topk": 50}}
+            >>> merged = EmberConfig.from_partial(base, override_data)
+        """
+        return EmberConfig(
+            index=IndexConfig.from_partial(base.index, data.get("index", {})),
+            search=SearchConfig.from_partial(base.search, data.get("search", {})),
+            redaction=RedactionConfig.from_partial(
+                base.redaction, data.get("redaction", {})
+            ),
+            model=ModelConfig.from_partial(base.model, data.get("model", {})),
+            display=DisplayConfig.from_partial(base.display, data.get("display", {})),
         )

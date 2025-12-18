@@ -1,11 +1,12 @@
 """SQLite adapter implementing FileRepository protocol for file tracking."""
 
-import sqlite3
 import time
 from pathlib import Path
 
+from ember.adapters.sqlite.base_repository import SQLiteBaseRepository
 
-class SQLiteFileRepository:
+
+class SQLiteFileRepository(SQLiteBaseRepository):
     """SQLite implementation of FileRepository for tracking indexed files."""
 
     def __init__(self, db_path: Path) -> None:
@@ -14,35 +15,7 @@ class SQLiteFileRepository:
         Args:
             db_path: Path to SQLite database file.
         """
-        self.db_path = db_path
-        self._conn: sqlite3.Connection | None = None
-
-    def _get_connection(self) -> sqlite3.Connection:
-        """Get a database connection.
-
-        Reuses an existing connection if available, otherwise creates a new one.
-
-        Returns:
-            SQLite connection object.
-        """
-        if self._conn is None:
-            self._conn = sqlite3.connect(self.db_path)
-        return self._conn
-
-    def close(self) -> None:
-        """Close the database connection if open."""
-        if self._conn is not None:
-            self._conn.close()
-            self._conn = None
-
-    def __enter__(self) -> "SQLiteFileRepository":
-        """Enter context manager."""
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
-        """Exit context manager, closing the database connection."""
-        self.close()
-        return False
+        super().__init__(db_path)
 
     def track_file(
         self,

@@ -6,6 +6,7 @@ from unittest.mock import patch
 import pytest
 from click.testing import CliRunner
 
+from ember.core.cli_utils import EmberCliError
 from ember.entrypoints.cli import cli
 
 
@@ -34,12 +35,176 @@ class TestConfigShow:
         """Test showing local config when not in a repository."""
         with patch(
             "ember.entrypoints.cli.get_ember_repo_root",
-            side_effect=RuntimeError("Not in repo"),
+            side_effect=EmberCliError("Not in repo"),
         ):
             result = runner.invoke(cli, ["config", "show", "--local"], obj={})
 
         assert result.exit_code == 0
         assert "Not in an Ember repository" in result.output
+
+    def test_show_both_default(self, runner: CliRunner, tmp_path: Path) -> None:
+        """Test showing both configs by default."""
+        ember_dir = tmp_path / ".ember"
+        ember_dir.mkdir()
+        global_config = tmp_path / "global_config.toml"
+
+        with patch(
+            "ember.shared.config_io.get_global_config_path",
+            return_value=global_config,
+        ), patch(
+            "ember.entrypoints.cli.get_ember_repo_root",
+            return_value=(tmp_path, ember_dir),
+        ):
+            result = runner.invoke(cli, ["config", "show"], obj={})
+
+        assert result.exit_code == 0
+        assert "Global config:" in result.output
+        assert "Local config:" in result.output
+
+    def test_show_global_exists_status(self, runner: CliRunner, tmp_path: Path) -> None:
+        """Test that global config shows 'exists' status when file exists."""
+        global_config = tmp_path / "config.toml"
+        global_config.write_text("[index]\nmodel = 'test'\n")
+
+        with patch(
+            "ember.shared.config_io.get_global_config_path",
+            return_value=global_config,
+        ), patch(
+            "ember.entrypoints.cli.get_ember_repo_root",
+            side_effect=EmberCliError("Not in repo"),
+        ):
+            result = runner.invoke(cli, ["config", "show", "--global"], obj={})
+
+        assert result.exit_code == 0
+        assert "exists" in result.output
+
+    def test_show_global_not_created_status(self, runner: CliRunner, tmp_path: Path) -> None:
+        """Test that global config shows 'not created' status when file doesn't exist."""
+        global_config = tmp_path / "nonexistent.toml"
+
+        with patch(
+            "ember.shared.config_io.get_global_config_path",
+            return_value=global_config,
+        ), patch(
+            "ember.entrypoints.cli.get_ember_repo_root",
+            side_effect=EmberCliError("Not in repo"),
+        ):
+            result = runner.invoke(cli, ["config", "show", "--global"], obj={})
+
+        assert result.exit_code == 0
+        assert "not created" in result.output
+
+    def test_show_local_exists_status(self, runner: CliRunner, tmp_path: Path) -> None:
+        """Test that local config shows 'exists' status when file exists."""
+        ember_dir = tmp_path / ".ember"
+        ember_dir.mkdir()
+        local_config = ember_dir / "config.toml"
+        local_config.write_text("[index]\nmodel = 'test'\n")
+        global_config = tmp_path / "global.toml"
+
+        with patch(
+            "ember.shared.config_io.get_global_config_path",
+            return_value=global_config,
+        ), patch(
+            "ember.entrypoints.cli.get_ember_repo_root",
+            return_value=(tmp_path, ember_dir),
+        ):
+            result = runner.invoke(cli, ["config", "show", "--local"], obj={})
+
+        assert result.exit_code == 0
+        assert "exists" in result.output
+
+    def test_show_local_not_created_status(self, runner: CliRunner, tmp_path: Path) -> None:
+        """Test that local config shows 'not created' status when file doesn't exist."""
+        ember_dir = tmp_path / ".ember"
+        ember_dir.mkdir()
+        global_config = tmp_path / "global.toml"
+
+        with patch(
+            "ember.shared.config_io.get_global_config_path",
+            return_value=global_config,
+        ), patch(
+            "ember.entrypoints.cli.get_ember_repo_root",
+            return_value=(tmp_path, ember_dir),
+        ):
+            result = runner.invoke(cli, ["config", "show", "--local"], obj={})
+
+        assert result.exit_code == 0
+        assert "not created" in result.output
+
+    def test_show_effective_config_in_repo(self, runner: CliRunner, tmp_path: Path) -> None:
+        """Test that effective merged config is shown when in a repo."""
+        from ember.domain.config import EmberConfig
+
+        ember_dir = tmp_path / ".ember"
+        ember_dir.mkdir()
+        global_config = tmp_path / "global.toml"
+
+        mock_config = EmberConfig.default()
+
+        with patch(
+            "ember.shared.config_io.get_global_config_path",
+            return_value=global_config,
+        ), patch(
+            "ember.entrypoints.cli.get_ember_repo_root",
+            return_value=(tmp_path, ember_dir),
+        ), patch(
+            "ember.adapters.config.toml_config_provider.TomlConfigProvider.load",
+            return_value=mock_config,
+        ):
+            result = runner.invoke(cli, ["config", "show"], obj={})
+
+        assert result.exit_code == 0
+        assert "Effective configuration" in result.output
+        assert "[index]" in result.output
+        assert "[model]" in result.output
+        assert "[search]" in result.output
+        assert "[display]" in result.output
+
+    def test_show_global_config_content(self, runner: CliRunner, tmp_path: Path) -> None:
+        """Test that global config content is shown when --global and file exists."""
+        from ember.domain.config import EmberConfig
+
+        global_config = tmp_path / "config.toml"
+        global_config.write_text("[index]\nmodel = 'test'\n")
+
+        mock_config = EmberConfig.default()
+
+        with patch(
+            "ember.shared.config_io.get_global_config_path",
+            return_value=global_config,
+        ), patch(
+            "ember.entrypoints.cli.get_ember_repo_root",
+            side_effect=EmberCliError("Not in repo"),
+        ), patch(
+            "ember.shared.config_io.load_config",
+            return_value=mock_config,
+        ):
+            result = runner.invoke(cli, ["config", "show", "--global"], obj={})
+
+        assert result.exit_code == 0
+        assert "Global configuration:" in result.output
+
+    def test_show_config_load_error(self, runner: CliRunner, tmp_path: Path) -> None:
+        """Test that config load errors are displayed gracefully."""
+        ember_dir = tmp_path / ".ember"
+        ember_dir.mkdir()
+        global_config = tmp_path / "global.toml"
+
+        with patch(
+            "ember.shared.config_io.get_global_config_path",
+            return_value=global_config,
+        ), patch(
+            "ember.entrypoints.cli.get_ember_repo_root",
+            return_value=(tmp_path, ember_dir),
+        ), patch(
+            "ember.adapters.config.toml_config_provider.TomlConfigProvider.load",
+            side_effect=ValueError("Invalid config format"),
+        ):
+            result = runner.invoke(cli, ["config", "show"], obj={})
+
+        assert result.exit_code == 0
+        assert "Error loading config" in result.output
 
 
 class TestConfigPath:
