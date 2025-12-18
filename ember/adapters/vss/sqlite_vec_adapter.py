@@ -114,6 +114,9 @@ class SqliteVecAdapter(SQLiteBaseRepository):
         when syncing large numbers of vectors. For 1000 vectors, this reduces
         database calls from 2000 individual executes to 2 batch operations.
 
+        Both inserts are wrapped in a transaction with proper rollback on failure
+        to prevent orphaned vectors and release database locks.
+
         After syncing, clears the _needs_sync flag to avoid redundant syncs
         on subsequent queries.
         """
@@ -167,40 +170,45 @@ class SqliteVecAdapter(SQLiteBaseRepository):
         cursor.execute("SELECT COALESCE(MAX(rowid), 0) FROM vec_chunks")
         base_rowid = cursor.fetchone()[0]
 
-        # Batch insert vectors using executemany()
-        # Serialize all vectors first
-        vec_data = [
-            (sqlite_vec.serialize_float32(vector),)
-            for vector, *_ in vectors_to_add
-        ]
-        cursor.executemany("INSERT INTO vec_chunks(embedding) VALUES (?)", vec_data)
+        try:
+            # Batch insert vectors using executemany()
+            # Serialize all vectors first
+            vec_data = [
+                (sqlite_vec.serialize_float32(vector),)
+                for vector, *_ in vectors_to_add
+            ]
+            cursor.executemany("INSERT INTO vec_chunks(embedding) VALUES (?)", vec_data)
 
-        # Build mapping data with calculated rowids
-        # SQLite AUTOINCREMENT guarantees sequential rowids for batch inserts
-        mapping_data = [
-            (
-                base_rowid + i + 1,  # vec_rowid (1-indexed from base)
-                project_id,
-                path,
-                start_line,
-                end_line,
-                chunk_db_id,
+            # Build mapping data with calculated rowids
+            # SQLite AUTOINCREMENT guarantees sequential rowids for batch inserts
+            mapping_data = [
+                (
+                    base_rowid + i + 1,  # vec_rowid (1-indexed from base)
+                    project_id,
+                    path,
+                    start_line,
+                    end_line,
+                    chunk_db_id,
+                )
+                for i, (_, project_id, path, start_line, end_line, chunk_db_id) in enumerate(
+                    vectors_to_add
+                )
+            ]
+
+            # Batch insert mappings
+            cursor.executemany(
+                """
+                INSERT INTO vec_chunk_mapping(vec_rowid, project_id, path, start_line, end_line, chunk_db_id)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                mapping_data,
             )
-            for i, (_, project_id, path, start_line, end_line, chunk_db_id) in enumerate(
-                vectors_to_add
-            )
-        ]
 
-        # Batch insert mappings
-        cursor.executemany(
-            """
-            INSERT INTO vec_chunk_mapping(vec_rowid, project_id, path, start_line, end_line, chunk_db_id)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            mapping_data,
-        )
-
-        conn.commit()
+            conn.commit()
+        except Exception:
+            # Rollback on any failure to prevent orphaned vectors and release db lock
+            conn.rollback()
+            raise
 
         # Clear the sync flag after successful sync
         self._needs_sync = False

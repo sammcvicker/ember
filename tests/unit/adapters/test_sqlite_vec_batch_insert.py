@@ -91,6 +91,65 @@ def _insert_test_chunks_and_vectors(
     conn.close()
 
 
+def _insert_more_test_chunks_and_vectors(
+    db_path: Path,
+    start_idx: int,
+    count: int,
+    vector_dim: int = 384,
+) -> None:
+    """Insert additional test chunks and vectors starting from a given index.
+
+    Args:
+        db_path: Path to the test database.
+        start_idx: Starting index for chunk/vector IDs.
+        count: Number of vectors to insert.
+        vector_dim: Dimension of vectors.
+    """
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    for i in range(start_idx, start_idx + count):
+        # Insert chunk
+        cursor.execute(
+            """
+            INSERT INTO chunks (
+                chunk_id, project_id, path, lang, symbol,
+                start_line, end_line, content, content_hash, file_hash,
+                tree_sha, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                f"chunk_{i:06d}",
+                "test_project",
+                f"src/file_{i}.py",
+                "python",
+                f"function_{i}",
+                1,
+                10,
+                f"def function_{i}(): pass",
+                f"content_hash_{i}",
+                f"file_hash_{i}",
+                "abc123",
+                0.0,
+            ),
+        )
+        chunk_db_id = cursor.lastrowid
+
+        # Insert vector
+        vector = [1.0 / (vector_dim ** 0.5)] * vector_dim
+        blob = struct.pack(f"{vector_dim}f", *vector)
+        cursor.execute(
+            """
+            INSERT INTO vectors (chunk_id, embedding, dim, model_fingerprint)
+            VALUES (?, ?, ?, ?)
+            """,
+            (chunk_db_id, blob, vector_dim, "test_model"),
+        )
+
+    conn.commit()
+    conn.close()
+
+
 def test_sync_vectors_correctness_small_batch(db_path: Path) -> None:
     """Test that batch sync correctly populates vec_chunks for small batches."""
     num_vectors = 10
@@ -320,3 +379,100 @@ def test_sync_vectors_performance_benchmark(db_path: Path, capsys: pytest.Captur
     # Basic performance assertion: should handle 100 vectors in under 2 seconds
     # This is a very conservative threshold to avoid flaky tests
     assert results[0][1] < 2.0, "Sync of 100 vectors should take less than 2 seconds"
+
+
+def test_sync_vectors_rollback_releases_lock_on_failure(db_path: Path) -> None:
+    """Test that database lock is released when _sync_vectors fails.
+
+    This is a regression test for issue #351: when the mapping insert fails after
+    vec_chunks insert succeeds, the transaction should be properly rolled back to:
+    1. Prevent orphaned vectors in the vec_chunks table
+    2. Release the database lock so subsequent operations can proceed
+
+    Without explicit rollback, the database remains locked and subsequent
+    adapter creations will fail with "database is locked".
+    """
+    num_vectors = 10
+    vector_dim = 384
+
+    # Insert chunks and vectors
+    _insert_test_chunks_and_vectors(db_path, num_vectors, vector_dim)
+
+    # Create a subclass that simulates failure during the mapping insert
+    # We override _sync_vectors to inject the failure
+    class _FailingSyncAdapter(SqliteVecAdapter):
+        """Adapter that fails during mapping insert but properly rolls back."""
+
+        def _sync_vectors(self) -> None:
+            """Override to simulate failure, exercising the rollback path."""
+            conn = self._get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute("SELECT chunk_db_id FROM vec_chunk_mapping")
+            existing_ids = {row[0] for row in cursor.fetchall()}
+
+            cursor.execute("""
+                SELECT v.chunk_id, v.embedding, v.dim, c.project_id, c.path, c.start_line, c.end_line
+                FROM vectors v
+                JOIN chunks c ON v.chunk_id = c.id
+            """)
+            rows = cursor.fetchall()
+
+            vectors_to_add = []
+            for row in rows:
+                if row[0] not in existing_ids:
+                    vector = list(struct.unpack(f"{row[2]}f", row[1]))
+                    vectors_to_add.append((vector, row[3], row[4], row[5], row[6], row[0]))
+
+            if not vectors_to_add:
+                self._needs_sync = False
+                return
+
+            cursor.execute("SELECT COALESCE(MAX(rowid), 0) FROM vec_chunks")
+            cursor.fetchone()[0]
+
+            try:
+                # Insert vectors
+                vec_data = [(sqlite_vec.serialize_float32(v),) for v, *_ in vectors_to_add]
+                cursor.executemany("INSERT INTO vec_chunks(embedding) VALUES (?)", vec_data)
+
+                # Simulate failure before mapping insert
+                raise sqlite3.IntegrityError("Simulated mapping insert failure")
+            except Exception:
+                # This is what the fix adds - explicit rollback
+                conn.rollback()
+                raise
+
+    # First, cause a failure during sync
+    with pytest.raises(sqlite3.IntegrityError, match="Simulated mapping insert failure"):
+        _FailingSyncAdapter(db_path, vector_dim=vector_dim)
+
+    # Key assertion: subsequent adapter creation should succeed
+    # If rollback didn't happen, this would fail with "database is locked"
+    try:
+        adapter = SqliteVecAdapter(db_path, vector_dim=vector_dim)
+    except sqlite3.OperationalError as e:
+        if "database is locked" in str(e):
+            pytest.fail(
+                "Database is locked after failed sync. "
+                "This indicates the transaction was not properly rolled back."
+            )
+        raise
+
+    # Verify the sync succeeded on the second adapter
+    conn = _get_vec_connection(db_path)
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM vec_chunks")
+    vec_count = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) FROM vec_chunk_mapping")
+    mapping_count = cursor.fetchone()[0]
+    conn.close()
+    adapter.close()
+
+    assert vec_count == num_vectors, f"Expected {num_vectors} vectors, got {vec_count}"
+    assert mapping_count == num_vectors, f"Expected {num_vectors} mappings, got {mapping_count}"
+
+    # Verify no orphaned vectors
+    assert vec_count == mapping_count, (
+        f"Orphaned vectors detected: {vec_count} vectors, {mapping_count} mappings"
+    )

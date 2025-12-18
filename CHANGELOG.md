@@ -38,6 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Tests now resilient to cosmetic changes (emoji, wording, formatting)
 
 ### Fixed
+- **Transaction rollback in SqliteVecAdapter._sync_vectors()** (#351)
+  - Both vec_chunks and vec_chunk_mapping inserts are now wrapped in try/except with rollback
+  - Prevents orphaned vectors if mapping insert fails after vec_chunks insert succeeds
+  - Releases database lock on failure, allowing subsequent operations to proceed
 - **Complete transaction rollback in ChunkStorageService** (#329)
   - Embeddings are now generated before any database writes (prevents orphaned chunks if embedding fails)
   - Rollback now deletes both chunks AND vectors (previously only deleted chunks)
