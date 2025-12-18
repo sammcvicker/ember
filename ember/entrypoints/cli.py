@@ -97,6 +97,24 @@ def handle_cli_errors(command_name: str):
     return decorator
 
 
+def _load_config(ember_dir: Path):
+    """Load configuration for the given ember directory.
+
+    Centralizes config loading to avoid code duplication across CLI commands.
+    Uses ConfigFactory to create the config provider and load merged config.
+
+    Args:
+        ember_dir: Path to the .ember directory (or parent containing config).
+
+    Returns:
+        EmberConfig with merged global and local settings.
+    """
+    from ember.adapters.factory import ConfigFactory
+
+    config_factory = ConfigFactory()
+    return config_factory.create_config_provider().load(ember_dir)
+
+
 def _create_embedder(config, show_progress: bool = True):
     """Create embedder based on configuration.
 
@@ -648,7 +666,6 @@ def sync(
     By default, indexes the current worktree.
     Can be run from any subdirectory within the repository.
     """
-    from ember.adapters.factory import ConfigFactory
     from ember.core.indexing.index_usecase import IndexRequest
 
     repo_root, ember_dir = get_ember_repo_root()
@@ -661,8 +678,7 @@ def sync(
         return
 
     # Load config and create indexing use case
-    config_factory = ConfigFactory()
-    config = config_factory.create_config_provider().load(ember_dir)
+    config = _load_config(ember_dir)
     indexing_usecase = _create_indexing_usecase(repo_root, db_path, config)
 
     # Execute indexing with progress reporting
@@ -765,11 +781,7 @@ def find(
     )
 
     # Load config
-    from ember.adapters.factory import ConfigFactory
-
-    config_factory = ConfigFactory()
-    config_provider = config_factory.create_config_provider()
-    config = config_provider.load(ember_dir)
+    config = _load_config(ember_dir)
 
     # Use config default for topk if not specified
     if topk is None:
@@ -907,11 +919,7 @@ def search(
     )
 
     # Load config
-    from ember.adapters.factory import ConfigFactory
-
-    config_factory = ConfigFactory()
-    config_provider = config_factory.create_config_provider()
-    config = config_provider.load(ember_dir)
+    config = _load_config(ember_dir)
 
     # Use config default for topk if not specified
     if topk is None:
@@ -984,12 +992,10 @@ def cat(ctx: click.Context, identifier: str, context: int) -> None:
       - Full chunk ID (e.g., 'blake3:a1b2c3d4...')
       - Short hash prefix (e.g., 'a1b2c3d4') - minimum 8 characters
     """
-    from ember.adapters.factory import ConfigFactory, RepositoryFactory
+    from ember.adapters.factory import RepositoryFactory
 
     repo_root, ember_dir = get_ember_repo_root()
-    config_factory = ConfigFactory()
-    config_provider = config_factory.create_config_provider()
-    config = config_provider.load(ember_dir)
+    config = _load_config(ember_dir)
 
     # Look up result by numeric index or hash ID
     is_numeric = identifier.isdigit()
@@ -1118,15 +1124,13 @@ def status(ctx: click.Context) -> None:
     - Whether index is up to date
     - Current configuration
     """
-    from ember.adapters.factory import ConfigFactory, RepositoryFactory
+    from ember.adapters.factory import RepositoryFactory
     from ember.core.status.status_usecase import StatusRequest, StatusUseCase
 
     repo_root, ember_dir = get_ember_repo_root()
 
     # Load configuration
-    config_factory = ConfigFactory()
-    config_provider = config_factory.create_config_provider()
-    config = config_provider.load(ember_dir)
+    config = _load_config(ember_dir)
 
     # Set up repositories using factory
     db_path = ember_dir / "index.db"
@@ -1241,15 +1245,12 @@ def _show_effective_config(
     include_global: bool,
 ) -> None:
     """Show effective configuration content based on display mode."""
-    from ember.adapters.factory import ConfigFactory
     from ember.shared.config_io import load_config
 
     if local_path and include_local:
-        config_factory = ConfigFactory()
-        provider = config_factory.create_config_provider()
         _load_and_display_config(
             "Effective configuration (merged global + local)",
-            lambda: provider.load(local_path.parent),
+            lambda: _load_config(local_path.parent),
         )
     elif include_global and not include_local and global_path.exists():
         _load_and_display_config(
@@ -1425,15 +1426,13 @@ def daemon() -> None:
 @handle_cli_errors("daemon start")
 def start(ctx: click.Context, foreground: bool) -> None:
     """Start the daemon server."""
-    from ember.adapters.factory import ConfigFactory, DaemonFactory
+    from ember.adapters.factory import DaemonFactory
     from ember.core.cli_utils import ensure_daemon_with_progress
 
     # Load config for daemon timeout
     ember_dir = Path.home() / ".ember"
     ember_dir.mkdir(parents=True, exist_ok=True)
-    config_factory = ConfigFactory()
-    config_provider = config_factory.create_config_provider()
-    config = config_provider.load(ember_dir)
+    config = _load_config(ember_dir)
 
     daemon_factory = DaemonFactory()
 
@@ -1501,13 +1500,11 @@ def stop() -> None:
 @handle_cli_errors("daemon restart")
 def restart(ctx: click.Context) -> None:
     """Restart the daemon server."""
-    from ember.adapters.factory import ConfigFactory, DaemonFactory
+    from ember.adapters.factory import DaemonFactory
 
     # Load config to get model name
     repo_root, ember_dir = get_ember_repo_root()
-    config_factory = ConfigFactory()
-    config_provider = config_factory.create_config_provider()
-    config = config_provider.load(ember_dir)
+    config = _load_config(ember_dir)
 
     daemon_factory = DaemonFactory()
     lifecycle = daemon_factory.create_daemon_lifecycle(
