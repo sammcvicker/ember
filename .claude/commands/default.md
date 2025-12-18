@@ -30,7 +30,8 @@ Within each priority level: prefer lowest numbered issue.
 ### 2. Start Issue
 
 - Fetch full issue details: `gh issue view <N> --json title,body,milestone,labels`
-- Create feature branch from current branch: `git checkout -b feat/issue-N-short-description`
+- **Switch to develop first**: `git checkout develop && git pull origin develop`
+- Create feature branch from develop: `git checkout -b feat/issue-N-short-description`
 - Display:
   - Issue title and description
   - Acceptance criteria
@@ -97,6 +98,7 @@ Report to the user:
 
 ## Important Notes
 
+- **NEVER merge to main** - All work goes to `develop`. PRs target `develop`, not `main`. Releases are the only time `develop` merges to `main`.
 - **Read CLAUDE.md first** to understand current project state
 - **Don't skip steps** - tests, linting, documentation are all required
 - **Commit frequently** during implementation (not just at the end)
