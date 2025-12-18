@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Moved anemic domain logic from core to entities** (#331)
+  - Added `Chunk.generate_preview()` method for creating content previews
+  - Added `Chunk.matches_language()` method for language filtering
+  - Added `SearchExplanation.effective_score` property for primary ranking score
+  - Simplified `SearchUseCase` to pure orchestration (removed `_apply_filters`, `_get_score`, `_generate_preview`)
+  - Domain entities now encapsulate their own business rules
 - **Reduced test brittleness in CLI tests** (#330)
   - Created `tests/helpers/cli_assertions.py` with reusable assertion helpers
   - `assert_command_success()` / `assert_command_failed()`: Exit code assertions with context
