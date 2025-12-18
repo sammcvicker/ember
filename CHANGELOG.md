@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Reduced test brittleness in CLI tests** (#330)
+  - Created `tests/helpers/cli_assertions.py` with reusable assertion helpers
+  - `assert_command_success()` / `assert_command_failed()`: Exit code assertions with context
+  - `assert_output_matches()`: Regex pattern matching for flexible output validation
+  - `assert_output_contains()`: Substring checks for exact matches when needed
+  - `assert_error_message()`: Check for error patterns without exact string match
+  - `assert_success_indicator()`: Check for success emoji/text patterns
+  - `assert_files_created()`: Semantic assertions for file creation
+  - Refactored 54 CLI tests to use semantic/regex assertions instead of exact emoji/string matches
+  - Tests now resilient to cosmetic changes (emoji, wording, formatting)
+
 ### Fixed
 - **Complete transaction rollback in ChunkStorageService** (#329)
   - Embeddings are now generated before any database writes (prevents orphaned chunks if embedding fails)

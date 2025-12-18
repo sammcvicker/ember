@@ -5,6 +5,9 @@ Tests the complete CLI flow end-to-end to verify:
 - Output formatting and messages
 - Error handling and user feedback
 - Flag and option parsing
+
+Note: Tests prefer semantic assertions (exit codes, file existence) over
+exact string matching to be resilient to cosmetic changes (Issue #330).
 """
 
 import json
@@ -15,6 +18,15 @@ from click.testing import CliRunner
 
 from ember.entrypoints.cli import cli
 from tests.conftest import create_git_repo, git_add_and_commit, init_git_repo
+from tests.helpers import (
+    assert_command_failed,
+    assert_command_success,
+    assert_error_message,
+    assert_files_created,
+    assert_output_contains,
+    assert_output_matches,
+    assert_success_indicator,
+)
 
 
 @pytest.fixture
@@ -56,54 +68,60 @@ class TestInitCommand:
         monkeypatch.chdir(git_repo_isolated)
         result = runner.invoke(cli, ["init"], catch_exceptions=False)
 
-        assert result.exit_code == 0
-        assert "Initialized ember index" in result.output
-        assert (git_repo_isolated / ".ember").exists()
-        assert (git_repo_isolated / ".ember" / "config.toml").exists()
-        assert (git_repo_isolated / ".ember" / "index.db").exists()
-        assert (git_repo_isolated / ".ember" / "state.json").exists()
+        # Semantic assertions: check exit code and file existence
+        assert_command_success(result, context="ember init")
+        assert_files_created(
+            git_repo_isolated,
+            ".ember",
+            ".ember/config.toml",
+            ".ember/index.db",
+            ".ember/state.json",
+        )
+        # Verify output mentions initialization (flexible pattern)
+        assert_output_matches(result, r"[Ii]nitialized.*ember", context="init message")
 
     def test_init_shows_success_messages(self, runner: CliRunner, git_repo_isolated: Path, monkeypatch) -> None:
         """Test that init shows helpful success messages."""
         monkeypatch.chdir(git_repo_isolated)
         result = runner.invoke(cli, ["init"], catch_exceptions=False)
 
-        assert result.exit_code == 0
-        assert "✓ Created config.toml" in result.output
-        assert "✓ Created index.db" in result.output
-        assert "✓ Created state.json" in result.output
-        assert "Next: Run 'ember sync'" in result.output
+        assert_command_success(result, context="ember init")
+        # Use flexible patterns for success indicators
+        assert_success_indicator(result)
+        # Check for next steps hint (flexible pattern)
+        assert_output_matches(result, r"ember sync", context="next steps hint")
 
     def test_init_quiet_mode_suppresses_details(self, runner: CliRunner, git_repo_isolated: Path, monkeypatch) -> None:
         """Test that --quiet suppresses detailed output."""
         monkeypatch.chdir(git_repo_isolated)
         result = runner.invoke(cli, ["--quiet", "init"], catch_exceptions=False)
 
-        assert result.exit_code == 0
-        assert "Initialized ember index" in result.output
-        # Should not show the detailed file creation messages
-        assert "✓ Created config.toml" not in result.output
+        assert_command_success(result, context="ember --quiet init")
+        # Quiet mode should have minimal output - just summary
+        assert_output_matches(result, r"[Ii]nitialized", context="summary message")
+        # Verbose file creation messages should be suppressed
+        # (Check that output is shorter than normal init)
+        assert len(result.output) < 500  # Quiet mode produces less output
 
     def test_init_fails_when_already_initialized(self, runner: CliRunner, git_repo_isolated: Path, monkeypatch) -> None:
         """Test that init fails if .ember/ already exists."""
         monkeypatch.chdir(git_repo_isolated)
         # First init
         result1 = runner.invoke(cli, ["init"], catch_exceptions=False)
-        assert result1.exit_code == 0
+        assert_command_success(result1, context="first init")
 
         # Second init should fail
         result2 = runner.invoke(cli, ["init"])
-        assert result2.exit_code == 1
-        assert "Error:" in result2.output
-        assert "already exists" in result2.output
-        assert "ember init --force" in result2.output
+        assert_command_failed(result2, context="second init")
+        assert_error_message(result2, hint="ember init --force")
+        assert_output_matches(result2, r"already exists", context="already exists hint")
 
     def test_init_force_reinitializes(self, runner: CliRunner, git_repo_isolated: Path, monkeypatch) -> None:
         """Test that --force flag allows reinitialization."""
         monkeypatch.chdir(git_repo_isolated)
         # First init
         result1 = runner.invoke(cli, ["init"], catch_exceptions=False)
-        assert result1.exit_code == 0
+        assert_command_success(result1, context="first init")
 
         # Modify config
         config_path = git_repo_isolated / ".ember" / "config.toml"
@@ -111,10 +129,11 @@ class TestInitCommand:
 
         # Force reinit
         result2 = runner.invoke(cli, ["init", "--force"], catch_exceptions=False)
-        assert result2.exit_code == 0
-        assert "Reinitialized existing ember index" in result2.output
+        assert_command_success(result2, context="force reinit")
+        # Check for reinitialize message (flexible pattern)
+        assert_output_matches(result2, r"[Rr]einitialize", context="reinit message")
 
-        # Verify config was replaced
+        # Semantic check: verify config was replaced
         new_content = config_path.read_text()
         assert "# Modified" not in new_content
         assert "[index]" in new_content
@@ -129,7 +148,9 @@ class TestInitCommand:
         # Init outside git repo may succeed (initializes in current dir) or fail
         # This depends on whether ember requires git - check for appropriate messaging
         if result.exit_code != 0:
-            assert "Error" in result.output or "git" in result.output.lower()
+            assert_output_matches(
+                result, r"error|git", flags=__import__("re").IGNORECASE, context="error or git message"
+            )
 
 
 class TestSyncCommand:
@@ -144,9 +165,10 @@ class TestSyncCommand:
         # Sync
         result = runner.invoke(cli, ["sync"], catch_exceptions=False)
 
-        assert result.exit_code == 0
-        assert "✓" in result.output
-        assert "Indexed" in result.output or "files" in result.output.lower()
+        assert_command_success(result, context="ember sync")
+        assert_success_indicator(result)
+        # Check for indexing indication (flexible pattern)
+        assert_output_matches(result, r"[Ii]ndexed|files", context="sync progress")
 
     def test_sync_detects_no_changes(self, runner: CliRunner, git_repo_isolated: Path, monkeypatch) -> None:
         """Test that sync detects when there are no changes."""
@@ -158,8 +180,9 @@ class TestSyncCommand:
         # Sync again without changes
         result = runner.invoke(cli, ["sync"], catch_exceptions=False)
 
-        assert result.exit_code == 0
-        assert "No changes detected" in result.output or "✓" in result.output
+        assert_command_success(result, context="second sync")
+        # Check for "no changes" or success indication
+        assert_output_matches(result, r"[Nn]o changes|check", context="no changes message")
 
     def test_sync_reindex_flag_forces_full_reindex(self, runner: CliRunner, git_repo_isolated: Path, monkeypatch) -> None:
         """Test that --reindex forces a full reindex."""
@@ -171,16 +194,19 @@ class TestSyncCommand:
         # Force reindex
         result = runner.invoke(cli, ["sync", "--reindex"], catch_exceptions=False)
 
-        assert result.exit_code == 0
-        assert "full" in result.output.lower() or "Indexed" in result.output
+        assert_command_success(result, context="reindex")
+        # Check for full sync or indexed indication
+        assert_output_matches(result, r"full|[Ii]ndexed", context="reindex output")
 
     def test_sync_fails_if_not_initialized(self, runner: CliRunner, git_repo_isolated: Path, monkeypatch) -> None:
         """Test that sync fails if ember not initialized."""
         monkeypatch.chdir(git_repo_isolated)
         result = runner.invoke(cli, ["sync"])
 
-        assert result.exit_code == 1
-        assert "Error" in result.output or "not initialized" in result.output.lower()
+        assert_command_failed(result, context="sync without init")
+        assert_output_matches(
+            result, r"[Ee]rror|not initialized|not in", context="error message"
+        )
 
     def test_sync_mutually_exclusive_options(self, runner: CliRunner, git_repo_isolated: Path, monkeypatch) -> None:
         """Test that --worktree, --staged, and --rev are mutually exclusive."""
@@ -191,8 +217,8 @@ class TestSyncCommand:
         # Try using both --worktree and --staged
         result = runner.invoke(cli, ["sync", "--worktree", "--staged"])
 
-        assert result.exit_code == 1
-        assert "mutually exclusive" in result.output
+        assert_command_failed(result, context="mutually exclusive options")
+        assert_output_contains(result, "mutually exclusive")
 
     def test_sync_quiet_mode(self, runner: CliRunner, git_repo_isolated: Path, monkeypatch) -> None:
         """Test that --quiet mode suppresses progress output."""
@@ -203,7 +229,7 @@ class TestSyncCommand:
         # Sync in quiet mode
         result = runner.invoke(cli, ["--quiet", "sync"], catch_exceptions=False)
 
-        assert result.exit_code == 0
+        assert_command_success(result, context="quiet sync")
         # Output should be minimal (quiet mode shows summary but not progress)
         lines = [line for line in result.output.strip().split('\n') if line]
         # Should have at most a few lines (success message and stats)
@@ -223,7 +249,7 @@ class TestFindCommand:
         # Search for "hello"
         result = runner.invoke(cli, ["find", "hello function"], catch_exceptions=False)
 
-        assert result.exit_code == 0
+        assert_command_success(result, context="ember find")
         # Should show results or "no results"
         assert len(result.output) > 0
 
@@ -237,9 +263,9 @@ class TestFindCommand:
         # Search with JSON output
         result = runner.invoke(cli, ["find", "hello", "--json"], catch_exceptions=False)
 
-        assert result.exit_code == 0
+        assert_command_success(result, context="ember find --json")
 
-        # Verify output is valid JSON
+        # Verify output is valid JSON (semantic check)
         try:
             data = json.loads(result.output)
             # The JSON output is a list of results
@@ -260,7 +286,7 @@ class TestFindCommand:
             catch_exceptions=False
         )
 
-        assert result.exit_code == 0
+        assert_command_success(result, context="ember find --topk")
         data = json.loads(result.output)
         # The JSON output is a list - should have at most 1 result
         assert len(data) <= 1
@@ -270,8 +296,8 @@ class TestFindCommand:
         monkeypatch.chdir(git_repo_isolated)
         result = runner.invoke(cli, ["find", "test"])
 
-        assert result.exit_code == 1
-        assert "Error" in result.output
+        assert_command_failed(result, context="find without init")
+        assert_error_message(result)
 
     def test_find_no_sync_flag_skips_auto_sync(self, runner: CliRunner, git_repo_isolated: Path, monkeypatch) -> None:
         """Test that --no-sync flag skips automatic sync check."""
@@ -287,7 +313,7 @@ class TestFindCommand:
         )
 
         # Should work but skip sync
-        assert result.exit_code == 0
+        assert_command_success(result, context="find --no-sync")
 
     def test_find_path_filter(self, runner: CliRunner, git_repo_isolated: Path, monkeypatch) -> None:
         """Test that --in path filter works."""
@@ -302,7 +328,7 @@ class TestFindCommand:
             catch_exceptions=False
         )
 
-        assert result.exit_code == 0
+        assert_command_success(result, context="find --in filter")
 
     def test_find_lang_filter(self, runner: CliRunner, git_repo_isolated: Path, monkeypatch) -> None:
         """Test that --lang filter works."""
@@ -317,7 +343,7 @@ class TestFindCommand:
             catch_exceptions=False
         )
 
-        assert result.exit_code == 0
+        assert_command_success(result, context="find --lang filter")
 
     def test_find_with_context_shows_surrounding_lines(
         self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
@@ -334,18 +360,15 @@ class TestFindCommand:
             catch_exceptions=False
         )
 
-        assert result.exit_code == 0
+        assert_command_success(result, context="find --context")
 
-        # If results were found, verify context is shown with syntax highlighting
+        # If results were found, verify context format (semantic check)
         if "No results" not in result.output and result.output.strip() != "":
-            # With syntax highlighting enabled by default, should have line numbers
-            # (format is "  1 code here" from render_syntax_highlighted)
-            # Without syntax highlighting, would have pipe separator ("|")
+            # Should have line numbers or pipe separator for context display
             lines = [line for line in result.output.split('\n') if line.strip() and not line.startswith('[')]
             has_line_numbers = any(line.strip() and line[0:5].strip().isdigit() for line in lines) if lines else False
             has_pipe = "|" in result.output
-            # Should have either syntax highlighting or pipe format
-            assert has_line_numbers or has_pipe, "Expected either syntax highlighted line numbers or pipe separator"
+            assert has_line_numbers or has_pipe, "Expected line number format in context output"
 
     def test_find_with_context_json_output(
         self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
@@ -362,16 +385,14 @@ class TestFindCommand:
             catch_exceptions=False
         )
 
-        assert result.exit_code == 0
+        assert_command_success(result, context="find --context --json")
 
-        # Verify output is valid JSON
+        # Semantic check: verify valid JSON with expected structure
         try:
             data = json.loads(result.output)
             assert isinstance(data, list)
-            # If there are results, they should have context fields
             if len(data) > 0:
                 result_item = data[0]
-                # Check for context in JSON structure
                 assert "context" in result_item or "content" in result_item
         except json.JSONDecodeError:
             pytest.fail("Output is not valid JSON")
@@ -391,8 +412,7 @@ class TestFindCommand:
             catch_exceptions=False
         )
 
-        assert result.exit_code == 0
-        # This is just to ensure backward compatibility - command should work
+        assert_command_success(result, context="find without context")
 
     def test_find_context_with_topk(
         self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
@@ -409,7 +429,7 @@ class TestFindCommand:
             catch_exceptions=False
         )
 
-        assert result.exit_code == 0
+        assert_command_success(result, context="find --context --topk")
 
     def test_find_context_with_path_filter(
         self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
@@ -426,7 +446,7 @@ class TestFindCommand:
             catch_exceptions=False
         )
 
-        assert result.exit_code == 0
+        assert_command_success(result, context="find --context --in")
 
     def test_find_path_and_in_filter_mutually_exclusive(
         self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
@@ -444,8 +464,10 @@ class TestFindCommand:
         )
 
         # Should fail with error about mutually exclusive options
-        assert result.exit_code == 1
-        assert "mutually exclusive" in result.output.lower() or "cannot use both" in result.output.lower()
+        assert_command_failed(result, context="PATH and --in together")
+        assert_output_matches(
+            result, r"mutually exclusive|cannot use both", flags=__import__("re").IGNORECASE
+        )
 
 
 class TestSearchCommand:
@@ -461,15 +483,16 @@ class TestSearchCommand:
         runner.invoke(cli, ["sync"], catch_exceptions=False)
 
         # Try to use both PATH argument and --in flag
-        # Note: search command is interactive, so we just test it exits with error
         result = runner.invoke(
             cli, ["search", ".", "--in", "*.py"],
             catch_exceptions=False
         )
 
         # Should fail with error about mutually exclusive options
-        assert result.exit_code == 1
-        assert "mutually exclusive" in result.output.lower() or "cannot use both" in result.output.lower()
+        assert_command_failed(result, context="search PATH and --in together")
+        assert_output_matches(
+            result, r"mutually exclusive|cannot use both", flags=__import__("re").IGNORECASE
+        )
 
     def test_search_accepts_path_argument(
         self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
@@ -489,12 +512,9 @@ class TestSearchCommand:
         runner.invoke(cli, ["sync"], catch_exceptions=False)
 
         # Test that path argument is accepted (we can't fully test interactive mode,
-        # but we can verify the argument parsing works and doesn't error)
-        # The search command with path will try to launch TUI, which may fail in test
-        # but the important thing is the path argument doesn't cause a parsing error
+        # but we can verify the argument parsing works via --help)
         result = runner.invoke(cli, ["search", "subdir", "--help"])
-        # --help should work without error
-        assert result.exit_code == 0
+        assert_command_success(result, context="search --help")
 
     def test_search_no_path_argument(
         self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
@@ -506,9 +526,9 @@ class TestSearchCommand:
 
         # Test that search command without path doesn't cause parsing error
         result = runner.invoke(cli, ["search", "--help"])
-        assert result.exit_code == 0
-        # Help should show PATH is optional
-        assert "[PATH]" in result.output or "path" in result.output.lower()
+        assert_command_success(result, context="search --help")
+        # Help should show PATH is optional (flexible pattern)
+        assert_output_matches(result, r"\[PATH\]|path", flags=__import__("re").IGNORECASE)
 
 
 class TestCatCommand:
@@ -523,17 +543,16 @@ class TestCatCommand:
         search_result = runner.invoke(cli, ["find", "hello"], catch_exceptions=False)
 
         # Verify search succeeded and returned results
-        assert search_result.exit_code == 0
+        assert_command_success(search_result, context="find for cat test")
+
+        # Cat might fail if no results were found in search
+        if "No results" in search_result.output or search_result.output.strip() == "":
+            pytest.skip("Search returned no results")
 
         # Cat the first result (1-based indexing)
         result = runner.invoke(cli, ["cat", "1"], catch_exceptions=False)
 
-        # Cat might fail if no results were found in search, so check for that
-        if "No results" in search_result.output or search_result.output.strip() == "":
-            # Skip test if search returned no results
-            pytest.skip("Search returned no results")
-
-        assert result.exit_code == 0, f"Cat failed with output: {result.output}"
+        assert_command_success(result, context="cat 1")
         # Should show some content
         assert len(result.output) > 0
 
@@ -546,15 +565,15 @@ class TestCatCommand:
         search_result = runner.invoke(cli, ["find", "hello"], catch_exceptions=False)
 
         # Verify search succeeded
-        assert search_result.exit_code == 0
+        assert_command_success(search_result, context="find for cat context test")
         if "No results" in search_result.output or search_result.output.strip() == "":
             pytest.skip("Search returned no results")
 
         # Cat with context
         result = runner.invoke(cli, ["cat", "1", "--context", "2"], catch_exceptions=False)
 
-        assert result.exit_code == 0, f"Cat failed with output: {result.output}"
-        # Should show line numbers
+        assert_command_success(result, context="cat --context")
+        # Should show line numbers (semantic check for context format)
         assert "|" in result.output  # Line number separator
 
     def test_cat_fails_without_prior_search(self, runner: CliRunner, git_repo_isolated: Path, monkeypatch) -> None:
@@ -565,8 +584,8 @@ class TestCatCommand:
 
         result = runner.invoke(cli, ["cat", "1"])
 
-        assert result.exit_code == 1
-        assert "Error" in result.output or "No" in result.output
+        assert_command_failed(result, context="cat without search")
+        assert_output_matches(result, r"[Ee]rror|[Nn]o", context="error message")
 
     def test_cat_fails_with_invalid_index(self, runner: CliRunner, git_repo_isolated: Path, monkeypatch) -> None:
         """Test that cat fails with out-of-bounds index."""
@@ -579,16 +598,16 @@ class TestCatCommand:
         # Try invalid index
         result = runner.invoke(cli, ["cat", "999"])
 
-        assert result.exit_code == 1
-        assert "Error" in result.output or "Invalid" in result.output
+        assert_command_failed(result, context="cat invalid index")
+        assert_output_matches(result, r"[Ee]rror|[Ii]nvalid", context="error message")
 
     def test_cat_fails_if_not_initialized(self, runner: CliRunner, git_repo_isolated: Path, monkeypatch) -> None:
         """Test that cat fails if ember not initialized."""
         monkeypatch.chdir(git_repo_isolated)
         result = runner.invoke(cli, ["cat", "1"])
 
-        assert result.exit_code == 1
-        assert "Error" in result.output
+        assert_command_failed(result, context="cat without init")
+        assert_error_message(result)
 
     def test_cat_with_chunk_hash_id(self, runner: CliRunner, git_repo_isolated: Path, monkeypatch) -> None:
         """Test that cat works with a chunk hash ID from JSON output."""
@@ -599,24 +618,22 @@ class TestCatCommand:
         search_result = runner.invoke(cli, ["find", "hello", "--json"], catch_exceptions=False)
 
         # Verify search succeeded
-        assert search_result.exit_code == 0
+        assert_command_success(search_result, context="find --json")
 
-        # Parse JSON to get chunk ID
-        import json
+        # Parse JSON to get chunk ID (semantic check)
         results = json.loads(search_result.output)
         if len(results) == 0:
             pytest.skip("Search returned no results")
 
-        # Get the chunk ID from the first result (blake3 hexdigest, 64 hex chars)
+        # Verify chunk ID format (64 hex chars for blake3)
         chunk_id = results[0]["id"]
-        assert len(chunk_id) == 64  # blake3 hash is 64 hex characters
-        assert all(c in "0123456789abcdef" for c in chunk_id)  # Valid hex
+        assert len(chunk_id) == 64
+        assert all(c in "0123456789abcdef" for c in chunk_id)
 
         # Cat using the full chunk ID
         result = runner.invoke(cli, ["cat", chunk_id], catch_exceptions=False)
 
-        assert result.exit_code == 0, f"Cat with hash ID failed: {result.output}"
-        # Should show some content
+        assert_command_success(result, context="cat by hash")
         assert len(result.output) > 0
 
     def test_cat_with_short_hash(self, runner: CliRunner, git_repo_isolated: Path, monkeypatch) -> None:
@@ -628,24 +645,21 @@ class TestCatCommand:
         search_result = runner.invoke(cli, ["find", "hello", "--json"], catch_exceptions=False)
 
         # Verify search succeeded
-        assert search_result.exit_code == 0
+        assert_command_success(search_result, context="find --json")
 
         # Parse JSON to get chunk ID
-        import json
         results = json.loads(search_result.output)
         if len(results) == 0:
             pytest.skip("Search returned no results")
 
-        # Get a short prefix from the first result's ID (e.g., first 16 chars)
+        # Use short prefix (16 chars) for uniqueness
         chunk_id = results[0]["id"]
-        # Use 16 characters to ensure uniqueness
         short_hash = chunk_id[:16]
 
         # Cat using the short hash
         result = runner.invoke(cli, ["cat", short_hash], catch_exceptions=False)
 
-        assert result.exit_code == 0, f"Cat with short hash failed: {result.output}"
-        # Should show some content
+        assert_command_success(result, context="cat by short hash")
         assert len(result.output) > 0
 
     def test_cat_with_invalid_hash(self, runner: CliRunner, git_repo_isolated: Path, monkeypatch) -> None:
@@ -658,9 +672,9 @@ class TestCatCommand:
         # Try to cat with a hash that doesn't exist (use valid hex format)
         result = runner.invoke(cli, ["cat", "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"])
 
-        assert result.exit_code == 1
-        assert "Error" in result.output
-        assert "No chunk found" in result.output
+        assert_command_failed(result, context="cat nonexistent hash")
+        assert_error_message(result)
+        assert_output_matches(result, r"[Nn]o chunk found", context="not found message")
 
     def test_cat_hash_works_without_prior_search(self, runner: CliRunner, git_repo_isolated: Path, monkeypatch) -> None:
         """Test that cat with hash ID works without running find first (stateless)."""
@@ -671,14 +685,13 @@ class TestCatCommand:
         search_result = runner.invoke(cli, ["find", "hello", "--json"], catch_exceptions=False)
 
         # Parse JSON to get chunk ID
-        import json
         results = json.loads(search_result.output)
         if len(results) == 0:
             pytest.skip("Search returned no results")
 
         chunk_id = results[0]["id"]
 
-        # Now delete the cached search results to simulate no prior search
+        # Delete cached search results to simulate no prior search
         cache_path = git_repo_isolated / ".ember" / ".last_search.json"
         if cache_path.exists():
             cache_path.unlink()
@@ -686,7 +699,7 @@ class TestCatCommand:
         # Cat should still work with hash ID (stateless)
         result = runner.invoke(cli, ["cat", chunk_id], catch_exceptions=False)
 
-        assert result.exit_code == 0, f"Cat with hash ID failed without cache: {result.output}"
+        assert_command_success(result, context="cat by hash without cache")
         assert len(result.output) > 0
 
 
@@ -701,8 +714,8 @@ class TestOpenCommand:
 
         result = runner.invoke(cli, ["open", "1"])
 
-        assert result.exit_code == 1
-        assert "Error" in result.output or "No" in result.output
+        assert_command_failed(result, context="open without search")
+        assert_output_matches(result, r"[Ee]rror|[Nn]o", context="error message")
 
     def test_open_fails_with_invalid_index(self, runner: CliRunner, git_repo_isolated: Path, monkeypatch) -> None:
         """Test that open fails with out-of-bounds index."""
@@ -715,8 +728,8 @@ class TestOpenCommand:
         # Try invalid index
         result = runner.invoke(cli, ["open", "999"])
 
-        assert result.exit_code == 1
-        assert "Error" in result.output or "Invalid" in result.output
+        assert_command_failed(result, context="open invalid index")
+        assert_output_matches(result, r"[Ee]rror|[Ii]nvalid", context="error message")
 
     def test_open_fails_if_editor_not_found(self, runner: CliRunner, git_repo_isolated: Path, monkeypatch) -> None:
         """Test that open fails gracefully if editor not available."""
@@ -730,8 +743,8 @@ class TestOpenCommand:
         monkeypatch.setenv("EDITOR", "nonexistent-editor-xyz")
         result = runner.invoke(cli, ["open", "1"])
 
-        assert result.exit_code == 1
-        assert "not found" in result.output.lower() or "Error" in result.output
+        assert_command_failed(result, context="open with bad editor")
+        assert_output_matches(result, r"not found|[Ee]rror", context="error message")
 
 
 class TestStatusCommand:
@@ -747,9 +760,10 @@ class TestStatusCommand:
         # Check status
         result = runner.invoke(cli, ["status"], catch_exceptions=False)
 
-        assert result.exit_code == 0
-        assert "Index Status" in result.output or "Indexed files" in result.output
-        assert "Configuration" in result.output
+        assert_command_success(result, context="status")
+        # Check for index and config sections (flexible pattern)
+        assert_output_matches(result, r"[Ii]ndex|[Ff]iles", context="index info")
+        assert_output_matches(result, r"[Cc]onfig", context="config section")
 
     def test_status_shows_up_to_date(self, runner: CliRunner, git_repo_isolated: Path, monkeypatch) -> None:
         """Test that status shows 'up to date' after sync."""
@@ -761,8 +775,9 @@ class TestStatusCommand:
         # Check status
         result = runner.invoke(cli, ["status"], catch_exceptions=False)
 
-        assert result.exit_code == 0
-        assert "Up to date" in result.output or "✓" in result.output
+        assert_command_success(result, context="status after sync")
+        # Check for up-to-date indication (success indicator or explicit text)
+        assert_output_matches(result, r"[Uu]p to date|[✓✔]", context="up to date indicator")
 
     def test_status_shows_never_synced(self, runner: CliRunner, git_repo_isolated: Path, monkeypatch) -> None:
         """Test that status shows 'never synced' before first sync."""
@@ -773,8 +788,9 @@ class TestStatusCommand:
         # Check status
         result = runner.invoke(cli, ["status"], catch_exceptions=False)
 
-        assert result.exit_code == 0
-        assert "Never synced" in result.output or "sync" in result.output.lower()
+        assert_command_success(result, context="status before sync")
+        # Check for never synced indication
+        assert_output_matches(result, r"[Nn]ever|sync", context="never synced message")
 
     def test_status_shows_stale_warning(self, runner: CliRunner, git_repo_isolated: Path, monkeypatch) -> None:
         """Test that status warns when index is stale."""
@@ -791,17 +807,18 @@ class TestStatusCommand:
         # Check status
         result = runner.invoke(cli, ["status"], catch_exceptions=False)
 
-        assert result.exit_code == 0
-        assert "Out of date" in result.output or "stale" in result.output.lower() or "⚠" in result.output
+        assert_command_success(result, context="status with stale index")
+        # Check for stale/out-of-date warning (flexible pattern)
+        assert_output_matches(result, r"[Oo]ut of date|stale|[⚠]", context="stale warning")
 
     def test_status_fails_if_not_initialized(self, runner: CliRunner, git_repo_isolated: Path, monkeypatch) -> None:
         """Test that status fails if ember not initialized."""
         monkeypatch.chdir(git_repo_isolated)
         result = runner.invoke(cli, ["status"])
 
-        assert result.exit_code == 1
-        assert "Error" in result.output or "not in an ember repository" in result.output.lower()
-        assert "ember init" in result.output
+        assert_command_failed(result, context="status without init")
+        assert_output_matches(result, r"[Ee]rror|not.*ember", context="error message")
+        assert_output_contains(result, "ember init")
 
     def test_status_shows_config_values(self, runner: CliRunner, git_repo_isolated: Path, monkeypatch) -> None:
         """Test that status displays configuration values."""
@@ -813,10 +830,10 @@ class TestStatusCommand:
         # Check status
         result = runner.invoke(cli, ["status"], catch_exceptions=False)
 
-        assert result.exit_code == 0
-        # Should show config details
-        assert "topk" in result.output.lower() or "Search results" in result.output
-        assert "chunk" in result.output.lower() or "Chunking" in result.output
+        assert_command_success(result, context="status config display")
+        # Should show config details (flexible pattern)
+        assert_output_matches(result, r"topk|[Ss]earch.*results", context="search config")
+        assert_output_matches(result, r"chunk|[Cc]hunking", context="chunk config")
 
 
 class TestVerboseQuietFlags:
@@ -828,8 +845,7 @@ class TestVerboseQuietFlags:
         # Init with verbose
         result = runner.invoke(cli, ["--verbose", "init"], catch_exceptions=False)
 
-        assert result.exit_code == 0
-        # Verbose should work (exact output varies)
+        assert_command_success(result, context="verbose init")
 
     def test_quiet_flag_suppresses_output(self, runner: CliRunner, git_repo_isolated: Path, monkeypatch) -> None:
         """Test that --quiet flag reduces output."""
@@ -845,7 +861,7 @@ class TestVerboseQuietFlags:
         monkeypatch.chdir(git_repo_2)
         result_normal = runner.invoke(cli, ["init"], catch_exceptions=False)
 
-        # Quiet mode should have less output
+        # Semantic check: quiet mode should have less output
         assert len(result_quiet.output) < len(result_normal.output)
 
 
@@ -861,15 +877,15 @@ class TestErrorHandling:
         # Try to sync without initializing first - this should fail
         result = runner.invoke(cli, ["sync"])
 
-        assert result.exit_code == 1
-        assert "Error" in result.output
+        assert_command_failed(result, context="sync in non-ember dir")
+        assert_error_message(result)
 
     def test_nonexistent_command_shows_help(self, runner: CliRunner) -> None:
         """Test that invalid commands show helpful error."""
         result = runner.invoke(cli, ["nonexistent-command"])
 
+        # Should fail (Click shows error for unknown command)
         assert result.exit_code != 0
-        # Should show error or help
 
     def test_missing_required_argument(self, runner: CliRunner, git_repo_isolated: Path, monkeypatch) -> None:
         """Test that missing required arguments are caught."""
@@ -880,8 +896,8 @@ class TestErrorHandling:
         # Try find without query
         result = runner.invoke(cli, ["find"])
 
-        assert result.exit_code != 0
         # Click should show missing argument error
+        assert result.exit_code != 0
 
 
 class TestGetEmberRepoRoot:
