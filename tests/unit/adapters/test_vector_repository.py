@@ -118,10 +118,10 @@ def test_dimension_validation_accepts_correct_dimension(tmp_path: Path) -> None:
         end_line=10,
         content=content,
         content_hash=Chunk.compute_content_hash(content),
-        file_hash="file123",
-        lang="python",
+        file_hash=Chunk.compute_content_hash("file1"),
+        lang="py",
         symbol=None,
-        tree_sha="abc123",
+        tree_sha="a" * 40,
         rev="worktree",
     )
     chunk_repo.add(chunk)
@@ -143,7 +143,7 @@ def test_dimension_validation_rejects_wrong_dimension(tmp_path: Path) -> None:
     chunk_repo = SQLiteChunkRepository(db_path)
 
     # Create a test chunk with all required fields
-    content = "test content"
+    content = "test content 2"
     chunk = Chunk(
         id=Chunk.compute_id("test_proj", Path("test.py"), 1, 10),
         project_id="test_proj",
@@ -152,10 +152,10 @@ def test_dimension_validation_rejects_wrong_dimension(tmp_path: Path) -> None:
         end_line=10,
         content=content,
         content_hash=Chunk.compute_content_hash(content),
-        file_hash="file123",
-        lang="python",
+        file_hash=Chunk.compute_content_hash("file2"),
+        lang="py",
         symbol=None,
-        tree_sha="abc123",
+        tree_sha="b" * 40,
         rev="worktree",
     )
     chunk_repo.add(chunk)
@@ -184,7 +184,7 @@ def test_dimension_validation_skipped_when_not_configured(tmp_path: Path) -> Non
     chunk_repo = SQLiteChunkRepository(db_path)
 
     # Create a test chunk with all required fields
-    content = "test content"
+    content = "test content 3"
     chunk = Chunk(
         id=Chunk.compute_id("test_proj", Path("test.py"), 1, 10),
         project_id="test_proj",
@@ -193,10 +193,10 @@ def test_dimension_validation_skipped_when_not_configured(tmp_path: Path) -> Non
         end_line=10,
         content=content,
         content_hash=Chunk.compute_content_hash(content),
-        file_hash="file123",
-        lang="python",
+        file_hash=Chunk.compute_content_hash("file3"),
+        lang="py",
         symbol=None,
-        tree_sha="abc123",
+        tree_sha="c" * 40,
         rev="worktree",
     )
     chunk_repo.add(chunk)

@@ -31,7 +31,7 @@ def sample_chunks() -> list[Chunk]:
             "end_line": 3,
             "content": "def add(a, b):\n    return a + b",
             "symbol": "add",
-            "lang": "python",
+            "lang": "py",
         },
         {
             "project_id": "test",
@@ -40,7 +40,7 @@ def sample_chunks() -> list[Chunk]:
             "end_line": 7,
             "content": "def multiply(a, b):\n    return a * b",
             "symbol": "multiply",
-            "lang": "python",
+            "lang": "py",
         },
         {
             "project_id": "test",
@@ -49,7 +49,7 @@ def sample_chunks() -> list[Chunk]:
             "end_line": 5,
             "content": "function greet(name: string): string {\n  return `Hello, ${name}!`;\n}",
             "symbol": "greet",
-            "lang": "typescript",
+            "lang": "ts",
         },
         {
             "project_id": "test",
@@ -58,7 +58,7 @@ def sample_chunks() -> list[Chunk]:
             "end_line": 11,
             "content": "function farewell(name: string): string {\n  return `Goodbye, ${name}!`;\n}",
             "symbol": "farewell",
-            "lang": "typescript",
+            "lang": "ts",
         },
     ]
 
@@ -82,7 +82,7 @@ def sample_chunks() -> list[Chunk]:
             content=data["content"],
             content_hash=content_hash,
             file_hash=file_hash,
-            tree_sha="abc123",
+            tree_sha="a" * 40,
             rev="worktree",
         )
         chunks.append(chunk)
@@ -525,6 +525,8 @@ def test_missing_chunks_logged(db_path: Path, caplog: pytest.LogCaptureFixture) 
 
     # Create a mock chunk repository that returns None for some chunks
     chunk_repo = MagicMock()
+    content1 = "def test1(): pass"
+    content2 = "def test2(): pass"
     real_chunks = {
         "chunk_1": Chunk(
             id="chunk_1",
@@ -532,12 +534,12 @@ def test_missing_chunks_logged(db_path: Path, caplog: pytest.LogCaptureFixture) 
             path=Path("test.py"),
             start_line=1,
             end_line=3,
-            content="def test1(): pass",
+            content=content1,
             symbol="test1",
-            lang="python",
-            content_hash="hash1",
-            file_hash="file_hash1",
-            tree_sha="abc123",
+            lang="py",
+            content_hash=Chunk.compute_content_hash(content1),
+            file_hash=Chunk.compute_content_hash("file1"),
+            tree_sha="a" * 40,
             rev="worktree",
         ),
         "chunk_2": Chunk(
@@ -546,12 +548,12 @@ def test_missing_chunks_logged(db_path: Path, caplog: pytest.LogCaptureFixture) 
             path=Path("test.py"),
             start_line=5,
             end_line=7,
-            content="def test2(): pass",
+            content=content2,
             symbol="test2",
-            lang="python",
-            content_hash="hash2",
-            file_hash="file_hash2",
-            tree_sha="abc123",
+            lang="py",
+            content_hash=Chunk.compute_content_hash(content2),
+            file_hash=Chunk.compute_content_hash("file2"),
+            tree_sha="a" * 40,
             rev="worktree",
         ),
     }

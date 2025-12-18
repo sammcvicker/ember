@@ -28,6 +28,7 @@ def chunk_repo(db_path: Path) -> SQLiteChunkRepository:
 @pytest.fixture
 def sample_chunk() -> Chunk:
     """Create a sample chunk for testing."""
+    content = "def my_function():\n    pass"
     return Chunk(
         id="a1b2c3d4e5f6789012345678901234567890123456789012345678901234abcd",
         project_id="test_project",
@@ -36,10 +37,10 @@ def sample_chunk() -> Chunk:
         symbol="my_function",
         start_line=10,
         end_line=20,
-        content="def my_function():\n    pass",
-        content_hash="hash123",
-        file_hash="file_hash123",
-        tree_sha="tree123",
+        content=content,
+        content_hash=Chunk.compute_content_hash(content),
+        file_hash=Chunk.compute_content_hash("file1"),
+        tree_sha="a" * 40,
         rev="HEAD",
     )
 
@@ -47,6 +48,7 @@ def sample_chunk() -> Chunk:
 @pytest.fixture
 def another_chunk() -> Chunk:
     """Create another sample chunk with a different ID."""
+    content = "def helper_function():\n    return True"
     return Chunk(
         id="b9876543210fedcba0987654321098765432109876543210987654321098765",
         project_id="test_project",
@@ -55,10 +57,10 @@ def another_chunk() -> Chunk:
         symbol="helper_function",
         start_line=5,
         end_line=15,
-        content="def helper_function():\n    return True",
-        content_hash="hash456",
-        file_hash="file_hash456",
-        tree_sha="tree456",
+        content=content,
+        content_hash=Chunk.compute_content_hash(content),
+        file_hash=Chunk.compute_content_hash("file2"),
+        tree_sha="b" * 40,
         rev="HEAD",
     )
 

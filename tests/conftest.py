@@ -197,6 +197,7 @@ def sample_chunk() -> Chunk:
     Returns:
         A Chunk instance with test data.
     """
+    content = 'def test_function():\n    return "hello"'
     return Chunk(
         id="test_chunk_123",
         project_id="test_project",
@@ -205,10 +206,10 @@ def sample_chunk() -> Chunk:
         symbol="test_function",
         start_line=10,
         end_line=20,
-        content='def test_function():\n    return "hello"',
-        content_hash=Chunk.compute_content_hash('def test_function():\n    return "hello"'),
-        file_hash="abc123",
-        tree_sha="def456",
+        content=content,
+        content_hash=Chunk.compute_content_hash(content),
+        file_hash=Chunk.compute_content_hash("file content"),  # Valid blake3 hash
+        tree_sha="a" * 40,  # Valid git SHA
         rev="HEAD",
     )
 
@@ -225,6 +226,7 @@ def sample_chunks() -> list[Chunk]:
         # Start lines at 1 (1-indexed) to satisfy validation
         start_line = (i * 10) + 1
         end_line = start_line + 10
+        content = f"def function_{i}():\n    pass"
         chunk = Chunk(
             id=f"chunk_{i}",
             project_id="test_project",
@@ -233,10 +235,10 @@ def sample_chunks() -> list[Chunk]:
             symbol=f"function_{i}",
             start_line=start_line,
             end_line=end_line,
-            content=f"def function_{i}():\n    pass",
-            content_hash=Chunk.compute_content_hash(f"def function_{i}():\n    pass"),
-            file_hash=f"hash_{i}",
-            tree_sha="tree_sha_test",
+            content=content,
+            content_hash=Chunk.compute_content_hash(content),
+            file_hash=Chunk.compute_content_hash(f"file_{i}_content"),  # Valid blake3 hash
+            tree_sha="b" * 40,  # Valid git SHA
             rev="HEAD",
         )
         chunks.append(chunk)

@@ -42,10 +42,10 @@ def test_fts_returns_stored_chunk_ids(db_path: Path) -> None:
         end_line=3,
         content=content,
         symbol="test_function",
-        lang="python",
+        lang="py",
         content_hash=content_hash,
         file_hash=content_hash,
-        tree_sha="abc123",
+        tree_sha="a" * 40,
         rev="worktree",
     )
     chunk_repo.add(chunk)
@@ -92,10 +92,10 @@ def test_vector_search_returns_stored_chunk_ids(db_path: Path) -> None:
         end_line=3,
         content=content,
         symbol="test_function",
-        lang="python",
+        lang="py",
         content_hash=content_hash,
         file_hash=content_hash,
-        tree_sha="abc123",
+        tree_sha="b" * 40,
         rev="worktree",
     )
     chunk_repo.add(chunk)
@@ -157,10 +157,10 @@ def test_search_no_missing_chunks_warning(
             end_line=end,
             content=content,
             symbol=symbol,
-            lang="python",
+            lang="py",
             content_hash=content_hash,
             file_hash=content_hash,
-            tree_sha="abc123",
+            tree_sha="c" * 40,
             rev="worktree",
         )
         chunk_repo.add(chunk)
