@@ -488,6 +488,7 @@ def _report_init_results(
     help="Accept recommended model without prompting.",
 )
 @click.pass_context
+@handle_cli_errors("init")
 def init(ctx: click.Context, force: bool, model: str | None, yes: bool) -> None:
     """Initialize Ember in the current directory.
 
@@ -1065,6 +1066,7 @@ def open_result(ctx: click.Context, index: int) -> None:
     help="Strip content from export (embeddings only).",
 )
 @click.pass_context
+@handle_cli_errors("export")
 def export(ctx: click.Context, output_path: str, no_preview: bool) -> None:
     """Export index to a bundle.
 
@@ -1077,6 +1079,7 @@ def export(ctx: click.Context, output_path: str, no_preview: bool) -> None:
 @cli.command()
 @click.argument("bundle_path", type=click.Path(exists=True))
 @click.pass_context
+@handle_cli_errors("import")
 def import_bundle(ctx: click.Context, bundle_path: str) -> None:
     """Import index from a bundle.
 
@@ -1088,6 +1091,7 @@ def import_bundle(ctx: click.Context, bundle_path: str) -> None:
 
 @cli.command()
 @click.pass_context
+@handle_cli_errors("audit")
 def audit(ctx: click.Context) -> None:
     """Audit indexed content for potential secrets.
 
@@ -1104,6 +1108,7 @@ cli.add_command(open_result, name="open")
 
 @cli.command()
 @click.pass_context
+@handle_cli_errors("status")
 def status(ctx: click.Context) -> None:
     """Show ember index status and configuration.
 
@@ -1261,6 +1266,7 @@ def _show_effective_config(
     "--local", "-l", "show_local", is_flag=True, help="Show local config location"
 )
 @click.pass_context
+@handle_cli_errors("config show")
 def config_show(
     ctx: click.Context, show_global: bool, show_local: bool
 ) -> None:
@@ -1307,6 +1313,7 @@ def _display_config_summary(config: EmberConfig) -> None:  # noqa: F821
     "--global", "-g", "edit_global", is_flag=True, help="Edit global config file"
 )
 @click.pass_context
+@handle_cli_errors("config edit")
 def config_edit(ctx: click.Context, edit_global: bool) -> None:
     """Open configuration file in your default editor.
 
@@ -1368,6 +1375,7 @@ def config_edit(ctx: click.Context, edit_global: bool) -> None:
 @click.option(
     "--local", "-l", "show_local", is_flag=True, help="Show only local config path"
 )
+@handle_cli_errors("config path")
 def config_path(show_global: bool, show_local: bool) -> None:
     """Print config file path(s) for use in scripts.
 
@@ -1414,6 +1422,7 @@ def daemon() -> None:
 @daemon.command()
 @click.option("--foreground", "-f", is_flag=True, help="Run in foreground (blocks)")
 @click.pass_context
+@handle_cli_errors("daemon start")
 def start(ctx: click.Context, foreground: bool) -> None:
     """Start the daemon server."""
     from ember.adapters.factory import ConfigFactory, DaemonFactory
@@ -1465,6 +1474,7 @@ def start(ctx: click.Context, foreground: bool) -> None:
 
 
 @daemon.command()
+@handle_cli_errors("daemon stop")
 def stop() -> None:
     """Stop the daemon server."""
     from ember.adapters.factory import DaemonFactory
@@ -1488,6 +1498,7 @@ def stop() -> None:
 
 @daemon.command()
 @click.pass_context
+@handle_cli_errors("daemon restart")
 def restart(ctx: click.Context) -> None:
     """Restart the daemon server."""
     from ember.adapters.factory import ConfigFactory, DaemonFactory
@@ -1515,6 +1526,7 @@ def restart(ctx: click.Context) -> None:
 
 
 @daemon.command(name="status")
+@handle_cli_errors("daemon status")
 def daemon_status() -> None:
     """Show daemon status."""
     from ember.adapters.factory import DaemonFactory

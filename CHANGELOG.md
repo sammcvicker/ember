@@ -23,6 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `RepoState` validates initialized state (non-empty tree_sha) requires model_fingerprint
 
 ### Changed
+- **Consistent error handling across all CLI commands** (#324)
+  - Applied `@handle_cli_errors` decorator to all 17 CLI commands
+  - Commands without decorator: `init`, `export`, `import`, `audit`, `status`, `config show/edit/path`, `daemon start/stop/restart/status`
+  - Same error type now produces consistent message across all commands
+  - `ModelMismatchError` and `DimensionMismatchError` now handled properly for all commands
+  - Command-specific inline handlers preserved for context-appropriate hints
 - **Extracted SQLite base repository class to reduce duplication** (#321)
   - Created `SQLiteBaseRepository` base class with thread-safe connection management
   - All six SQLite adapters now inherit from this class instead of duplicating code
