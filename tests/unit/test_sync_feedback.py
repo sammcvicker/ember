@@ -2,8 +2,12 @@
 
 Verifies that the CLI provides clear, accurate feedback about sync operations,
 distinguishing between incremental and full scans.
+
+Note: Tests use flexible regex patterns to be resilient to cosmetic changes
+like emoji or wording updates (Issue #330).
 """
 
+import re
 from dataclasses import dataclass
 from unittest.mock import patch
 
@@ -39,7 +43,9 @@ class TestFormatSyncResults:
 
         with patch("click.echo") as mock_echo:
             _format_sync_results(response)
-            mock_echo.assert_called_once_with("✓ No changes detected (full scan completed)")
+            # Flexible pattern for no-changes full scan message
+            call_arg = mock_echo.call_args[0][0]
+            assert re.search(r"[Nn]o changes.*full scan", call_arg)
 
     def test_no_changes_incremental_scan(self) -> None:
         """Incremental scan with no changes shows 'incremental scan completed'."""
@@ -53,7 +59,9 @@ class TestFormatSyncResults:
 
         with patch("click.echo") as mock_echo:
             _format_sync_results(response)
-            mock_echo.assert_called_once_with("✓ No changes detected (incremental scan completed)")
+            # Flexible pattern for no-changes incremental scan message
+            call_arg = mock_echo.call_args[0][0]
+            assert re.search(r"[Nn]o changes.*incremental scan", call_arg)
 
     def test_changes_detected_full_sync(self) -> None:
         """Full sync with changes shows correct sync type."""
@@ -70,7 +78,8 @@ class TestFormatSyncResults:
         with patch("click.echo") as mock_echo:
             _format_sync_results(response)
             calls = [call.args[0] for call in mock_echo.call_args_list]
-            assert "✓ Indexed 5 files (full sync)" in calls
+            # Flexible pattern: indexed N files with full sync type
+            assert any(re.search(r"[Ii]ndexed 5 files.*full sync", call) for call in calls)
 
     def test_changes_detected_incremental_sync(self) -> None:
         """Incremental sync with changes shows correct sync type."""
@@ -87,7 +96,8 @@ class TestFormatSyncResults:
         with patch("click.echo") as mock_echo:
             _format_sync_results(response)
             calls = [call.args[0] for call in mock_echo.call_args_list]
-            assert "✓ Indexed 3 files (incremental sync)" in calls
+            # Flexible pattern: indexed N files with incremental sync type
+            assert any(re.search(r"[Ii]ndexed 3 files.*incremental sync", call) for call in calls)
 
     def test_chunks_deleted_shows_details(self) -> None:
         """Deleted chunks are shown in output."""

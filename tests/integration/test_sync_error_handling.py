@@ -1,5 +1,6 @@
 """Integration tests for sync command error handling (Issue #66)."""
 
+import re
 from pathlib import Path
 
 import pytest
@@ -47,13 +48,14 @@ def test_quick_check_message_differs_from_full_scan(
     # Second sync with no changes - should use quick check
     result2 = runner.invoke(sync, [], obj={}, catch_exceptions=False)
     assert result2.exit_code == 0
-    assert "✓ No changes detected (quick check)" in result2.stdout
+    # Flexible pattern for no-changes quick check message
+    assert re.search(r"[Nn]o changes.*quick check", result2.stdout)
 
     # Force reindex - should skip quick check and do full reindex
     result3 = runner.invoke(sync, ["--reindex"], obj={}, catch_exceptions=False)
     assert result3.exit_code == 0
-    # With --reindex, it will actually reindex the files
-    assert "full sync" in result3.stdout or "incremental sync" in result3.stdout
+    # With --reindex, it will actually reindex the files (flexible pattern)
+    assert re.search(r"full sync|incremental sync", result3.stdout)
 
 
 @pytest.mark.slow
