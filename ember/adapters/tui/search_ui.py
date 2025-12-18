@@ -31,8 +31,6 @@ from ember.core.retrieval.interactive import InteractiveSearchSession
 from ember.domain.config import EmberConfig
 from ember.domain.entities import Query, SearchResult
 
-logger = logging.getLogger(__name__)
-
 
 class InteractiveSearchUI:
     """Interactive search UI using prompt_toolkit."""
@@ -418,10 +416,9 @@ class InteractiveSearchUI:
                 # to a list of (style, text) tuples that prompt_toolkit can render
                 ansi_obj = ANSI(highlighted)
                 return to_formatted_text(ansi_obj)
-            except (ValueError, TypeError, KeyError) as e:
-                # Syntax highlighting errors: lexer issues, formatter errors, etc.
-                # Fall back to plain text rendering
-                logger.debug(f"Syntax highlighting failed for {chunk.path}: {e}")
+            except Exception:
+                # Fall back to plain text if highlighting fails
+                pass
 
         # Plain text fallback (no highlighting or on error)
         lines: list[tuple[str, str]] = []

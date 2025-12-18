@@ -53,7 +53,7 @@ class JsonResultFormatter:
                     "content": result.chunk.content,
                     "chunk_id": result.chunk.id,
                     "tree_sha": result.chunk.tree_sha,
-                    "explanation": result.explanation.to_dict(),
+                    "explanation": result.explanation,
                 }
                 for result in results
             ],
@@ -84,7 +84,7 @@ class JsonResultFormatter:
                 "start_line": result.chunk.start_line,
                 "end_line": result.chunk.end_line,
                 "content": result.chunk.content,
-                "explanation": result.explanation.to_dict(),
+                "explanation": result.explanation,
             }
 
             # Add context if requested

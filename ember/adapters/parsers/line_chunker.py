@@ -28,9 +28,6 @@ class LineChunker:
             stride: Number of lines to advance between chunks (default 100).
                    Overlap = window_size - stride (default 20 lines).
         """
-        # Note: These validations mirror IndexConfig domain constraints.
-        # When instantiated via IndexConfig (production path), values are
-        # pre-validated. These checks provide defense for direct usage.
         if window_size <= 0:
             raise ValueError("window_size must be positive")
         if stride <= 0:

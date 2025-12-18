@@ -8,11 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ember.ports.database import DatabaseInitializer
-from ember.shared.config_io import (
-    create_global_config_file,
-    create_minimal_project_config,
-    get_global_config_path,
-)
+from ember.shared.config_io import create_default_config_file
 from ember.shared.state_io import create_initial_state
 
 
@@ -41,8 +37,6 @@ class InitResponse:
         db_path: Path to created index.db
         state_path: Path to created state.json
         was_reinitialized: True if existing .ember/ was replaced
-        global_config_created: True if global config was created (first run)
-        global_config_path: Path to global config file (may or may not exist)
     """
 
     ember_dir: Path
@@ -50,8 +44,6 @@ class InitResponse:
     db_path: Path
     state_path: Path
     was_reinitialized: bool
-    global_config_created: bool = False
-    global_config_path: Path | None = None
 
 
 class InitUseCase:
@@ -75,12 +67,9 @@ class InitUseCase:
         """Execute the init operation.
 
         Creates .ember/ directory with:
-        - config.toml (minimal project configuration)
+        - config.toml (default configuration)
         - index.db (empty SQLite database with schema)
         - state.json (initial state tracking)
-
-        On first run (no global config exists), also creates:
-        - ~/.config/ember/config.toml (global config with hardware-specific defaults)
 
         Args:
             request: Init request with repo root and options
@@ -96,7 +85,6 @@ class InitUseCase:
         config_path = ember_dir / "config.toml"
         db_path = ember_dir / "index.db"
         state_path = ember_dir / "state.json"
-        global_config_path = get_global_config_path()
 
         # Check if .ember/ already exists
         was_reinitialized = False
@@ -105,17 +93,11 @@ class InitUseCase:
                 raise FileExistsError(f"Directory {ember_dir} already exists")
             was_reinitialized = True
 
-        # Create global config if it doesn't exist (first run)
-        global_config_created = False
-        if not global_config_path.exists():
-            create_global_config_file(global_config_path, model=request.model)
-            global_config_created = True
-
         # Create .ember/ directory
         ember_dir.mkdir(parents=True, exist_ok=True)
 
-        # Create minimal project config (settings inherit from global)
-        create_minimal_project_config(config_path)
+        # Create config.toml with defaults
+        create_default_config_file(config_path, model=request.model)
 
         # Initialize database with schema
         self._db_initializer.init_database(db_path)
@@ -129,6 +111,4 @@ class InitUseCase:
             db_path=db_path,
             state_path=state_path,
             was_reinitialized=was_reinitialized,
-            global_config_created=global_config_created,
-            global_config_path=global_config_path,
         )

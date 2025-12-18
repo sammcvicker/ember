@@ -1,7 +1,6 @@
 """Unit tests for TomlConfigProvider adapter."""
 
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -13,22 +12,6 @@ from ember.domain.config import EmberConfig
 def provider() -> TomlConfigProvider:
     """Create a TomlConfigProvider instance."""
     return TomlConfigProvider()
-
-
-@pytest.fixture
-def no_global_config(tmp_path: Path):
-    """Mock global config path to ensure test isolation from user's actual config.
-
-    Tests that assert default values must use this fixture to avoid reading
-    the user's ~/.config/ember/config.toml which could override defaults.
-    """
-    nonexistent_global = tmp_path / "nonexistent_global" / "config.toml"
-    with patch(
-        "ember.adapters.config.toml_config_provider.get_global_config_path",
-        return_value=nonexistent_global,
-    ):
-        yield nonexistent_global
-
 
 
 class TestLoadValidConfig:
@@ -127,12 +110,9 @@ class TestLoadMissingConfig:
     """Tests for loading when config file is missing."""
 
     def test_load_missing_file_returns_defaults(
-        self, provider: TomlConfigProvider, tmp_path: Path, no_global_config: Path
+        self, provider: TomlConfigProvider, tmp_path: Path
     ) -> None:
-        """Test that missing config file returns default configuration.
-
-        Uses no_global_config fixture to isolate from user's actual global config.
-        """
+        """Test that missing config file returns default configuration."""
         ember_dir = tmp_path / ".ember"
         ember_dir.mkdir()
         # config.toml does NOT exist
@@ -147,12 +127,9 @@ class TestLoadMissingConfig:
         assert result.model.mode == default.model.mode
 
     def test_load_missing_directory_returns_defaults(
-        self, provider: TomlConfigProvider, tmp_path: Path, no_global_config: Path
+        self, provider: TomlConfigProvider, tmp_path: Path
     ) -> None:
-        """Test that missing ember directory returns default configuration.
-
-        Uses no_global_config fixture to isolate from user's actual global config.
-        """
+        """Test that missing ember directory returns default configuration."""
         ember_dir = tmp_path / ".ember"
         # Directory does NOT exist
 
@@ -168,16 +145,9 @@ class TestLoadInvalidConfig:
     """Tests for handling invalid configurations."""
 
     def test_load_invalid_toml_returns_defaults(
-        self,
-        provider: TomlConfigProvider,
-        tmp_path: Path,
-        no_global_config: Path,
-        caplog: pytest.LogCaptureFixture,
+        self, provider: TomlConfigProvider, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """Test that invalid TOML syntax returns defaults with warning.
-
-        Uses no_global_config fixture to isolate from user's actual global config.
-        """
+        """Test that invalid TOML syntax returns defaults with warning."""
         ember_dir = tmp_path / ".ember"
         ember_dir.mkdir()
         config_file = ember_dir / "config.toml"
@@ -198,18 +168,10 @@ model = "broken"
         # Should log warning
         assert "Failed to parse config.toml" in caplog.text
 
-    def test_load_config_with_unknown_keys_ignores_them(
-        self,
-        provider: TomlConfigProvider,
-        tmp_path: Path,
-        no_global_config: Path,
+    def test_load_config_with_unknown_keys_returns_defaults(
+        self, provider: TomlConfigProvider, tmp_path: Path, caplog: pytest.LogCaptureFixture
     ) -> None:
-        """Test that unknown keys in config are gracefully ignored.
-
-        Uses no_global_config fixture to isolate from user's actual global config.
-        Unknown keys are simply ignored rather than causing errors - this allows
-        configs to be forward-compatible with future versions.
-        """
+        """Test that unknown keys in config fall back to defaults gracefully."""
         ember_dir = tmp_path / ".ember"
         ember_dir.mkdir()
         config_file = ember_dir / "config.toml"
@@ -221,25 +183,25 @@ unknown_future_key = "ignored"
 """
         )
 
+        # Unknown keys cause TypeError which is now caught and logged
         result = provider.load(ember_dir)
 
-        # Should use the valid values, ignoring unknown keys
-        assert result.search.topk == 42
-        # Other sections should have defaults
+        # Should return defaults
         default = EmberConfig.default()
-        assert result.index.model == default.index.model
+        assert result == default
+
+        # Should log warning about the invalid config
+        assert "Invalid config values" in caplog.text
+        assert "unknown_future_key" in caplog.text
 
 
 class TestPartialConfig:
     """Tests for partial configurations (missing sections)."""
 
     def test_load_partial_config_uses_defaults_for_missing(
-        self, provider: TomlConfigProvider, tmp_path: Path, no_global_config: Path
+        self, provider: TomlConfigProvider, tmp_path: Path
     ) -> None:
-        """Test that partial config fills in missing sections with defaults.
-
-        Uses no_global_config fixture to isolate from user's actual global config.
-        """
+        """Test that partial config fills in missing sections with defaults."""
         ember_dir = tmp_path / ".ember"
         ember_dir.mkdir()
         config_file = ember_dir / "config.toml"
@@ -262,12 +224,9 @@ topk = 999
         assert result.model.mode == default.model.mode
 
     def test_load_empty_config_returns_defaults(
-        self, provider: TomlConfigProvider, tmp_path: Path, no_global_config: Path
+        self, provider: TomlConfigProvider, tmp_path: Path
     ) -> None:
-        """Test that empty config file returns defaults.
-
-        Uses no_global_config fixture to isolate from user's actual global config.
-        """
+        """Test that empty config file returns defaults."""
         ember_dir = tmp_path / ".ember"
         ember_dir.mkdir()
         config_file = ember_dir / "config.toml"

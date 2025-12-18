@@ -9,7 +9,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from ember.core.indexing.index_usecase import IndexingUseCase, ModelMismatchError
+from ember.core.indexing.index_usecase import IndexingUseCase
 
 
 @pytest.fixture
@@ -63,7 +63,7 @@ class TestGetFilesToIndexFullReindex:
 
         files, is_incremental = usecase._get_files_to_index(
             repo_root=repo_root,
-            tree_sha="a" * 40,
+            tree_sha="abc123",
             path_filters=[],
             force_reindex=True,
         )
@@ -84,7 +84,7 @@ class TestGetFilesToIndexFullReindex:
 
         files, is_incremental = usecase._get_files_to_index(
             repo_root=repo_root,
-            tree_sha="a" * 40,
+            tree_sha="abc123",
             path_filters=[],
             force_reindex=False,
         )
@@ -100,13 +100,12 @@ class TestGetFilesToIndexNoChanges:
     def test_same_tree_sha_returns_empty_list(self, mock_deps: dict) -> None:
         """When tree_sha matches last_tree_sha, return empty list."""
         usecase = IndexingUseCase(**mock_deps)
-        same_sha = "a" * 40
-        mock_deps["meta_repo"].get.return_value = same_sha
+        mock_deps["meta_repo"].get.return_value = "abc123"
         repo_root = Path("/repo")
 
         files, is_incremental = usecase._get_files_to_index(
             repo_root=repo_root,
-            tree_sha=same_sha,
+            tree_sha="abc123",
             path_filters=[],
             force_reindex=False,
         )
@@ -123,9 +122,7 @@ class TestGetFilesToIndexIncremental:
     def test_incremental_returns_added_files(self, mock_deps: dict) -> None:
         """Incremental sync returns added files."""
         usecase = IndexingUseCase(**mock_deps)
-        old_sha = "c" * 40
-        new_sha = "d" * 40
-        mock_deps["meta_repo"].get.return_value = old_sha
+        mock_deps["meta_repo"].get.return_value = "old123"
         mock_deps["vcs"].diff_files.return_value = [
             ("added", "new_file.py"),
         ]
@@ -133,7 +130,7 @@ class TestGetFilesToIndexIncremental:
 
         files, is_incremental = usecase._get_files_to_index(
             repo_root=repo_root,
-            tree_sha=new_sha,
+            tree_sha="new456",
             path_filters=[],
             force_reindex=False,
         )
@@ -142,7 +139,7 @@ class TestGetFilesToIndexIncremental:
         assert len(files) == 1
         assert files[0] == repo_root / "new_file.py"
         mock_deps["vcs"].diff_files.assert_called_once_with(
-            from_sha=old_sha, to_sha=new_sha
+            from_sha="old123", to_sha="new456"
         )
 
     def test_incremental_returns_modified_files(self, mock_deps: dict) -> None:
@@ -156,7 +153,7 @@ class TestGetFilesToIndexIncremental:
 
         files, is_incremental = usecase._get_files_to_index(
             repo_root=repo_root,
-            tree_sha="b" * 40,
+            tree_sha="new456",
             path_filters=[],
             force_reindex=False,
         )
@@ -176,7 +173,7 @@ class TestGetFilesToIndexIncremental:
 
         files, is_incremental = usecase._get_files_to_index(
             repo_root=repo_root,
-            tree_sha="b" * 40,
+            tree_sha="new456",
             path_filters=[],
             force_reindex=False,
         )
@@ -197,7 +194,7 @@ class TestGetFilesToIndexIncremental:
 
         files, is_incremental = usecase._get_files_to_index(
             repo_root=repo_root,
-            tree_sha="b" * 40,
+            tree_sha="new456",
             path_filters=[],
             force_reindex=False,
         )
@@ -220,7 +217,7 @@ class TestGetFilesToIndexIncremental:
 
         files, is_incremental = usecase._get_files_to_index(
             repo_root=repo_root,
-            tree_sha="b" * 40,
+            tree_sha="new456",
             path_filters=[],
             force_reindex=False,
         )
@@ -251,7 +248,7 @@ class TestGetFilesToIndexCodeFileFilter:
 
         files, is_incremental = usecase._get_files_to_index(
             repo_root=repo_root,
-            tree_sha="a" * 40,
+            tree_sha="abc123",
             path_filters=[],
             force_reindex=False,
         )
@@ -288,7 +285,7 @@ class TestGetFilesToIndexCodeFileFilter:
 
         files, is_incremental = usecase._get_files_to_index(
             repo_root=repo_root,
-            tree_sha="a" * 40,
+            tree_sha="abc123",
             path_filters=[],
             force_reindex=False,
         )
@@ -314,7 +311,7 @@ class TestGetFilesToIndexPathFilters:
 
         files, is_incremental = usecase._get_files_to_index(
             repo_root=repo_root,
-            tree_sha="a" * 40,
+            tree_sha="abc123",
             path_filters=["src/*.py"],
             force_reindex=False,
         )
@@ -335,7 +332,7 @@ class TestGetFilesToIndexPathFilters:
 
         files, is_incremental = usecase._get_files_to_index(
             repo_root=repo_root,
-            tree_sha="a" * 40,
+            tree_sha="abc123",
             path_filters=["src/*.py", "tests/*.py"],
             force_reindex=False,
         )
@@ -361,7 +358,7 @@ class TestGetFilesToIndexPathFilters:
 
         files, is_incremental = usecase._get_files_to_index(
             repo_root=repo_root,
-            tree_sha="a" * 40,
+            tree_sha="abc123",
             path_filters=["**/*.py"],  # ** matches any path, *.py matches filename
             force_reindex=False,
         )
@@ -382,7 +379,7 @@ class TestGetFilesToIndexPathFilters:
 
         files, is_incremental = usecase._get_files_to_index(
             repo_root=repo_root,
-            tree_sha="a" * 40,
+            tree_sha="abc123",
             path_filters=["nonexistent/*.py"],
             force_reindex=False,
         )
@@ -403,7 +400,7 @@ class TestGetFilesToIndexPathFilters:
 
         files, is_incremental = usecase._get_files_to_index(
             repo_root=repo_root,
-            tree_sha="a" * 40,
+            tree_sha="abc123",
             path_filters=[],
             force_reindex=False,
         )
@@ -430,7 +427,7 @@ class TestGetFilesToIndexCombined:
 
         files, is_incremental = usecase._get_files_to_index(
             repo_root=repo_root,
-            tree_sha="b" * 40,
+            tree_sha="new456",
             path_filters=["src/*.py"],
             force_reindex=False,
         )
@@ -452,7 +449,7 @@ class TestGetFilesToIndexCombined:
 
         files, is_incremental = usecase._get_files_to_index(
             repo_root=repo_root,
-            tree_sha="a" * 40,
+            tree_sha="abc123",
             path_filters=["tests/*.py"],  # Direct match with tests directory
             force_reindex=True,
         )
@@ -474,457 +471,10 @@ class TestGetFilesToIndexCombined:
 
         files, is_incremental = usecase._get_files_to_index(
             repo_root=repo_root,
-            tree_sha="a" * 40,
+            tree_sha="abc123",
             path_filters=[],
             force_reindex=False,
         )
 
         assert all(f.is_absolute() for f in files)
         assert all(str(f).startswith(str(repo_root)) for f in files)
-
-
-class TestModelMismatchDetection:
-    """Tests for embedding model mismatch detection."""
-
-    def test_no_stored_fingerprint_allows_sync(self, mock_deps: dict) -> None:
-        """When no model fingerprint is stored, sync proceeds normally."""
-        usecase = IndexingUseCase(**mock_deps)
-        mock_deps["meta_repo"].get.return_value = None
-        mock_deps["embedder"].fingerprint.return_value = "jina-code-v2:768"
-
-        # Should not raise
-        usecase._verify_model_compatibility(force_reindex=False)
-
-    def test_matching_fingerprint_allows_sync(self, mock_deps: dict) -> None:
-        """When model fingerprint matches, sync proceeds normally."""
-        usecase = IndexingUseCase(**mock_deps)
-        mock_deps["meta_repo"].get.return_value = "jina-code-v2:768"
-        mock_deps["embedder"].fingerprint.return_value = "jina-code-v2:768"
-
-        # Should not raise
-        usecase._verify_model_compatibility(force_reindex=False)
-
-    def test_different_fingerprint_raises_error(self, mock_deps: dict) -> None:
-        """When model fingerprint differs and force_reindex is False, raise error."""
-        usecase = IndexingUseCase(**mock_deps)
-        mock_deps["meta_repo"].get.return_value = "jina-code-v2:768"
-        mock_deps["embedder"].fingerprint.return_value = "minilm:384"
-
-        with pytest.raises(ModelMismatchError) as exc_info:
-            usecase._verify_model_compatibility(force_reindex=False)
-
-        assert "jina-code-v2:768" in str(exc_info.value)
-        assert "minilm:384" in str(exc_info.value)
-        assert "ember sync --force" in str(exc_info.value)
-
-    def test_different_fingerprint_with_force_allows_sync(self, mock_deps: dict) -> None:
-        """When model fingerprint differs but force_reindex is True, allow sync."""
-        usecase = IndexingUseCase(**mock_deps)
-        mock_deps["meta_repo"].get.return_value = "jina-code-v2:768"
-        mock_deps["embedder"].fingerprint.return_value = "minilm:384"
-
-        # Should not raise when force_reindex is True
-        usecase._verify_model_compatibility(force_reindex=True)
-
-
-class TestModelMismatchErrorAttributes:
-    """Tests for ModelMismatchError exception attributes."""
-
-    def test_error_stores_model_names(self) -> None:
-        """ModelMismatchError stores both model names."""
-        error = ModelMismatchError(
-            stored_model="jina-code-v2:768",
-            current_model="minilm:384",
-        )
-
-        assert error.stored_model == "jina-code-v2:768"
-        assert error.current_model == "minilm:384"
-
-    def test_error_message_contains_instructions(self) -> None:
-        """ModelMismatchError message contains helpful instructions."""
-        error = ModelMismatchError(
-            stored_model="jina-code-v2:768",
-            current_model="minilm:384",
-        )
-
-        msg = str(error)
-        assert "jina-code-v2:768" in msg
-        assert "minilm:384" in msg
-        assert "ember sync --force" in msg
-
-
-class TestIndexFileErrorHandling:
-    """Tests for error handling in _index_file() method."""
-
-    @pytest.fixture
-    def setup_indexing_usecase(self, mock_deps: dict) -> IndexingUseCase:
-        """Create IndexingUseCase configured for indexing a single file."""
-        # Configure chunk_usecase to return success with chunks
-        from ember.ports.chunkers import ChunkData
-
-        chunk_data = ChunkData(
-            content="def hello(): pass",
-            start_line=1,
-            end_line=1,
-            lang="py",
-            symbol="hello",
-        )
-        mock_deps["chunk_usecase"].execute.return_value = Mock(
-            success=True,
-            chunks=[chunk_data],
-            error=None,
-        )
-        # Configure fs to return file content
-        mock_deps["fs"].read.return_value = b"def hello(): pass"
-        # Configure embedder
-        mock_deps["embedder"].fingerprint.return_value = "test-model:384"
-        mock_deps["embedder"].embed_texts.return_value = [[0.1] * 384]
-        # Configure chunk_repo
-        mock_deps["chunk_repo"].find_by_content_hash.return_value = []
-        mock_deps["chunk_repo"].delete_all_for_path.return_value = 0
-
-        return IndexingUseCase(**mock_deps)
-
-    def test_embedding_failure_rolls_back_chunks(
-        self, mock_deps: dict, setup_indexing_usecase: IndexingUseCase
-    ) -> None:
-        """When embedding fails, chunks added during this indexing are rolled back."""
-        usecase = setup_indexing_usecase
-
-        # Make embedding fail
-        mock_deps["embedder"].embed_texts.side_effect = RuntimeError("GPU OOM")
-
-        result = usecase._index_file(
-            file_path=Path("/repo/test.py"),
-            repo_root=Path("/repo"),
-            tree_sha="a" * 40,
-            sync_mode="worktree",
-        )
-
-        # Should return failed status
-        assert result["failed"] == 1
-        assert result["chunks_created"] == 0
-        assert result["vectors_stored"] == 0
-
-    def test_embedding_count_mismatch_detected(
-        self, mock_deps: dict, setup_indexing_usecase: IndexingUseCase
-    ) -> None:
-        """When embedding count doesn't match chunk count, error is raised."""
-        usecase = setup_indexing_usecase
-
-        # Return wrong number of embeddings (0 instead of 1)
-        mock_deps["embedder"].embed_texts.return_value = []
-
-        result = usecase._index_file(
-            file_path=Path("/repo/test.py"),
-            repo_root=Path("/repo"),
-            tree_sha="a" * 40,
-            sync_mode="worktree",
-        )
-
-        # Should detect mismatch and return failed status
-        assert result["failed"] == 1
-        assert result["vectors_stored"] == 0
-
-    def test_vector_repo_failure_partial_rollback(
-        self, mock_deps: dict, setup_indexing_usecase: IndexingUseCase
-    ) -> None:
-        """When vector_repo.add() fails, partial vectors are cleaned up."""
-        usecase = setup_indexing_usecase
-
-        # Make vector_repo.add fail
-        mock_deps["vector_repo"].add.side_effect = RuntimeError("DB connection lost")
-
-        result = usecase._index_file(
-            file_path=Path("/repo/test.py"),
-            repo_root=Path("/repo"),
-            tree_sha="a" * 40,
-            sync_mode="worktree",
-        )
-
-        # Should return failed status
-        assert result["failed"] == 1
-        assert result["vectors_stored"] == 0
-
-    def test_chunk_deletion_failure_handled(
-        self, mock_deps: dict, setup_indexing_usecase: IndexingUseCase
-    ) -> None:
-        """When chunk_repo.delete_all_for_path() fails, error is logged and handled."""
-        usecase = setup_indexing_usecase
-
-        # Make delete_all_for_path fail
-        mock_deps["chunk_repo"].delete_all_for_path.side_effect = RuntimeError(
-            "DB locked"
-        )
-
-        result = usecase._index_file(
-            file_path=Path("/repo/test.py"),
-            repo_root=Path("/repo"),
-            tree_sha="a" * 40,
-            sync_mode="worktree",
-        )
-
-        # Should return failed status
-        assert result["failed"] == 1
-
-    def test_chunk_add_failure_rolls_back(
-        self, mock_deps: dict, setup_indexing_usecase: IndexingUseCase
-    ) -> None:
-        """When chunk_repo.add() fails, the file indexing is marked as failed."""
-        usecase = setup_indexing_usecase
-
-        # Make chunk_repo.add fail
-        mock_deps["chunk_repo"].add.side_effect = RuntimeError("Constraint violation")
-
-        result = usecase._index_file(
-            file_path=Path("/repo/test.py"),
-            repo_root=Path("/repo"),
-            tree_sha="a" * 40,
-            sync_mode="worktree",
-        )
-
-        # Should return failed status
-        assert result["failed"] == 1
-        assert result["chunks_created"] == 0
-
-    def test_successful_indexing_returns_correct_counts(
-        self, mock_deps: dict, setup_indexing_usecase: IndexingUseCase
-    ) -> None:
-        """Successful indexing returns correct chunk and vector counts."""
-        usecase = setup_indexing_usecase
-
-        result = usecase._index_file(
-            file_path=Path("/repo/test.py"),
-            repo_root=Path("/repo"),
-            tree_sha="a" * 40,
-            sync_mode="worktree",
-        )
-
-        # Should succeed with correct counts
-        assert result["failed"] == 0
-        assert result["chunks_created"] == 1
-        assert result["vectors_stored"] == 1
-
-    def test_file_repo_failure_does_not_affect_indexing_result(
-        self, mock_deps: dict, setup_indexing_usecase: IndexingUseCase
-    ) -> None:
-        """When file_repo.track_file() fails, indexing should still report success.
-
-        File tracking is metadata and should not fail the entire indexing operation.
-        """
-        usecase = setup_indexing_usecase
-
-        # Make file_repo.track_file fail
-        mock_deps["file_repo"].track_file.side_effect = RuntimeError("DB error")
-
-        result = usecase._index_file(
-            file_path=Path("/repo/test.py"),
-            repo_root=Path("/repo"),
-            tree_sha="a" * 40,
-            sync_mode="worktree",
-        )
-
-        # Indexing should succeed (file tracking is not critical)
-        assert result["failed"] == 0
-        assert result["chunks_created"] == 1
-        assert result["vectors_stored"] == 1
-
-
-class TestExecuteErrorHandling:
-    """Tests for error handling in execute() method.
-
-    These tests verify that the execute() method properly catches and
-    handles various exception types, returning appropriate IndexResponse
-    objects with error information.
-    """
-
-    @pytest.fixture
-    def setup_execute_usecase(self, mock_deps: dict) -> IndexingUseCase:
-        """Create IndexingUseCase configured for execute() testing."""
-        # Configure for basic successful operation
-        mock_deps["meta_repo"].get.return_value = None  # No previous index
-        mock_deps["vcs"].list_tracked_files.return_value = ["test.py"]
-        mock_deps["vcs"].get_worktree_tree_sha.return_value = "abc123"
-        mock_deps["embedder"].fingerprint.return_value = "test-model:384"
-        mock_deps["embedder"].embed_texts.return_value = [[0.1] * 384]
-        mock_deps["fs"].read.return_value = b"def hello(): pass"
-        mock_deps["chunk_repo"].find_by_content_hash.return_value = []
-        mock_deps["chunk_repo"].delete_all_for_path.return_value = 0
-
-        from ember.ports.chunkers import ChunkData
-
-        chunk_data = ChunkData(
-            content="def hello(): pass",
-            start_line=1,
-            end_line=1,
-            lang="py",
-            symbol="hello",
-        )
-        mock_deps["chunk_usecase"].execute.return_value = Mock(
-            success=True,
-            chunks=[chunk_data],
-            error=None,
-        )
-
-        return IndexingUseCase(**mock_deps)
-
-    def test_model_mismatch_returns_error_response(
-        self, mock_deps: dict, setup_execute_usecase: IndexingUseCase
-    ) -> None:
-        """ModelMismatchError returns an error response with helpful message."""
-        from ember.core.indexing.index_usecase import IndexRequest
-
-        usecase = setup_execute_usecase
-
-        # Set up model mismatch scenario
-        mock_deps["meta_repo"].get.return_value = "old-model:768"
-        mock_deps["embedder"].fingerprint.return_value = "new-model:384"
-
-        request = IndexRequest(repo_root=Path("/repo"), force_reindex=False)
-        response = usecase.execute(request)
-
-        assert not response.success
-        assert response.error is not None
-        assert "old-model:768" in response.error
-        assert "new-model:384" in response.error
-
-    def test_file_not_found_returns_io_error_response(
-        self, mock_deps: dict, setup_execute_usecase: IndexingUseCase
-    ) -> None:
-        """FileNotFoundError (subclass of OSError) returns an I/O error response."""
-        from ember.core.indexing.index_usecase import IndexRequest
-
-        usecase = setup_execute_usecase
-
-        # Make fs.read raise FileNotFoundError
-        mock_deps["fs"].read.side_effect = FileNotFoundError("test.py not found")
-
-        request = IndexRequest(repo_root=Path("/repo"), force_reindex=True)
-        response = usecase.execute(request)
-
-        assert not response.success
-        assert response.error is not None
-        assert "i/o error" in response.error.lower()
-
-    def test_permission_error_returns_io_error_response(
-        self, mock_deps: dict, setup_execute_usecase: IndexingUseCase
-    ) -> None:
-        """PermissionError (subclass of OSError) returns an I/O error response."""
-        from ember.core.indexing.index_usecase import IndexRequest
-
-        usecase = setup_execute_usecase
-
-        # Make fs.read raise PermissionError
-        mock_deps["fs"].read.side_effect = PermissionError("Access denied")
-
-        request = IndexRequest(repo_root=Path("/repo"), force_reindex=True)
-        response = usecase.execute(request)
-
-        assert not response.success
-        assert response.error is not None
-        assert "i/o error" in response.error.lower()
-        assert "permission" in response.error.lower()
-
-    def test_os_error_returns_io_error_response(
-        self, mock_deps: dict, setup_execute_usecase: IndexingUseCase
-    ) -> None:
-        """OSError returns an I/O error response."""
-        from ember.core.indexing.index_usecase import IndexRequest
-
-        usecase = setup_execute_usecase
-
-        # Make fs.read raise OSError
-        mock_deps["fs"].read.side_effect = OSError("Disk full")
-
-        request = IndexRequest(repo_root=Path("/repo"), force_reindex=True)
-        response = usecase.execute(request)
-
-        assert not response.success
-        assert response.error is not None
-        assert "i/o error" in response.error.lower()
-
-    def test_value_error_returns_error_response(
-        self, mock_deps: dict, setup_execute_usecase: IndexingUseCase
-    ) -> None:
-        """ValueError at the orchestration level returns an error response."""
-        from ember.core.indexing.index_usecase import IndexRequest
-
-        usecase = setup_execute_usecase
-
-        # Make _get_tree_sha raise ValueError (at orchestration level)
-        mock_deps["vcs"].get_worktree_tree_sha.side_effect = ValueError(
-            "Invalid sync mode"
-        )
-
-        request = IndexRequest(repo_root=Path("/repo"), force_reindex=True)
-        response = usecase.execute(request)
-
-        assert not response.success
-        assert response.error is not None
-
-    def test_runtime_error_returns_error_response(
-        self, mock_deps: dict, setup_execute_usecase: IndexingUseCase
-    ) -> None:
-        """RuntimeError returns an error response."""
-        from ember.core.indexing.index_usecase import IndexRequest
-
-        usecase = setup_execute_usecase
-
-        # Make vcs raise RuntimeError
-        mock_deps["vcs"].get_worktree_tree_sha.side_effect = RuntimeError("Git error")
-
-        request = IndexRequest(repo_root=Path("/repo"), force_reindex=True)
-        response = usecase.execute(request)
-
-        assert not response.success
-        assert response.error is not None
-
-    def test_unexpected_exception_returns_internal_error(
-        self, mock_deps: dict, setup_execute_usecase: IndexingUseCase
-    ) -> None:
-        """Unexpected exceptions return a generic internal error response."""
-        from ember.core.indexing.index_usecase import IndexRequest
-
-        usecase = setup_execute_usecase
-
-        # Make something raise an unexpected exception type
-        mock_deps["vcs"].get_worktree_tree_sha.side_effect = TypeError("Unexpected")
-
-        request = IndexRequest(repo_root=Path("/repo"), force_reindex=True)
-        response = usecase.execute(request)
-
-        assert not response.success
-        assert response.error is not None
-        assert "internal error" in response.error.lower()
-
-    def test_keyboard_interrupt_propagates(
-        self, mock_deps: dict, setup_execute_usecase: IndexingUseCase
-    ) -> None:
-        """KeyboardInterrupt is not caught and propagates up."""
-        from ember.core.indexing.index_usecase import IndexRequest
-
-        usecase = setup_execute_usecase
-
-        # Make vcs raise KeyboardInterrupt
-        mock_deps["vcs"].get_worktree_tree_sha.side_effect = KeyboardInterrupt()
-
-        request = IndexRequest(repo_root=Path("/repo"), force_reindex=True)
-
-        with pytest.raises(KeyboardInterrupt):
-            usecase.execute(request)
-
-    def test_system_exit_propagates(
-        self, mock_deps: dict, setup_execute_usecase: IndexingUseCase
-    ) -> None:
-        """SystemExit is not caught and propagates up."""
-        from ember.core.indexing.index_usecase import IndexRequest
-
-        usecase = setup_execute_usecase
-
-        # Make vcs raise SystemExit
-        mock_deps["vcs"].get_worktree_tree_sha.side_effect = SystemExit(1)
-
-        request = IndexRequest(repo_root=Path("/repo"), force_reindex=True)
-
-        with pytest.raises(SystemExit):
-            usecase.execute(request)

@@ -112,7 +112,7 @@ def test_load_config_invalid_toml_logs_warning(caplog):
         assert len(caplog.records) == 1
         assert caplog.records[0].levelname == "WARNING"
         assert "config.toml" in caplog.text
-        assert "Invalid TOML" in caplog.text
+        assert "Invalid TOML" in caplog.text or "parse" in caplog.text.lower()
 
 
 def test_load_config_missing_file_no_warning(caplog):

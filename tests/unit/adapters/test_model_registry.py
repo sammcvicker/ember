@@ -8,41 +8,11 @@ from ember.adapters.local_models.registry import (
     DEFAULT_MODEL,
     MODEL_PRESETS,
     SUPPORTED_MODELS,
-    _build_embedder_kwargs,
     create_embedder,
     get_model_info,
     list_available_models,
     resolve_model_name,
 )
-
-
-class TestBuildEmbedderKwargs:
-    """Tests for _build_embedder_kwargs helper function."""
-
-    def test_batch_size_always_included(self):
-        """Test that batch_size is always in kwargs."""
-        result = _build_embedder_kwargs(batch_size=32, device=None, max_seq_length=None)
-        assert result == {"batch_size": 32}
-
-    def test_device_included_when_not_none(self):
-        """Test that device is included when provided."""
-        result = _build_embedder_kwargs(batch_size=32, device="cuda", max_seq_length=None)
-        assert result == {"batch_size": 32, "device": "cuda"}
-
-    def test_max_seq_length_included_when_not_none(self):
-        """Test that max_seq_length is included when provided."""
-        result = _build_embedder_kwargs(batch_size=32, device=None, max_seq_length=512)
-        assert result == {"batch_size": 32, "max_seq_length": 512}
-
-    def test_all_params_included_when_provided(self):
-        """Test that all params are included when provided."""
-        result = _build_embedder_kwargs(batch_size=64, device="mps", max_seq_length=256)
-        assert result == {"batch_size": 64, "device": "mps", "max_seq_length": 256}
-
-    def test_device_cpu(self):
-        """Test that device=cpu works correctly."""
-        result = _build_embedder_kwargs(batch_size=32, device="cpu", max_seq_length=None)
-        assert result == {"batch_size": 32, "device": "cpu"}
 
 
 class TestResolveModelName:

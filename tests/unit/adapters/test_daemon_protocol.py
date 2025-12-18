@@ -398,50 +398,6 @@ class TestReceiveMessage:
 
         assert "Failed to receive message" in str(exc_info.value)
 
-    def test_receive_message_raises_on_oversized_message(self) -> None:
-        """Test receive_message raises ProtocolError when message exceeds size limit."""
-        mock_sock = MagicMock(spec=socket.socket)
-        # Create a small max_size and send data that exceeds it
-        max_size = 100
-        # Each chunk is 50 bytes, so 3 chunks will exceed 100 bytes
-        mock_sock.recv.side_effect = [
-            b"x" * 50,  # 50 bytes
-            b"x" * 50,  # 100 bytes total
-            b"x" * 50,  # 150 bytes total - exceeds limit
-        ]
-
-        with pytest.raises(ProtocolError) as exc_info:
-            receive_message(mock_sock, Request, max_size=max_size)
-
-        assert "exceeds" in str(exc_info.value)
-        assert "100" in str(exc_info.value)
-
-    def test_receive_message_accepts_message_within_limit(self) -> None:
-        """Test receive_message accepts messages within size limit."""
-        mock_sock = MagicMock(spec=socket.socket)
-        json_data = '{"method": "test", "params": {}}\n'
-        mock_sock.recv.return_value = json_data.encode("utf-8")
-        max_size = 1000  # Well above the message size
-
-        result = receive_message(mock_sock, Request, max_size=max_size)
-
-        assert isinstance(result, Request)
-        assert result.method == "test"
-
-    def test_receive_message_uses_default_max_size(self) -> None:
-        """Test receive_message uses default max_size when not specified."""
-        from ember.adapters.daemon.protocol import MAX_MESSAGE_SIZE
-
-        mock_sock = MagicMock(spec=socket.socket)
-        json_data = '{"method": "test", "params": {}}\n'
-        mock_sock.recv.return_value = json_data.encode("utf-8")
-
-        # Should work without specifying max_size
-        result = receive_message(mock_sock, Request)
-
-        assert isinstance(result, Request)
-        assert MAX_MESSAGE_SIZE == 10 * 1024 * 1024  # 10MB default
-
 
 class TestRoundTrip:
     """Integration tests for request/response round-trips."""

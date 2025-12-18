@@ -72,11 +72,6 @@ def load_config_data(path: Path) -> dict[str, Any]:
 def merge_config_data(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
     """Merge two config dictionaries, with override values taking precedence.
 
-    .. deprecated::
-        Use EmberConfig.from_partial() for config merging. This function performs
-        merging at the dict level without domain validation. The domain method
-        ensures validation at each merge step.
-
     Performs a shallow merge at the section level - if a section exists in override,
     its values completely replace the base section's values.
 
@@ -110,23 +105,6 @@ def merge_config_data(base: dict[str, Any], override: dict[str, Any]) -> dict[st
     return result
 
 
-def _validate_model_name(model_name: str) -> None:
-    """Validate that the model name is recognized.
-
-    Args:
-        model_name: Model name to validate
-
-    Raises:
-        ValueError: If model name is not a known preset or supported model
-    """
-    from ember.adapters.local_models.registry import resolve_model_name
-
-    try:
-        resolve_model_name(model_name)
-    except ValueError as e:
-        raise ValueError(f"Invalid model configuration: {e}") from e
-
-
 def config_data_to_ember_config(data: dict[str, Any]) -> EmberConfig:
     """Convert raw config data dictionary to EmberConfig.
 
@@ -135,19 +113,12 @@ def config_data_to_ember_config(data: dict[str, Any]) -> EmberConfig:
 
     Returns:
         EmberConfig instance
-
-    Raises:
-        ValueError: If model name is not recognized
     """
     index_data = data.get("index", {})
     search_data = data.get("search", {})
     redaction_data = data.get("redaction", {})
     model_data = data.get("model", {})
     display_data = data.get("display", {})
-
-    # Validate model name at config boundary (not in domain model)
-    model_name = index_data.get("model", "local-default-code-embed")
-    _validate_model_name(model_name)
 
     return EmberConfig(
         index=IndexConfig(**index_data),
@@ -190,7 +161,6 @@ def save_config(config: EmberConfig, path: Path) -> None:
             "line_window": config.index.line_window,
             "line_stride": config.index.line_stride,
             "overlap_lines": config.index.overlap_lines,
-            "batch_size": config.index.batch_size,
             "include": config.index.include,
             "ignore": config.index.ignore,
         },
@@ -226,9 +196,6 @@ def save_config(config: EmberConfig, path: Path) -> None:
 def create_default_config_file(path: Path, model: str = "local-default-code-embed") -> None:
     """Create a default config.toml file with sensible defaults and comments.
 
-    This creates a FULL config file with all settings explicitly set.
-    For project configs, prefer create_minimal_project_config().
-
     Args:
         path: Destination path for config.toml
         model: Embedding model preset to use (default: local-default-code-embed)
@@ -256,10 +223,6 @@ line_stride = 100
 
 # Overlap lines between chunks for context preservation
 overlap_lines = 15
-
-# Batch size for embedding (lower values use less GPU memory)
-# Will be automatically reduced on CUDA out-of-memory errors
-batch_size = 32
 
 # File patterns to include (glob syntax)
 include = [
@@ -310,145 +273,6 @@ patterns = [
 
 # Maximum file size to process (MB)
 max_file_mb = 5
-"""
-
-    # Ensure parent directory exists
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Write template
-    with path.open("w", encoding="utf-8") as f:
-        f.write(template)
-
-
-def create_minimal_project_config(path: Path) -> None:
-    """Create a minimal project config.toml with helpful comments.
-
-    Project configs should only contain repository-specific settings.
-    Machine-specific settings (like model) belong in global config.
-
-    Args:
-        path: Destination path for config.toml
-    """
-    template = """\
-# Ember Project Configuration
-# Settings here override defaults from global config (~/.config/ember/config.toml)
-#
-# Edit global config: ember config -g edit
-# Edit this file:     ember config edit
-# Show merged config: ember config show
-
-# [index]
-# Repository-specific indexing settings (uncomment to override)
-# chunk = "symbol"    # "symbol" (tree-sitter) or "lines" (sliding window)
-# include = ["**/*.py", "**/*.ts"]  # Override file patterns
-# ignore = [".git/", "node_modules/"]  # Override ignore patterns
-
-# [search]
-# topk = 20           # Default number of results
-
-# [display]
-# theme = "ansi"      # Syntax highlighting theme
-# syntax_highlighting = true
-"""
-
-    # Ensure parent directory exists
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Write template
-    with path.open("w", encoding="utf-8") as f:
-        f.write(template)
-
-
-def create_global_config_file(path: Path, model: str = "local-default-code-embed") -> None:
-    """Create a global config.toml with machine-specific defaults.
-
-    Global config contains settings that depend on the machine's hardware
-    (GPU, RAM, etc.) and should be the same across all repositories.
-
-    Args:
-        path: Destination path for config.toml
-        model: Embedding model preset to use
-    """
-    template = f"""\
-# Ember Global Configuration
-# Machine-specific defaults that apply to all repositories
-#
-# Edit this file:     ember config -g edit
-# View this file:     ember config -g show
-# Per-project config: .ember/config.toml (overrides these settings)
-
-[index]
-# Embedding model - hardware dependent (choose based on GPU/RAM)
-# Options:
-#   jina-code-v2  - Best quality, requires ~1.6GB RAM
-#   bge-small     - Balanced, ~130MB
-#   minilm        - Lightweight, ~100MB
-model = "{model}"
-
-# Default chunking strategy
-chunk = "symbol"
-
-# Line-based chunking parameters
-line_window = 120
-line_stride = 100
-overlap_lines = 15
-
-# Batch size for embedding (lower values use less GPU memory)
-# Will be automatically reduced on CUDA out-of-memory errors
-batch_size = 32
-
-# Default file patterns to include
-include = [
-    "**/*.py",
-    "**/*.ts",
-    "**/*.tsx",
-    "**/*.js",
-    "**/*.jsx",
-    "**/*.go",
-    "**/*.rs",
-    "**/*.java",
-    "**/*.cpp",
-    "**/*.c",
-    "**/*.h",
-    "**/*.hpp",
-]
-
-# Default patterns to ignore
-ignore = [
-    ".git/",
-    "node_modules/",
-    "dist/",
-    "build/",
-    "__pycache__/",
-    ".venv/",
-    "venv/",
-    "*.pyc",
-    ".DS_Store",
-]
-
-[model]
-# Embedding model loading mode
-mode = "daemon"           # "daemon" (recommended) or "direct"
-daemon_timeout = 900      # Idle timeout in seconds (15 min)
-daemon_startup_timeout = 5
-
-[search]
-topk = 20
-rerank = false
-filters = []
-
-[redaction]
-patterns = [
-    "(?i)api_key\\\\s*[:=]\\\\s*['\\\"]?[A-Za-z0-9-_]{{16,}}",
-    "(?i)secret\\\\s*[:=]\\\\s*['\\\"]?[A-Za-z0-9-_]{{16,}}",
-    "(?i)password\\\\s*[:=]\\\\s*['\\\"]?[A-Za-z0-9-_]{{8,}}",
-]
-max_file_mb = 5
-
-[display]
-syntax_highlighting = true
-color_scheme = "auto"
-theme = "ansi"
 """
 
     # Ensure parent directory exists

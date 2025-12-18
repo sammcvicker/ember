@@ -5,12 +5,7 @@ Small retrieval-focused model (~130MB RAM, 33M params).
 """
 
 import hashlib
-import logging
 from typing import TYPE_CHECKING
-
-from ember.adapters.local_models.oom_retry import embed_with_oom_retry
-
-logger = logging.getLogger(__name__)
 
 # Lazy import - only load when actually needed
 if TYPE_CHECKING:
@@ -143,8 +138,6 @@ class BGESmallEmbedder:
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
         """Embed a batch of texts into vectors.
 
-        Automatically retries with smaller batch sizes on CUDA OOM errors.
-
         Args:
             texts: List of text strings to embed.
 
@@ -161,19 +154,18 @@ class BGESmallEmbedder:
         try:
             model = self._ensure_model_loaded()
 
-            def encode_with_batch_size(batch_size: int) -> list[list[float]]:
-                """Inner function for OOM retry wrapper."""
-                embeddings = model.encode(
-                    texts,
-                    batch_size=batch_size,
-                    show_progress_bar=False,
-                    convert_to_numpy=True,
-                    normalize_embeddings=True,  # L2 normalization
-                )
-                return [emb.tolist() for emb in embeddings]
+            # sentence-transformers handles batching internally
+            # but we can specify batch_size for control
+            embeddings = model.encode(
+                texts,
+                batch_size=self._batch_size,
+                show_progress_bar=False,
+                convert_to_numpy=True,
+                normalize_embeddings=True,  # L2 normalization
+            )
 
-            # Use OOM retry wrapper for automatic batch size reduction
-            return embed_with_oom_retry(encode_with_batch_size, self._batch_size)
+            # Convert numpy arrays to lists
+            return [emb.tolist() for emb in embeddings]
 
         except Exception as e:
             raise RuntimeError(f"Failed to embed {len(texts)} texts: {e}") from e

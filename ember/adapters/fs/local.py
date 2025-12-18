@@ -94,6 +94,5 @@ class LocalFileSystem:
             return None
         try:
             return path.read_text(errors="replace").splitlines()
-        except OSError:
-            # File system errors: permission denied, I/O errors, etc.
+        except Exception:
             return None

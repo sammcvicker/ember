@@ -16,7 +16,6 @@ from ember.core.presentation.context_renderer import ContextRenderer
 from ember.core.presentation.json_formatter import JsonResultFormatter
 from ember.core.presentation.result_presenter import ResultPresenter
 from ember.domain.config import DisplayConfig, EmberConfig
-from ember.domain.entities import SearchExplanation
 
 
 @dataclass
@@ -45,9 +44,7 @@ class MockSearchResult:
     score: float = 0.95
     rank: int = 1
     preview: str = "def test_function():"
-    explanation: SearchExplanation = field(
-        default_factory=lambda: SearchExplanation(fused_score=0.0)
-    )
+    explanation: dict = field(default_factory=dict)
 
     def format_preview(self, max_lines: int = 3) -> str:
         """Generate preview text from chunk content."""

@@ -379,11 +379,6 @@ model = "jina-code-v2"  # or "bge-small", "minilm", "auto"
 mode = "daemon"  # or "direct"
 daemon_timeout = 900  # 15 minutes
 
-[model]
-model = "jina-code-v2"  # or "bge-small", "minilm", "auto"
-mode = "daemon"  # or "direct"
-daemon_timeout = 900  # 15 minutes
-
 [redaction]
 patterns = []            # Regex patterns for secret redaction
 max_file_mb = 5          # Skip files larger than this

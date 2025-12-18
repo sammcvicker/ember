@@ -1,11 +1,10 @@
 """SQLite FTS5 adapter implementing TextSearch protocol for full-text search."""
 
+import sqlite3
 from pathlib import Path
 
-from ember.adapters.sqlite.base_repository import SQLiteBaseRepository
 
-
-class SQLiteFTS(SQLiteBaseRepository):
+class SQLiteFTS:
     """SQLite FTS5 implementation of TextSearch for BM25-style full-text search.
 
     This adapter uses the FTS5 virtual table 'chunk_text' which is automatically
@@ -19,7 +18,37 @@ class SQLiteFTS(SQLiteBaseRepository):
         Args:
             db_path: Path to SQLite database file.
         """
-        super().__init__(db_path)
+        self.db_path = db_path
+        self._conn: sqlite3.Connection | None = None
+
+    def _get_connection(self) -> sqlite3.Connection:
+        """Get a database connection.
+
+        Reuses an existing connection if available, otherwise creates a new one.
+        Uses check_same_thread=False to allow use from different threads, which
+        is required for interactive search where queries run in a thread executor.
+
+        Returns:
+            SQLite connection object.
+        """
+        if self._conn is None:
+            self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        return self._conn
+
+    def close(self) -> None:
+        """Close the database connection if open."""
+        if self._conn is not None:
+            self._conn.close()
+            self._conn = None
+
+    def __enter__(self) -> "SQLiteFTS":
+        """Enter context manager."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
+        """Exit context manager, closing the database connection."""
+        self.close()
+        return False
 
     def add(self, chunk_id: str, text: str, metadata: dict[str, str]) -> None:
         """Add a document to the text search index.
