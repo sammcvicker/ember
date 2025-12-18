@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Concurrent sync and recovery scenario tests** (#323)
+  - Added integration tests for critical concurrent access and recovery behaviors
+  - Concurrent operations: sequential chunk additions, concurrent reads from multiple threads, sequential meta updates
+  - Database corruption recovery: corrupted header detection, truncated database detection, missing database creation, database locked error handling
+  - Transaction rollback verification: embedding failure rollback, vector storage failure rollback, rollback continues on delete failures
+  - Daemon timeout handling: embedder timeout returns failure, connection refused returns failure, ensure_synced handles embedding failure gracefully
 - **Domain entity validation** (#322)
   - `Chunk` validates `content_hash` and `file_hash` are 64-char lowercase hex blake3 hashes
   - `Chunk` validates `tree_sha` is empty or 40-char lowercase hex git SHA
