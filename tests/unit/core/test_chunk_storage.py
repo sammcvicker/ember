@@ -43,9 +43,11 @@ def storage_service(
 def create_test_chunk(
     chunk_id: str = "chunk1",
     content: str = "def hello(): pass",
-    content_hash: str = "hash1",
+    content_hash: str | None = None,
 ) -> Chunk:
     """Create a test Chunk entity."""
+    if content_hash is None:
+        content_hash = Chunk.compute_content_hash(content)
     return Chunk(
         id=chunk_id,
         project_id="test_project",
@@ -56,8 +58,8 @@ def create_test_chunk(
         end_line=1,
         content=content,
         content_hash=content_hash,
-        file_hash="file_hash",
-        tree_sha="tree_sha",
+        file_hash=Chunk.compute_content_hash("file content"),
+        tree_sha="a" * 40,
         rev="worktree",
     )
 
@@ -166,9 +168,9 @@ class TestStoreChunksAndEmbeddings:
         mock_embedder: Mock,
     ) -> None:
         """Storing multiple chunks should count new and existing separately."""
-        chunk1 = create_test_chunk("chunk1", "content1", "hash1")
-        chunk2 = create_test_chunk("chunk2", "content2", "hash2")
-        chunk3 = create_test_chunk("chunk3", "content3", "hash3")
+        chunk1 = create_test_chunk("chunk1", "content1")
+        chunk2 = create_test_chunk("chunk2", "content2")
+        chunk3 = create_test_chunk("chunk3", "content3")
 
         # chunk1 is new, chunk2 exists, chunk3 is new
         mock_chunk_repo.find_by_content_hash.side_effect = [
@@ -193,8 +195,8 @@ class TestStoreChunksAndEmbeddings:
         mock_embedder: Mock,
     ) -> None:
         """store_chunks_and_embeddings() should batch embed all chunk contents."""
-        chunk1 = create_test_chunk("chunk1", "content1", "hash1")
-        chunk2 = create_test_chunk("chunk2", "content2", "hash2")
+        chunk1 = create_test_chunk("chunk1", "content1")
+        chunk2 = create_test_chunk("chunk2", "content2")
         mock_chunk_repo.find_by_content_hash.return_value = []
         mock_embedder.embed_texts.return_value = [[0.1] * 384] * 2
 
@@ -296,8 +298,8 @@ class TestRollback:
         mock_embedder: Mock,
     ) -> None:
         """Rollback should continue even if individual deletes fail."""
-        chunk1 = create_test_chunk("chunk1", "content1", "hash1")
-        chunk2 = create_test_chunk("chunk2", "content2", "hash2")
+        chunk1 = create_test_chunk("chunk1", "content1")
+        chunk2 = create_test_chunk("chunk2", "content2")
         mock_chunk_repo.find_by_content_hash.return_value = []
         mock_embedder.embed_texts.side_effect = RuntimeError("Error")
 

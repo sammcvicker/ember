@@ -14,6 +14,7 @@ from ember.domain.entities import (
     SearchResultSet,
     SyncMode,
 )
+from ember.domain.value_objects import SUPPORTED_LANGUAGES
 
 
 def test_chunk_compute_content_hash():
@@ -106,6 +107,11 @@ class TestQueryValidation:
 class TestChunkValidation:
     """Tests for Chunk entity validation."""
 
+    # Valid hash constants for tests
+    VALID_CONTENT_HASH = "a" * 64
+    VALID_FILE_HASH = "b" * 64
+    VALID_TREE_SHA = "c" * 40
+
     def test_chunk_valid_creation(self):
         """Test creating a valid Chunk."""
         chunk = Chunk(
@@ -117,9 +123,9 @@ class TestChunkValidation:
             start_line=1,
             end_line=10,
             content="code",
-            content_hash="hash",
-            file_hash="fhash",
-            tree_sha="tree",
+            content_hash=self.VALID_CONTENT_HASH,
+            file_hash=self.VALID_FILE_HASH,
+            tree_sha=self.VALID_TREE_SHA,
             rev="HEAD",
         )
         assert chunk.start_line == 1
@@ -137,9 +143,9 @@ class TestChunkValidation:
                 start_line=0,
                 end_line=10,
                 content="code",
-                content_hash="hash",
-                file_hash="fhash",
-                tree_sha="tree",
+                content_hash=self.VALID_CONTENT_HASH,
+                file_hash=self.VALID_FILE_HASH,
+                tree_sha=self.VALID_TREE_SHA,
                 rev="HEAD",
             )
 
@@ -155,9 +161,9 @@ class TestChunkValidation:
                 start_line=1,
                 end_line=0,
                 content="code",
-                content_hash="hash",
-                file_hash="fhash",
-                tree_sha="tree",
+                content_hash=self.VALID_CONTENT_HASH,
+                file_hash=self.VALID_FILE_HASH,
+                tree_sha=self.VALID_TREE_SHA,
                 rev="HEAD",
             )
 
@@ -173,9 +179,9 @@ class TestChunkValidation:
                 start_line=-1,
                 end_line=10,
                 content="code",
-                content_hash="hash",
-                file_hash="fhash",
-                tree_sha="tree",
+                content_hash=self.VALID_CONTENT_HASH,
+                file_hash=self.VALID_FILE_HASH,
+                tree_sha=self.VALID_TREE_SHA,
                 rev="HEAD",
             )
 
@@ -191,9 +197,9 @@ class TestChunkValidation:
                 start_line=20,
                 end_line=10,
                 content="code",
-                content_hash="hash",
-                file_hash="fhash",
-                tree_sha="tree",
+                content_hash=self.VALID_CONTENT_HASH,
+                file_hash=self.VALID_FILE_HASH,
+                tree_sha=self.VALID_TREE_SHA,
                 rev="HEAD",
             )
 
@@ -208,9 +214,9 @@ class TestChunkValidation:
             start_line=5,
             end_line=5,
             content="code",
-            content_hash="hash",
-            file_hash="fhash",
-            tree_sha="tree",
+            content_hash=self.VALID_CONTENT_HASH,
+            file_hash=self.VALID_FILE_HASH,
+            tree_sha=self.VALID_TREE_SHA,
             rev="HEAD",
         )
         assert chunk.start_line == chunk.end_line == 5
@@ -236,9 +242,9 @@ class TestSearchResultSet:
             start_line=1,
             end_line=10,
             content="def foo(): pass",
-            content_hash="hash",
-            file_hash="fhash",
-            tree_sha="tree",
+            content_hash="a" * 64,
+            file_hash="b" * 64,
+            tree_sha="c" * 40,
             rev="HEAD",
         )
 
@@ -746,9 +752,9 @@ class TestSearchResultWithExplanation:
             start_line=1,
             end_line=10,
             content="def foo(): pass",
-            content_hash="hash",
-            file_hash="fhash",
-            tree_sha="tree",
+            content_hash="a" * 64,
+            file_hash="b" * 64,
+            tree_sha="c" * 40,
             rev="HEAD",
         )
 
@@ -800,3 +806,289 @@ class TestSearchResultWithExplanation:
         assert fused == 0.9
         assert bm25 == 0.7
         assert vector == 0.6
+
+
+# =============================================================================
+# Chunk hash validation tests (#322)
+# =============================================================================
+
+
+class TestChunkHashValidation:
+    """Tests for Chunk entity hash field validation."""
+
+    def _make_chunk(self, **kwargs) -> Chunk:
+        """Helper to create a chunk with defaults."""
+        defaults = {
+            "id": "test_id",
+            "project_id": "proj",
+            "path": Path("file.py"),
+            "lang": "py",
+            "symbol": "func",
+            "start_line": 1,
+            "end_line": 10,
+            "content": "def foo(): pass",
+            "content_hash": "a" * 64,  # Valid blake3 hash
+            "file_hash": "b" * 64,  # Valid blake3 hash
+            "tree_sha": "c" * 40,  # Valid git SHA
+            "rev": "HEAD",
+        }
+        defaults.update(kwargs)
+        return Chunk(**defaults)
+
+    def test_chunk_valid_blake3_hash_content(self):
+        """Test that valid blake3 content_hash is accepted."""
+        chunk = self._make_chunk(content_hash="a" * 64)
+        assert chunk.content_hash == "a" * 64
+
+    def test_chunk_valid_blake3_hash_file(self):
+        """Test that valid blake3 file_hash is accepted."""
+        chunk = self._make_chunk(file_hash="b" * 64)
+        assert chunk.file_hash == "b" * 64
+
+    def test_chunk_invalid_content_hash_format_raises_error(self):
+        """Test that content_hash with non-hex chars raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid blake3 hash.*content_hash"):
+            self._make_chunk(content_hash="not-a-valid-hash")
+
+    def test_chunk_invalid_content_hash_length_raises_error(self):
+        """Test that content_hash with wrong length raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid blake3 hash.*content_hash"):
+            self._make_chunk(content_hash="abc123")  # Too short
+
+    def test_chunk_invalid_file_hash_format_raises_error(self):
+        """Test that file_hash with non-hex chars raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid blake3 hash.*file_hash"):
+            self._make_chunk(file_hash="xyz-invalid-hash")
+
+    def test_chunk_invalid_file_hash_length_raises_error(self):
+        """Test that file_hash with wrong length raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid blake3 hash.*file_hash"):
+            self._make_chunk(file_hash="a" * 63)  # One char too short
+
+    def test_chunk_empty_content_hash_raises_error(self):
+        """Test that empty content_hash raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid blake3 hash.*content_hash"):
+            self._make_chunk(content_hash="")
+
+    def test_chunk_empty_file_hash_raises_error(self):
+        """Test that empty file_hash raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid blake3 hash.*file_hash"):
+            self._make_chunk(file_hash="")
+
+    def test_chunk_content_hash_uppercase_rejected(self):
+        """Test that uppercase hex in content_hash is rejected."""
+        with pytest.raises(ValueError, match="Invalid blake3 hash.*content_hash"):
+            self._make_chunk(content_hash="A" * 64)
+
+    def test_chunk_valid_tree_sha_format(self):
+        """Test that valid git tree SHA is accepted."""
+        chunk = self._make_chunk(tree_sha="a" * 40)
+        assert chunk.tree_sha == "a" * 40
+
+    def test_chunk_empty_tree_sha_valid(self):
+        """Test that empty tree_sha is valid (worktree mode)."""
+        chunk = self._make_chunk(tree_sha="")
+        assert chunk.tree_sha == ""
+
+    def test_chunk_invalid_tree_sha_raises_error(self):
+        """Test that invalid tree_sha format raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid git SHA.*tree_sha"):
+            self._make_chunk(tree_sha="not-valid-sha")
+
+    def test_chunk_tree_sha_wrong_length_raises_error(self):
+        """Test that tree_sha with wrong length raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid git SHA.*tree_sha"):
+            self._make_chunk(tree_sha="a" * 39)  # One char too short
+
+
+# =============================================================================
+# Chunk language validation tests (#322)
+# =============================================================================
+
+
+class TestChunkLanguageValidation:
+    """Tests for Chunk entity language code validation."""
+
+    def _make_chunk(self, **kwargs) -> Chunk:
+        """Helper to create a chunk with defaults."""
+        defaults = {
+            "id": "test_id",
+            "project_id": "proj",
+            "path": Path("file.py"),
+            "lang": "py",
+            "symbol": "func",
+            "start_line": 1,
+            "end_line": 10,
+            "content": "def foo(): pass",
+            "content_hash": "a" * 64,
+            "file_hash": "b" * 64,
+            "tree_sha": "c" * 40,
+            "rev": "HEAD",
+        }
+        defaults.update(kwargs)
+        return Chunk(**defaults)
+
+    def test_chunk_valid_language_codes(self):
+        """Test all supported language codes are accepted."""
+        for lang in SUPPORTED_LANGUAGES:
+            chunk = self._make_chunk(lang=lang)
+            assert chunk.lang == lang
+
+    def test_chunk_invalid_language_code_raises_error(self):
+        """Test that invalid language code raises ValueError."""
+        with pytest.raises(ValueError, match="Unknown language.*xyz"):
+            self._make_chunk(lang="xyz")
+
+    def test_chunk_empty_language_code_raises_error(self):
+        """Test that empty language code raises ValueError."""
+        with pytest.raises(ValueError, match="Unknown language"):
+            self._make_chunk(lang="")
+
+
+# =============================================================================
+# Chunk content validation tests (#322)
+# =============================================================================
+
+
+class TestChunkContentValidation:
+    """Tests for Chunk entity content validation."""
+
+    def _make_chunk(self, **kwargs) -> Chunk:
+        """Helper to create a chunk with defaults."""
+        defaults = {
+            "id": "test_id",
+            "project_id": "proj",
+            "path": Path("file.py"),
+            "lang": "py",
+            "symbol": "func",
+            "start_line": 1,
+            "end_line": 10,
+            "content": "def foo(): pass",
+            "content_hash": "a" * 64,
+            "file_hash": "b" * 64,
+            "tree_sha": "c" * 40,
+            "rev": "HEAD",
+        }
+        defaults.update(kwargs)
+        return Chunk(**defaults)
+
+    def test_chunk_empty_content_raises_error(self):
+        """Test that empty content raises ValueError."""
+        with pytest.raises(ValueError, match="content cannot be empty"):
+            self._make_chunk(content="")
+
+    def test_chunk_whitespace_only_content_raises_error(self):
+        """Test that whitespace-only content raises ValueError."""
+        with pytest.raises(ValueError, match="content cannot be empty"):
+            self._make_chunk(content="   \n\t  ")
+
+    def test_chunk_valid_content_accepted(self):
+        """Test that valid content is accepted."""
+        chunk = self._make_chunk(content="x")
+        assert chunk.content == "x"
+
+
+# =============================================================================
+# SearchExplanation score validation tests (#322)
+# =============================================================================
+
+
+class TestSearchExplanationScoreValidation:
+    """Tests for SearchExplanation score validation."""
+
+    def test_valid_scores_in_range(self):
+        """Test that valid scores in 0.0-1.0 range are accepted."""
+        explanation = SearchExplanation(
+            fused_score=0.95,
+            bm25_score=0.8,
+            vector_score=0.7,
+        )
+        assert explanation.fused_score == 0.95
+        assert explanation.bm25_score == 0.8
+        assert explanation.vector_score == 0.7
+
+    def test_scores_at_boundaries(self):
+        """Test that scores at 0.0 and 1.0 boundaries are valid."""
+        explanation = SearchExplanation(
+            fused_score=1.0,
+            bm25_score=0.0,
+            vector_score=1.0,
+        )
+        assert explanation.fused_score == 1.0
+        assert explanation.bm25_score == 0.0
+        assert explanation.vector_score == 1.0
+
+    def test_negative_fused_score_raises_error(self):
+        """Test that negative fused_score raises ValueError."""
+        with pytest.raises(ValueError, match="fused_score must be between"):
+            SearchExplanation(fused_score=-0.1)
+
+    def test_fused_score_above_one_raises_error(self):
+        """Test that fused_score > 1.0 raises ValueError."""
+        with pytest.raises(ValueError, match="fused_score must be between"):
+            SearchExplanation(fused_score=1.5)
+
+    def test_negative_bm25_score_raises_error(self):
+        """Test that negative bm25_score raises ValueError."""
+        with pytest.raises(ValueError, match="bm25_score must be between"):
+            SearchExplanation(fused_score=0.5, bm25_score=-0.1)
+
+    def test_bm25_score_above_one_raises_error(self):
+        """Test that bm25_score > 1.0 raises ValueError."""
+        with pytest.raises(ValueError, match="bm25_score must be between"):
+            SearchExplanation(fused_score=0.5, bm25_score=1.1)
+
+    def test_negative_vector_score_raises_error(self):
+        """Test that negative vector_score raises ValueError."""
+        with pytest.raises(ValueError, match="vector_score must be between"):
+            SearchExplanation(fused_score=0.5, vector_score=-0.5)
+
+    def test_vector_score_above_one_raises_error(self):
+        """Test that vector_score > 1.0 raises ValueError."""
+        with pytest.raises(ValueError, match="vector_score must be between"):
+            SearchExplanation(fused_score=0.5, vector_score=2.0)
+
+
+# =============================================================================
+# RepoState invariant validation tests (#322)
+# =============================================================================
+
+
+class TestRepoStateInvariantValidation:
+    """Tests for RepoState entity invariant validation."""
+
+    def test_initialized_state_requires_model_fingerprint(self):
+        """Test that initialized state (non-empty tree_sha) requires model_fingerprint."""
+        now = datetime.now(UTC).isoformat()
+        with pytest.raises(ValueError, match="model_fingerprint.*required"):
+            RepoState(
+                last_tree_sha="a" * 40,  # Initialized (has tree_sha)
+                last_sync_mode=SyncMode.WORKTREE,
+                model_fingerprint="",  # Empty - should fail
+                version="1.0.0",
+                indexed_at=now,
+            )
+
+    def test_uninitialized_state_allows_empty_model_fingerprint(self):
+        """Test that uninitialized state (empty tree_sha) can have empty model_fingerprint."""
+        now = datetime.now(UTC).isoformat()
+        state = RepoState(
+            last_tree_sha="",  # Uninitialized
+            last_sync_mode=SyncMode.NONE,
+            model_fingerprint="",  # Empty OK for uninitialized
+            version="1.0.0",
+            indexed_at=now,
+        )
+        assert state.model_fingerprint == ""
+
+    def test_initialized_state_with_model_fingerprint_valid(self):
+        """Test that initialized state with non-empty model_fingerprint is valid."""
+        now = datetime.now(UTC).isoformat()
+        state = RepoState(
+            last_tree_sha="a" * 40,
+            last_sync_mode=SyncMode.WORKTREE,
+            model_fingerprint="jina-v2-code",
+            version="1.0.0",
+            indexed_at=now,
+        )
+        assert state.model_fingerprint == "jina-v2-code"

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Domain entity validation** (#322)
+  - `Chunk` validates `content_hash` and `file_hash` are 64-char lowercase hex blake3 hashes
+  - `Chunk` validates `tree_sha` is empty or 40-char lowercase hex git SHA
+  - `Chunk` validates `lang` is a supported language code from `SUPPORTED_LANGUAGES`
+  - `Chunk` validates `content` is not empty/whitespace
+  - `SearchExplanation` validates all scores are in range [0.0, 1.0]
+  - `RepoState` validates initialized state (non-empty tree_sha) requires model_fingerprint
+
 ### Changed
 - **Extracted SQLite base repository class to reduce duplication** (#321)
   - Created `SQLiteBaseRepository` base class with thread-safe connection management

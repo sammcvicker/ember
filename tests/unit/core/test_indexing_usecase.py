@@ -63,7 +63,7 @@ class TestGetFilesToIndexFullReindex:
 
         files, is_incremental = usecase._get_files_to_index(
             repo_root=repo_root,
-            tree_sha="abc123",
+            tree_sha="a" * 40,
             path_filters=[],
             force_reindex=True,
         )
@@ -84,7 +84,7 @@ class TestGetFilesToIndexFullReindex:
 
         files, is_incremental = usecase._get_files_to_index(
             repo_root=repo_root,
-            tree_sha="abc123",
+            tree_sha="a" * 40,
             path_filters=[],
             force_reindex=False,
         )
@@ -100,12 +100,13 @@ class TestGetFilesToIndexNoChanges:
     def test_same_tree_sha_returns_empty_list(self, mock_deps: dict) -> None:
         """When tree_sha matches last_tree_sha, return empty list."""
         usecase = IndexingUseCase(**mock_deps)
-        mock_deps["meta_repo"].get.return_value = "abc123"
+        same_sha = "a" * 40
+        mock_deps["meta_repo"].get.return_value = same_sha
         repo_root = Path("/repo")
 
         files, is_incremental = usecase._get_files_to_index(
             repo_root=repo_root,
-            tree_sha="abc123",
+            tree_sha=same_sha,
             path_filters=[],
             force_reindex=False,
         )
@@ -122,7 +123,9 @@ class TestGetFilesToIndexIncremental:
     def test_incremental_returns_added_files(self, mock_deps: dict) -> None:
         """Incremental sync returns added files."""
         usecase = IndexingUseCase(**mock_deps)
-        mock_deps["meta_repo"].get.return_value = "old123"
+        old_sha = "c" * 40
+        new_sha = "d" * 40
+        mock_deps["meta_repo"].get.return_value = old_sha
         mock_deps["vcs"].diff_files.return_value = [
             ("added", "new_file.py"),
         ]
@@ -130,7 +133,7 @@ class TestGetFilesToIndexIncremental:
 
         files, is_incremental = usecase._get_files_to_index(
             repo_root=repo_root,
-            tree_sha="new456",
+            tree_sha=new_sha,
             path_filters=[],
             force_reindex=False,
         )
@@ -139,7 +142,7 @@ class TestGetFilesToIndexIncremental:
         assert len(files) == 1
         assert files[0] == repo_root / "new_file.py"
         mock_deps["vcs"].diff_files.assert_called_once_with(
-            from_sha="old123", to_sha="new456"
+            from_sha=old_sha, to_sha=new_sha
         )
 
     def test_incremental_returns_modified_files(self, mock_deps: dict) -> None:
@@ -153,7 +156,7 @@ class TestGetFilesToIndexIncremental:
 
         files, is_incremental = usecase._get_files_to_index(
             repo_root=repo_root,
-            tree_sha="new456",
+            tree_sha="b" * 40,
             path_filters=[],
             force_reindex=False,
         )
@@ -173,7 +176,7 @@ class TestGetFilesToIndexIncremental:
 
         files, is_incremental = usecase._get_files_to_index(
             repo_root=repo_root,
-            tree_sha="new456",
+            tree_sha="b" * 40,
             path_filters=[],
             force_reindex=False,
         )
@@ -194,7 +197,7 @@ class TestGetFilesToIndexIncremental:
 
         files, is_incremental = usecase._get_files_to_index(
             repo_root=repo_root,
-            tree_sha="new456",
+            tree_sha="b" * 40,
             path_filters=[],
             force_reindex=False,
         )
@@ -217,7 +220,7 @@ class TestGetFilesToIndexIncremental:
 
         files, is_incremental = usecase._get_files_to_index(
             repo_root=repo_root,
-            tree_sha="new456",
+            tree_sha="b" * 40,
             path_filters=[],
             force_reindex=False,
         )
@@ -248,7 +251,7 @@ class TestGetFilesToIndexCodeFileFilter:
 
         files, is_incremental = usecase._get_files_to_index(
             repo_root=repo_root,
-            tree_sha="abc123",
+            tree_sha="a" * 40,
             path_filters=[],
             force_reindex=False,
         )
@@ -285,7 +288,7 @@ class TestGetFilesToIndexCodeFileFilter:
 
         files, is_incremental = usecase._get_files_to_index(
             repo_root=repo_root,
-            tree_sha="abc123",
+            tree_sha="a" * 40,
             path_filters=[],
             force_reindex=False,
         )
@@ -311,7 +314,7 @@ class TestGetFilesToIndexPathFilters:
 
         files, is_incremental = usecase._get_files_to_index(
             repo_root=repo_root,
-            tree_sha="abc123",
+            tree_sha="a" * 40,
             path_filters=["src/*.py"],
             force_reindex=False,
         )
@@ -332,7 +335,7 @@ class TestGetFilesToIndexPathFilters:
 
         files, is_incremental = usecase._get_files_to_index(
             repo_root=repo_root,
-            tree_sha="abc123",
+            tree_sha="a" * 40,
             path_filters=["src/*.py", "tests/*.py"],
             force_reindex=False,
         )
@@ -358,7 +361,7 @@ class TestGetFilesToIndexPathFilters:
 
         files, is_incremental = usecase._get_files_to_index(
             repo_root=repo_root,
-            tree_sha="abc123",
+            tree_sha="a" * 40,
             path_filters=["**/*.py"],  # ** matches any path, *.py matches filename
             force_reindex=False,
         )
@@ -379,7 +382,7 @@ class TestGetFilesToIndexPathFilters:
 
         files, is_incremental = usecase._get_files_to_index(
             repo_root=repo_root,
-            tree_sha="abc123",
+            tree_sha="a" * 40,
             path_filters=["nonexistent/*.py"],
             force_reindex=False,
         )
@@ -400,7 +403,7 @@ class TestGetFilesToIndexPathFilters:
 
         files, is_incremental = usecase._get_files_to_index(
             repo_root=repo_root,
-            tree_sha="abc123",
+            tree_sha="a" * 40,
             path_filters=[],
             force_reindex=False,
         )
@@ -427,7 +430,7 @@ class TestGetFilesToIndexCombined:
 
         files, is_incremental = usecase._get_files_to_index(
             repo_root=repo_root,
-            tree_sha="new456",
+            tree_sha="b" * 40,
             path_filters=["src/*.py"],
             force_reindex=False,
         )
@@ -449,7 +452,7 @@ class TestGetFilesToIndexCombined:
 
         files, is_incremental = usecase._get_files_to_index(
             repo_root=repo_root,
-            tree_sha="abc123",
+            tree_sha="a" * 40,
             path_filters=["tests/*.py"],  # Direct match with tests directory
             force_reindex=True,
         )
@@ -471,7 +474,7 @@ class TestGetFilesToIndexCombined:
 
         files, is_incremental = usecase._get_files_to_index(
             repo_root=repo_root,
-            tree_sha="abc123",
+            tree_sha="a" * 40,
             path_filters=[],
             force_reindex=False,
         )
@@ -594,7 +597,7 @@ class TestIndexFileErrorHandling:
         result = usecase._index_file(
             file_path=Path("/repo/test.py"),
             repo_root=Path("/repo"),
-            tree_sha="abc123",
+            tree_sha="a" * 40,
             sync_mode="worktree",
         )
 
@@ -615,7 +618,7 @@ class TestIndexFileErrorHandling:
         result = usecase._index_file(
             file_path=Path("/repo/test.py"),
             repo_root=Path("/repo"),
-            tree_sha="abc123",
+            tree_sha="a" * 40,
             sync_mode="worktree",
         )
 
@@ -635,7 +638,7 @@ class TestIndexFileErrorHandling:
         result = usecase._index_file(
             file_path=Path("/repo/test.py"),
             repo_root=Path("/repo"),
-            tree_sha="abc123",
+            tree_sha="a" * 40,
             sync_mode="worktree",
         )
 
@@ -657,7 +660,7 @@ class TestIndexFileErrorHandling:
         result = usecase._index_file(
             file_path=Path("/repo/test.py"),
             repo_root=Path("/repo"),
-            tree_sha="abc123",
+            tree_sha="a" * 40,
             sync_mode="worktree",
         )
 
@@ -676,7 +679,7 @@ class TestIndexFileErrorHandling:
         result = usecase._index_file(
             file_path=Path("/repo/test.py"),
             repo_root=Path("/repo"),
-            tree_sha="abc123",
+            tree_sha="a" * 40,
             sync_mode="worktree",
         )
 
@@ -693,7 +696,7 @@ class TestIndexFileErrorHandling:
         result = usecase._index_file(
             file_path=Path("/repo/test.py"),
             repo_root=Path("/repo"),
-            tree_sha="abc123",
+            tree_sha="a" * 40,
             sync_mode="worktree",
         )
 
@@ -717,7 +720,7 @@ class TestIndexFileErrorHandling:
         result = usecase._index_file(
             file_path=Path("/repo/test.py"),
             repo_root=Path("/repo"),
-            tree_sha="abc123",
+            tree_sha="a" * 40,
             sync_mode="worktree",
         )
 

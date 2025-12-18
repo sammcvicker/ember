@@ -15,6 +15,7 @@ from pathlib import Path
 import blake3
 
 from ember.domain.value_objects import (
+    SUPPORTED_LANGUAGES,
     ISO8601Timestamp,
     LanguageFilter,
     PathFilter,
@@ -97,18 +98,19 @@ class Chunk:
         id: Unique identifier (blake3 of project_id + path + start_line + end_line).
         project_id: Project identifier (typically repo root path hash).
         path: File path relative to project root.
-        lang: Language identifier (py, ts, go, rs, etc.).
+        lang: Language identifier from SUPPORTED_LANGUAGES (py, ts, go, rs, etc.).
         symbol: Symbol name (function/class name) or None for line chunks.
         start_line: Starting line number (1-indexed).
         end_line: Ending line number (inclusive).
-        content: The actual code content.
-        content_hash: blake3 hash of content (for deduplication).
-        file_hash: blake3 hash of entire file (for change detection).
-        tree_sha: Git tree SHA when chunk was indexed.
+        content: The actual code content (must not be empty).
+        content_hash: blake3 hash of content (64 lowercase hex chars).
+        file_hash: blake3 hash of entire file (64 lowercase hex chars).
+        tree_sha: Git tree SHA when chunk was indexed (40 hex chars or empty).
         rev: Git revision (commit SHA) when indexed, or "worktree".
 
     Raises:
-        ValueError: If line numbers are invalid (< 1 or start > end).
+        ValueError: If any field fails validation (invalid hashes, unknown language,
+            empty content, or invalid line numbers).
     """
 
     id: str
@@ -124,13 +126,51 @@ class Chunk:
     tree_sha: str
     rev: str
 
+    # Regex for validating blake3 hashes (64 lowercase hex chars)
+    _BLAKE3_PATTERN = re.compile(r"^[a-f0-9]{64}$")
+    # Regex for validating git SHAs (40 lowercase hex chars)
+    _GIT_SHA_PATTERN = re.compile(r"^[a-f0-9]{40}$")
+
     def __post_init__(self) -> None:
         """Validate chunk data after initialization."""
+        # Validate line numbers
         if self.start_line < 1 or self.end_line < 1:
             raise ValueError("Line numbers must be >= 1")
         if self.start_line > self.end_line:
             raise ValueError(
                 f"start_line ({self.start_line}) > end_line ({self.end_line})"
+            )
+
+        # Validate content is not empty
+        if not self.content or not self.content.strip():
+            raise ValueError("content cannot be empty")
+
+        # Validate content_hash (required, 64 lowercase hex chars)
+        if not self._BLAKE3_PATTERN.match(self.content_hash):
+            raise ValueError(
+                f"Invalid blake3 hash for content_hash: must be 64 lowercase hex chars, "
+                f"got: {self.content_hash!r}"
+            )
+
+        # Validate file_hash (required, 64 lowercase hex chars)
+        if not self._BLAKE3_PATTERN.match(self.file_hash):
+            raise ValueError(
+                f"Invalid blake3 hash for file_hash: must be 64 lowercase hex chars, "
+                f"got: {self.file_hash!r}"
+            )
+
+        # Validate tree_sha (empty or 40 lowercase hex chars)
+        if self.tree_sha and not self._GIT_SHA_PATTERN.match(self.tree_sha):
+            raise ValueError(
+                f"Invalid git SHA for tree_sha: must be empty or 40 lowercase hex chars, "
+                f"got: {self.tree_sha!r}"
+            )
+
+        # Validate language code
+        if self.lang not in SUPPORTED_LANGUAGES:
+            supported = ", ".join(sorted(SUPPORTED_LANGUAGES))
+            raise ValueError(
+                f"Unknown language '{self.lang}'. Supported languages: {supported}"
             )
 
     @staticmethod
@@ -228,6 +268,13 @@ class RepoState:
         # Validate version is not empty
         if not self.version:
             raise ValueError("version cannot be empty")
+
+        # Validate invariant: initialized state requires model_fingerprint
+        # An initialized state has a non-empty tree_sha, and must have a model_fingerprint
+        if self.last_tree_sha and not self.model_fingerprint:
+            raise ValueError(
+                "model_fingerprint is required when tree_sha is set (initialized state)"
+            )
 
         # Validate and convert indexed_at to ISO8601Timestamp
         if not isinstance(self.indexed_at, ISO8601Timestamp):
@@ -331,14 +378,32 @@ class SearchExplanation:
     Provides typed access to scoring details from hybrid search.
 
     Attributes:
-        fused_score: Combined score from reciprocal rank fusion.
-        bm25_score: BM25 full-text search score.
-        vector_score: Semantic vector similarity score.
+        fused_score: Combined score from reciprocal rank fusion (0.0-1.0).
+        bm25_score: BM25 full-text search score (0.0-1.0).
+        vector_score: Semantic vector similarity score (0.0-1.0).
+
+    Raises:
+        ValueError: If any score is outside the valid range [0.0, 1.0].
     """
 
     fused_score: float
     bm25_score: float = 0.0
     vector_score: float = 0.0
+
+    def __post_init__(self) -> None:
+        """Validate score ranges after initialization."""
+        if not 0.0 <= self.fused_score <= 1.0:
+            raise ValueError(
+                f"fused_score must be between 0.0 and 1.0, got: {self.fused_score}"
+            )
+        if not 0.0 <= self.bm25_score <= 1.0:
+            raise ValueError(
+                f"bm25_score must be between 0.0 and 1.0, got: {self.bm25_score}"
+            )
+        if not 0.0 <= self.vector_score <= 1.0:
+            raise ValueError(
+                f"vector_score must be between 0.0 and 1.0, got: {self.vector_score}"
+            )
 
     def to_dict(self) -> dict[str, float]:
         """Convert to dictionary for JSON serialization.

@@ -42,8 +42,8 @@ def sample_chunk() -> Chunk:
         end_line=1,
         content=content,
         content_hash=Chunk.compute_content_hash(content),
-        file_hash="file-hash",
-        tree_sha="tree-sha",
+        file_hash=Chunk.compute_content_hash("file content"),
+        tree_sha="a" * 40,
         rev="worktree",
     )
 

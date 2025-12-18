@@ -57,8 +57,8 @@ def sample_python_chunk() -> Chunk:
         end_line=4,
         content=content,
         content_hash=Chunk.compute_content_hash(content),
-        file_hash="file_hash_123",
-        tree_sha="abc123",
+        file_hash=Chunk.compute_content_hash("file content 1"),
+        tree_sha="a" * 40,
         rev="worktree",
     )
 
@@ -186,8 +186,8 @@ class TestInteractiveSearchUIPreviewHighlighting:
             end_line=4,
             content=content,
             content_hash=Chunk.compute_content_hash(content),
-            file_hash="file_hash_456",
-            tree_sha="def456",
+            file_hash=Chunk.compute_content_hash("file content 2"),
+            tree_sha="b" * 40,
             rev="worktree",
         )
         ts_result = SearchResult(chunk=ts_chunk, score=0.90, rank=1)
@@ -286,8 +286,8 @@ class TestInteractiveSearchSession:
             end_line=5,
             content="test content",
             content_hash=Chunk.compute_content_hash("test content"),
-            file_hash="test_hash",
-            tree_sha="abc123",
+            file_hash=Chunk.compute_content_hash("file content 3"),
+            tree_sha="c" * 40,
             rev="worktree",
         )
         session.update_results([SearchResult(chunk=chunk, score=0.9, rank=1)], 100.0)
@@ -579,8 +579,8 @@ class TestInteractiveSearchUIResultsListColorSeparation:
             end_line=10,
             content=content2,
             content_hash=Chunk.compute_content_hash(content2),
-            file_hash="file_hash_789",
-            tree_sha="xyz789",
+            file_hash=Chunk.compute_content_hash("file content 4"),
+            tree_sha="d" * 40,
             rev="worktree",
         )
         result2 = SearchResult(chunk=chunk2, score=0.85, rank=2)
@@ -626,8 +626,8 @@ class TestInteractiveSearchUIResultsListColorSeparation:
             end_line=1,
             content=content,
             content_hash=Chunk.compute_content_hash(content),
-            file_hash="file_hash_nosym",
-            tree_sha="nosym123",
+            file_hash=Chunk.compute_content_hash("file content 5"),
+            tree_sha="e" * 40,
             rev="worktree",
         )
         result = SearchResult(chunk=chunk, score=0.75, rank=1)
