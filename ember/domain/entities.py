@@ -206,6 +206,37 @@ class Chunk:
         key = f"{project_id}:{path}:{start_line}:{end_line}"
         return blake3.blake3(key.encode("utf-8")).hexdigest()
 
+    def generate_preview(self, max_lines: int = 3) -> str:
+        """Generate a preview of this chunk's content.
+
+        Creates a shortened version of the chunk content suitable for display
+        in search results.
+
+        Args:
+            max_lines: Maximum number of lines to include in preview.
+
+        Returns:
+            Preview string with truncation indicator if content exceeds max_lines.
+        """
+        lines = self.content.split("\n")
+        preview_lines = lines[:max_lines]
+        if len(lines) > max_lines:
+            preview_lines.append("...")
+        return "\n".join(preview_lines)
+
+    def matches_language(self, lang_filter: str | None) -> bool:
+        """Check if this chunk matches the given language filter.
+
+        Args:
+            lang_filter: Language code to filter by, or None for no filtering.
+
+        Returns:
+            True if lang_filter is None or matches this chunk's language.
+        """
+        if lang_filter is None:
+            return True
+        return self.lang == lang_filter
+
 
 @dataclass
 class RepoState:
@@ -404,6 +435,18 @@ class SearchExplanation:
             raise ValueError(
                 f"vector_score must be between 0.0 and 1.0, got: {self.vector_score}"
             )
+
+    @property
+    def effective_score(self) -> float:
+        """Get the primary score for ranking.
+
+        The fused score is the combined score from RRF fusion and should be
+        used for ranking search results.
+
+        Returns:
+            The fused score value.
+        """
+        return self.fused_score
 
     def to_dict(self) -> dict[str, float]:
         """Convert to dictionary for JSON serialization.

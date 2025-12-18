@@ -1092,3 +1092,146 @@ class TestRepoStateInvariantValidation:
             indexed_at=now,
         )
         assert state.model_fingerprint == "jina-v2-code"
+
+
+# =============================================================================
+# Chunk.generate_preview tests (#331)
+# =============================================================================
+
+
+class TestChunkGeneratePreview:
+    """Tests for Chunk.generate_preview() method."""
+
+    def _make_chunk(self, content: str) -> Chunk:
+        """Helper to create a chunk with specific content."""
+        return Chunk(
+            id="test_id",
+            project_id="proj",
+            path=Path("file.py"),
+            lang="py",
+            symbol="func",
+            start_line=1,
+            end_line=10,
+            content=content,
+            content_hash="a" * 64,
+            file_hash="b" * 64,
+            tree_sha="c" * 40,
+            rev="HEAD",
+        )
+
+    def test_generate_preview_single_line(self):
+        """Test preview of single-line content."""
+        chunk = self._make_chunk("def foo(): pass")
+        preview = chunk.generate_preview()
+        assert preview == "def foo(): pass"
+
+    def test_generate_preview_exact_max_lines(self):
+        """Test preview when content has exactly max_lines."""
+        content = "line 1\nline 2\nline 3"
+        chunk = self._make_chunk(content)
+        preview = chunk.generate_preview(max_lines=3)
+        assert preview == content  # No ellipsis
+
+    def test_generate_preview_exceeds_max_lines(self):
+        """Test preview truncates and adds ellipsis."""
+        content = "line 1\nline 2\nline 3\nline 4\nline 5"
+        chunk = self._make_chunk(content)
+        preview = chunk.generate_preview(max_lines=3)
+        assert preview == "line 1\nline 2\nline 3\n..."
+
+    def test_generate_preview_default_max_lines(self):
+        """Test default max_lines is 3."""
+        content = "a\nb\nc\nd\ne"
+        chunk = self._make_chunk(content)
+        preview = chunk.generate_preview()
+        assert preview == "a\nb\nc\n..."
+
+    def test_generate_preview_custom_max_lines(self):
+        """Test custom max_lines parameter."""
+        content = "a\nb\nc\nd\ne"
+        chunk = self._make_chunk(content)
+        preview = chunk.generate_preview(max_lines=5)
+        assert preview == content  # All 5 lines fit
+
+    def test_generate_preview_empty_lines_preserved(self):
+        """Test that empty lines in content are preserved."""
+        content = "line 1\n\nline 3"
+        chunk = self._make_chunk(content)
+        preview = chunk.generate_preview()
+        assert preview == content
+
+
+# =============================================================================
+# Chunk.matches_language tests (#331)
+# =============================================================================
+
+
+class TestChunkMatchesLanguage:
+    """Tests for Chunk.matches_language() method."""
+
+    def _make_chunk(self, lang: str) -> Chunk:
+        """Helper to create a chunk with specific language."""
+        return Chunk(
+            id="test_id",
+            project_id="proj",
+            path=Path("file.py"),
+            lang=lang,
+            symbol="func",
+            start_line=1,
+            end_line=10,
+            content="code",
+            content_hash="a" * 64,
+            file_hash="b" * 64,
+            tree_sha="c" * 40,
+            rev="HEAD",
+        )
+
+    def test_matches_language_none_filter(self):
+        """Test that None filter matches any language."""
+        chunk = self._make_chunk("py")
+        assert chunk.matches_language(None) is True
+
+    def test_matches_language_exact_match(self):
+        """Test that matching language returns True."""
+        chunk = self._make_chunk("py")
+        assert chunk.matches_language("py") is True
+
+    def test_matches_language_no_match(self):
+        """Test that non-matching language returns False."""
+        chunk = self._make_chunk("py")
+        assert chunk.matches_language("ts") is False
+
+    def test_matches_language_various_languages(self):
+        """Test language matching with various languages."""
+        for lang in ["py", "ts", "go", "rs", "java"]:
+            chunk = self._make_chunk(lang)
+            assert chunk.matches_language(lang) is True
+            assert chunk.matches_language("other") is False
+
+
+# =============================================================================
+# SearchExplanation.effective_score tests (#331)
+# =============================================================================
+
+
+class TestSearchExplanationEffectiveScore:
+    """Tests for SearchExplanation.effective_score property."""
+
+    def test_effective_score_returns_fused_score(self):
+        """Test that effective_score returns fused_score."""
+        explanation = SearchExplanation(
+            fused_score=0.85,
+            bm25_score=0.7,
+            vector_score=0.6,
+        )
+        assert explanation.effective_score == 0.85
+
+    def test_effective_score_with_zero_fused(self):
+        """Test effective_score when fused_score is zero."""
+        explanation = SearchExplanation(fused_score=0.0)
+        assert explanation.effective_score == 0.0
+
+    def test_effective_score_with_max_fused(self):
+        """Test effective_score when fused_score is 1.0."""
+        explanation = SearchExplanation(fused_score=1.0)
+        assert explanation.effective_score == 1.0

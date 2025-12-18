@@ -100,32 +100,28 @@ class SearchUseCase:
         # 6. Retrieve full chunk objects (with metadata)
         retrieval = self._retrieve_chunks(top_chunk_ids)
 
-        # 7. Apply filters if specified
-        filtered_chunks = self._apply_filters(
-            retrieval.chunks,
-            path_filter=query.path_filter_str,
-            lang_filter=query.lang_filter_str,
-        )
+        # 7. Apply language filter using domain method
+        filtered_chunks = [
+            c for c in retrieval.chunks if c.matches_language(query.lang_filter_str)
+        ]
 
         # 8. Create SearchResult objects with scores
         score_map = dict(fused_scores)
+        fts_score_map = dict(fts_results)
+        vector_score_map = dict(vector_results)
         results = []
         for rank, chunk in enumerate(filtered_chunks[: query.topk], start=1):
             score = score_map.get(chunk.id, 0.0)
-
-            # Get individual scores for explanation
-            fts_score = self._get_score(fts_results, chunk.id)
-            vector_score = self._get_score(vector_results, chunk.id)
 
             result = SearchResult(
                 chunk=chunk,
                 score=score,
                 rank=rank,
-                preview=self._generate_preview(chunk),
+                preview=chunk.generate_preview(),
                 explanation=SearchExplanation(
                     fused_score=score,
-                    bm25_score=fts_score,
-                    vector_score=vector_score,
+                    bm25_score=fts_score_map.get(chunk.id, 0.0),
+                    vector_score=vector_score_map.get(chunk.id, 0.0),
                 ),
             )
             results.append(result)
@@ -204,62 +200,3 @@ class SearchUseCase:
             )
 
         return _RetrievalResult(chunks=chunks, missing_count=len(missing_ids))
-
-    def _apply_filters(
-        self,
-        chunks: list[Chunk],
-        path_filter: str | None,
-        lang_filter: str | None,
-    ) -> list[Chunk]:
-        """Apply language filter to chunks.
-
-        Note: Path filtering now happens during SQL queries in the search adapters,
-        not here. This method only handles lang_filter for backwards compatibility.
-
-        Args:
-            chunks: List of chunks to filter.
-            path_filter: Unused (kept for backwards compatibility).
-            lang_filter: Optional language code filter.
-
-        Returns:
-            Filtered list of chunks.
-        """
-        filtered = chunks
-
-        # Path filtering now happens during SQL query, not here
-
-        if lang_filter:
-            filtered = [c for c in filtered if c.lang == lang_filter]
-
-        return filtered
-
-    def _get_score(self, result_list: list[tuple[str, float]], chunk_id: str) -> float:
-        """Get score for a chunk_id from a result list.
-
-        Args:
-            result_list: List of (chunk_id, score) tuples.
-            chunk_id: The chunk identifier.
-
-        Returns:
-            Score if found, 0.0 otherwise.
-        """
-        for cid, score in result_list:
-            if cid == chunk_id:
-                return score
-        return 0.0
-
-    def _generate_preview(self, chunk: Chunk, max_lines: int = 3) -> str:
-        """Generate a preview of chunk content.
-
-        Args:
-            chunk: The chunk to preview.
-            max_lines: Maximum number of lines to include.
-
-        Returns:
-            Preview string.
-        """
-        lines = chunk.content.split("\n")
-        preview_lines = lines[:max_lines]
-        if len(lines) > max_lines:
-            preview_lines.append("...")
-        return "\n".join(preview_lines)
