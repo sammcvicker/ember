@@ -4,8 +4,11 @@ Implements the Embedder protocol by communicating with a daemon server.
 Falls back to direct mode if daemon is unavailable.
 """
 
+import contextlib
 import logging
 import socket
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -21,6 +24,49 @@ if TYPE_CHECKING:
     from ember.ports.embedders import Embedder
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Socket Connection Management
+# ============================================================================
+
+
+@contextmanager
+def daemon_socket_connection(
+    socket_path: Path,
+    timeout: float = 5.0,
+) -> Iterator[socket.socket]:
+    """Context manager for daemon socket connections.
+
+    Provides consistent socket setup, timeout configuration, and cleanup
+    for all daemon communication. Handles connection lifecycle automatically.
+
+    Args:
+        socket_path: Path to the Unix domain socket.
+        timeout: Socket operation timeout in seconds.
+
+    Yields:
+        Connected socket ready for communication.
+
+    Raises:
+        ConnectionRefusedError: If daemon is not accepting connections.
+        FileNotFoundError: If socket file doesn't exist.
+        TimeoutError: If connection times out.
+        OSError: For other socket-related errors.
+
+    Example:
+        with daemon_socket_connection(socket_path) as sock:
+            send_message(sock, request)
+            response = receive_message(sock, Response)
+    """
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock.settimeout(timeout)
+    try:
+        sock.connect(str(socket_path))
+        yield sock
+    finally:
+        with contextlib.suppress(OSError):
+            sock.close()
 
 
 class DaemonError(Exception):
@@ -173,30 +219,6 @@ class DaemonEmbedderClient:
             logger.error(f"Failed to start daemon: {e}", exc_info=True)
             return False
 
-    def _connect(self) -> socket.socket:
-        """Connect to daemon socket.
-
-        Returns:
-            Connected socket
-
-        Raises:
-            DaemonError: If connection fails
-        """
-        if not self.socket_path.exists():
-            raise DaemonError(f"Daemon socket not found: {self.socket_path}")
-
-        sock = None
-        try:
-            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            sock.settimeout(5.0)  # 5 second timeout
-            sock.connect(str(self.socket_path))
-            return sock
-        except Exception as e:
-            # Clean up socket on failure
-            if sock:
-                sock.close()
-            raise DaemonError(f"Failed to connect to daemon: {e}") from e
-
     def _daemon_embed(self, texts: list[str]) -> list[list[float]]:
         """Embed texts using daemon.
 
@@ -213,30 +235,27 @@ class DaemonEmbedderClient:
         if not self._ensure_daemon_running():
             raise DaemonError("Daemon is not running and failed to start")
 
-        sock = None
+        if not self.socket_path.exists():
+            raise DaemonError(f"Daemon socket not found: {self.socket_path}")
+
         try:
-            # Connect to daemon
-            sock = self._connect()
+            with daemon_socket_connection(self.socket_path, timeout=5.0) as sock:
+                # Send request
+                request = Request(method="embed_texts", params={"texts": texts})
+                send_message(sock, request)
 
-            # Send request
-            request = Request(method="embed_texts", params={"texts": texts})
-            send_message(sock, request)
+                # Receive response
+                response = receive_message(sock, Response)
 
-            # Receive response
-            response = receive_message(sock, Response)
+                # Check for errors
+                if response.is_error():
+                    error_msg = response.error.get("message", "Unknown error")
+                    raise DaemonError(f"Daemon error: {error_msg}")
 
-            # Check for errors
-            if response.is_error():
-                error_msg = response.error.get("message", "Unknown error")
-                raise DaemonError(f"Daemon error: {error_msg}")
-
-            return response.result
+                return response.result
 
         except (ProtocolError, OSError) as e:
             raise DaemonError(f"Daemon communication failed: {e}") from e
-        finally:
-            if sock:
-                sock.close()
 
     def ensure_loaded(self) -> None:
         """Ensure the model is loaded.
@@ -294,25 +313,15 @@ def is_daemon_running(socket_path: Path | None = None) -> bool:
     if not socket_path.exists():
         return False
 
-    sock = None
     try:
-        # Try to connect and send health check
-        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock.settimeout(2.0)
-        sock.connect(str(socket_path))
-
-        request = Request(method="health", params={})
-        send_message(sock, request)
-
-        response = receive_message(sock, Response)
-
-        return not response.is_error()
+        with daemon_socket_connection(socket_path, timeout=2.0) as sock:
+            request = Request(method="health", params={})
+            send_message(sock, request)
+            response = receive_message(sock, Response)
+            return not response.is_error()
     except (OSError, TimeoutError, ProtocolError):
         # Connection errors, timeouts, or protocol issues mean daemon is not available
         return False
-    finally:
-        if sock:
-            sock.close()
 
 
 def get_daemon_pid(socket_path: Path | None = None) -> int | None:
@@ -332,31 +341,23 @@ def get_daemon_pid(socket_path: Path | None = None) -> int | None:
     if not socket_path.exists():
         return None
 
-    sock = None
     try:
-        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock.settimeout(2.0)
-        sock.connect(str(socket_path))
+        with daemon_socket_connection(socket_path, timeout=2.0) as sock:
+            request = Request(method="health", params={})
+            send_message(sock, request)
+            response = receive_message(sock, Response)
 
-        request = Request(method="health", params={})
-        send_message(sock, request)
+            if response.is_error():
+                return None
 
-        response = receive_message(sock, Response)
+            # Extract PID from health response
+            result = response.result
+            if isinstance(result, dict) and "pid" in result:
+                pid = result["pid"]
+                if isinstance(pid, int):
+                    return pid
 
-        if response.is_error():
             return None
-
-        # Extract PID from health response
-        result = response.result
-        if isinstance(result, dict) and "pid" in result:
-            pid = result["pid"]
-            if isinstance(pid, int):
-                return pid
-
-        return None
     except (OSError, TimeoutError, ProtocolError):
         # Connection errors, timeouts, or protocol issues mean daemon is not available
         return None
-    finally:
-        if sock:
-            sock.close()
