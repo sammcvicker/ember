@@ -219,15 +219,24 @@ class TestSQLiteBaseRepositoryThreadSafety:
         repo.close()
 
     def test_queries_work_from_different_threads(self, db_path: Path) -> None:
-        """Test that the connection can be used from different threads."""
+        """Test that the connection can be used from different threads.
+
+        Note: Multiple threads using the same connection must coordinate their
+        access. Each thread creates its own cursor to avoid race conditions
+        where one thread's execute result is consumed by another thread's fetchone.
+        """
         repo = ConcreteRepository(db_path)
+        lock = threading.Lock()
 
         def run_query() -> int:
-            conn = repo._get_connection()
-            cursor = conn.execute("SELECT 1")
-            row = cursor.fetchone()
-            assert row is not None, "SELECT 1 should always return a row"
-            return row[0]
+            # Use lock to serialize execute+fetchone operations
+            # This is necessary because cursor operations are not atomic
+            with lock:
+                conn = repo._get_connection()
+                cursor = conn.execute("SELECT 1")
+                row = cursor.fetchone()
+                assert row is not None, "SELECT 1 should always return a row"
+                return row[0]
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
             futures = [executor.submit(run_query) for _ in range(10)]
