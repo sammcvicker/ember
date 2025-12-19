@@ -23,6 +23,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Consistent with validation pattern used by all other config classes
 
 ### Changed
+- **Reduced ensure_synced() complexity** (#350)
+  - Extracted `_check_index_staleness()` for staleness detection
+  - Extracted `_execute_sync()` for sync execution with progress
+  - Extracted `_show_sync_completion_message()` for completion messaging
+  - Extracted `_show_sync_error_message()` for error messaging
+  - Extracted `_show_interactive_sync_message()` for interactive mode
+  - Reduced cyclomatic complexity from 12 to 5 (target was ≤6)
+  - Each concern now in separate function with clear responsibility
+  - No external API changes - pure internal refactor
 - **Extracted IndexingOrchestrator for cleaner execute() method** (#349)
   - Created `IndexingOrchestrator` class to handle indexing pipeline phases
   - Reduced `IndexingUseCase.execute()` from ~100 lines to ~40 lines

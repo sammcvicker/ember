@@ -198,6 +198,109 @@ def _create_indexing_usecase(repo_root: Path, db_path: Path, config):
     return usecase_factory.create_indexing_usecase(repo_root, db_path, config, embedder)
 
 
+def _check_index_staleness(repo_root: Path, db_path: Path) -> bool | None:
+    """Check if the index is stale and needs syncing.
+
+    Args:
+        repo_root: Repository root path.
+        db_path: Path to SQLite database.
+
+    Returns:
+        True if sync is needed, False if up to date, None on error.
+
+    Raises:
+        Exception: If staleness check fails (git or database error).
+    """
+    from ember.adapters.factory import RepositoryFactory
+
+    repo_factory = RepositoryFactory()
+    vcs = repo_factory.create_git_adapter(repo_root)
+    meta_repo = repo_factory.create_meta_repository(db_path)
+
+    current_tree_sha = vcs.get_worktree_tree_sha()
+    last_tree_sha = meta_repo.get("last_tree_sha")
+
+    return last_tree_sha != current_tree_sha
+
+
+def _execute_sync(
+    repo_root: Path,
+    db_path: Path,
+    config,
+    show_progress: bool,
+) -> tuple[bool, int]:
+    """Execute the sync operation.
+
+    Args:
+        repo_root: Repository root path.
+        db_path: Path to SQLite database.
+        config: Configuration object.
+        show_progress: Whether to show progress bar.
+
+    Returns:
+        Tuple of (success, files_indexed).
+    """
+    from ember.core.indexing.index_usecase import IndexRequest
+
+    indexing_usecase = _create_indexing_usecase(repo_root, db_path, config)
+
+    request = IndexRequest(
+        repo_root=repo_root,
+        sync_mode="worktree",
+        path_filters=[],
+        force_reindex=False,
+    )
+
+    quiet_mode = not show_progress
+    with progress_context(quiet_mode=quiet_mode) as progress:
+        if progress:
+            response = indexing_usecase.execute(request, progress=progress)
+        else:
+            response = indexing_usecase.execute(request)
+
+    return response.success, response.files_indexed
+
+
+def _show_sync_completion_message(success: bool, files_indexed: int) -> None:
+    """Show completion message after sync.
+
+    Args:
+        success: Whether sync was successful.
+        files_indexed: Number of files that were indexed.
+    """
+    if not success:
+        return
+
+    if files_indexed > 0:
+        click.echo(f"✓ Synced {files_indexed} file(s)", err=True)
+    else:
+        click.echo("✓ Index up to date", err=True)
+
+
+def _show_sync_error_message(error: Exception, error_type: SyncErrorType) -> None:
+    """Show error message for sync failure.
+
+    Args:
+        error: The exception that occurred.
+        error_type: Classification of the error.
+    """
+    if error_type == SyncErrorType.PERMISSION_ERROR:
+        click.echo(f"Warning: Permission denied during sync: {error}", err=True)
+    else:
+        click.echo(f"Warning: Could not check index staleness: {error}", err=True)
+
+
+def _show_interactive_sync_message(interactive_mode: bool, show_progress: bool) -> None:
+    """Show 'Syncing...' message for interactive mode without progress bar.
+
+    Args:
+        interactive_mode: Whether command is in interactive mode.
+        show_progress: Whether progress bar is being shown.
+    """
+    if interactive_mode and not show_progress:
+        click.echo("Syncing index...", err=True)
+
+
 def ensure_synced(
     repo_root: Path,
     db_path: Path,
@@ -235,78 +338,23 @@ def ensure_synced(
         result = ensure_synced(repo_root, db_path, config, show_progress=False)
     """
     try:
-        # Import dependencies
-        from ember.adapters.factory import RepositoryFactory
-        from ember.core.indexing.index_usecase import IndexRequest
-
-        repo_factory = RepositoryFactory()
-        vcs = repo_factory.create_git_adapter(repo_root)
-        meta_repo = repo_factory.create_meta_repository(db_path)
-
-        # Get current worktree tree SHA
-        current_tree_sha = vcs.get_worktree_tree_sha()
-
-        # Get last indexed tree SHA
-        last_tree_sha = meta_repo.get("last_tree_sha")
-
-        # If tree SHAs match, index is up to date - no sync needed
-        if last_tree_sha == current_tree_sha:
+        is_stale = _check_index_staleness(repo_root, db_path)
+        if not is_stale:
             return SyncResult(synced=False, files_indexed=0)
 
-        # Index is stale - need to sync
+        _show_interactive_sync_message(interactive_mode, show_progress)
+        success, files_indexed = _execute_sync(repo_root, db_path, config, show_progress)
 
-        # Show "Syncing..." message for interactive mode (even without progress bar)
-        if interactive_mode and not show_progress:
-            click.echo("Syncing index...", err=True)
+        if show_progress:
+            _show_sync_completion_message(success, files_indexed)
 
-        # Create indexing use case with all dependencies
-        indexing_usecase = _create_indexing_usecase(repo_root, db_path, config)
-
-        # Execute incremental sync
-        request = IndexRequest(
-            repo_root=repo_root,
-            sync_mode="worktree",
-            path_filters=[],
-            force_reindex=False,
-        )
-
-        # Use progress bars unless in quiet mode
-        quiet_mode = not show_progress
-        with progress_context(quiet_mode=quiet_mode) as progress:
-            if progress:
-                response = indexing_usecase.execute(request, progress=progress)
-            else:
-                # Silent mode
-                response = indexing_usecase.execute(request)
-
-        # Show completion message AFTER progress context exits
-        if show_progress and response.success:
-            if response.files_indexed > 0:
-                click.echo(
-                    f"✓ Synced {response.files_indexed} file(s)",
-                    err=True,
-                )
-            else:
-                click.echo("✓ Index up to date", err=True)
-
-        return SyncResult(synced=True, files_indexed=response.files_indexed)
+        return SyncResult(synced=True, files_indexed=files_indexed)
 
     except Exception as e:
-        # Classify and handle all errors uniformly
         error_type = classify_sync_error(e)
-
         if verbose:
-            if error_type == SyncErrorType.PERMISSION_ERROR:
-                click.echo(f"Warning: Permission denied during sync: {e}", err=True)
-            else:
-                click.echo(f"Warning: Could not check index staleness: {e}", err=True)
-
-        return SyncResult(
-            synced=False,
-            files_indexed=0,
-            error=str(e),
-            error_type=error_type,
-        )
+            _show_sync_error_message(e, error_type)
+        return SyncResult(synced=False, files_indexed=0, error=str(e), error_type=error_type)
 
 
 def check_and_auto_sync(
