@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import functools
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -16,6 +17,8 @@ if TYPE_CHECKING:
     from ember.core.config.init_usecase import InitResponse
     from ember.core.hardware import SystemResources
     from ember.core.retrieval.search_usecase import SearchUseCase
+    from ember.domain.config import EmberConfig
+    from ember.ports.embedder import Embedder
 
 from ember.adapters.fs.local import LocalFileSystem
 from ember.adapters.vss.sqlite_vec_adapter import DimensionMismatchError
@@ -152,6 +155,83 @@ def _create_search_usecase(db_path: Path, embedder) -> SearchUseCase:
 
     factory = UseCaseFactory()
     return factory.create_search_usecase(db_path, embedder)
+
+
+@dataclass
+class SearchCommandDependencies:
+    """Shared dependencies for find/search commands.
+
+    Encapsulates all initialization state needed by both the find
+    and search commands, eliminating duplicated setup code.
+    """
+
+    repo_root: Path
+    ember_dir: Path
+    db_path: Path
+    config: EmberConfig
+    topk: int
+    embedder: Embedder
+    search_usecase: SearchUseCase
+
+
+def _setup_search_command(
+    ctx: click.Context,
+    repo_root: Path,
+    ember_dir: Path,
+    topk: int | None,
+    no_sync: bool,
+    show_progress: bool = True,
+    interactive_mode: bool = False,
+) -> SearchCommandDependencies:
+    """Common setup for find/search commands.
+
+    Handles all shared initialization:
+    - Loading configuration
+    - Applying topk default from config
+    - Auto-sync check (unless disabled)
+    - Creating embedder and search use case
+
+    Args:
+        ctx: Click context for accessing verbose flag
+        repo_root: Repository root path
+        ember_dir: Path to .ember directory
+        topk: Number of results (None to use config default)
+        no_sync: Skip auto-sync check
+        show_progress: Show progress bar during sync/embedder init
+        interactive_mode: Use interactive sync mode (brief status message)
+
+    Returns:
+        SearchCommandDependencies with all initialized components
+    """
+    db_path = ember_dir / "index.db"
+
+    config = _load_config(ember_dir)
+
+    if topk is None:
+        topk = config.search.topk
+
+    if not no_sync:
+        ensure_synced(
+            repo_root=repo_root,
+            db_path=db_path,
+            config=config,
+            show_progress=show_progress,
+            interactive_mode=interactive_mode,
+            verbose=ctx.obj.get("verbose", False),
+        )
+
+    embedder = _create_embedder(config, show_progress=show_progress)
+    search_usecase = _create_search_usecase(db_path, embedder)
+
+    return SearchCommandDependencies(
+        repo_root=repo_root,
+        ember_dir=ember_dir,
+        db_path=db_path,
+        config=config,
+        topk=topk,
+        embedder=embedder,
+        search_usecase=search_usecase,
+    )
 
 
 def get_ember_repo_root() -> tuple[Path, Path]:
@@ -818,7 +898,6 @@ def find(
         ember find "query" src/       # Search src/ subtree
     """
     repo_root, ember_dir = get_ember_repo_root()
-    db_path = ember_dir / "index.db"
 
     # Normalize path argument to path filter glob pattern
     path_filter = normalize_path_filter(
@@ -828,49 +907,37 @@ def find(
         cwd=Path.cwd().resolve(),
     )
 
-    # Load config
-    config = _load_config(ember_dir)
-
-    # Use config default for topk if not specified
-    if topk is None:
-        topk = config.search.topk
-
-    # Auto-sync: Check if index is stale and sync if needed (unless --no-sync)
-    # Use ensure_synced - show progress unless in JSON output mode
-    if not no_sync:
-        ensure_synced(
-            repo_root=repo_root,
-            db_path=db_path,
-            config=config,
-            show_progress=not json_output,  # Show progress in human mode
-            verbose=ctx.obj.get("verbose", False),
-        )
+    # Setup shared search dependencies
+    deps = _setup_search_command(
+        ctx=ctx,
+        repo_root=repo_root,
+        ember_dir=ember_dir,
+        topk=topk,
+        no_sync=no_sync,
+        show_progress=not json_output,
+    )
 
     # Lazy import for Query entity
     from ember.domain.entities import Query
 
-    # Initialize search dependencies
-    embedder = _create_embedder(config)
-    search_usecase = _create_search_usecase(db_path, embedder)
-
     # Create query object
     query_obj = Query(
         text=query,
-        topk=topk,
+        topk=deps.topk,
         path_filter=path_filter,
         lang_filter=lang_filter,
         json_output=json_output,
     )
 
     # Execute search
-    result_set = search_usecase.search(query_obj)
+    result_set = deps.search_usecase.search(query_obj)
 
     # Display warning if results are degraded (missing chunks)
     if result_set.warning:
         click.secho(result_set.warning, fg="yellow", err=True)
 
     # Cache results for cat/open commands
-    cache_path = ember_dir / ".last_search.json"
+    cache_path = deps.ember_dir / ".last_search.json"
     try:
         import json
 
@@ -884,9 +951,9 @@ def find(
     # Display results
     presenter = ResultPresenter(LocalFileSystem())
     if json_output:
-        click.echo(presenter.format_json_output(result_set.results, context=context, repo_root=repo_root))
+        click.echo(presenter.format_json_output(result_set.results, context=context, repo_root=deps.repo_root))
     else:
-        presenter.format_human_output(result_set.results, context=context, repo_root=repo_root, config=config)
+        presenter.format_human_output(result_set.results, context=context, repo_root=deps.repo_root, config=deps.config)
 
 
 @cli.command()
@@ -953,7 +1020,6 @@ def search(
         ember search tests        # Search tests/ subtree
     """
     repo_root, ember_dir = get_ember_repo_root()
-    db_path = ember_dir / "index.db"
 
     # Convert file_pattern to path_filter format (e.g., "*.py" -> "**/*.py")
     existing_filter = f"**/{file_pattern}" if file_pattern else None
@@ -966,44 +1032,32 @@ def search(
         cwd=Path.cwd().resolve(),
     )
 
-    # Load config
-    config = _load_config(ember_dir)
-
-    # Use config default for topk if not specified
-    if topk is None:
-        topk = config.search.topk
-
-    # Auto-sync unless disabled
-    # Use ensure_synced with interactive_mode=True to show "Syncing..." status
-    if not no_sync:
-        ensure_synced(
-            repo_root=repo_root,
-            db_path=db_path,
-            config=config,
-            show_progress=False,  # No progress bar (would corrupt TUI)
-            interactive_mode=True,  # Show brief "Syncing..." message
-            verbose=ctx.obj.get("verbose", False),
-        )
+    # Setup shared search dependencies (no progress bar for TUI, use interactive mode)
+    deps = _setup_search_command(
+        ctx=ctx,
+        repo_root=repo_root,
+        ember_dir=ember_dir,
+        topk=topk,
+        no_sync=no_sync,
+        show_progress=False,
+        interactive_mode=True,
+    )
 
     # Lazy imports
     from ember.adapters.tui.search_ui import InteractiveSearchUI
     from ember.domain.entities import Query
 
-    # Initialize search dependencies
-    embedder = _create_embedder(config, show_progress=False)  # No progress for interactive
-    search_usecase = _create_search_usecase(db_path, embedder)
-
     # Create search function wrapper (returns list for TUI compatibility)
     def search_fn(query: Query) -> list:
-        result_set = search_usecase.search(query)
+        result_set = deps.search_usecase.search(query)
         return result_set.results
 
     # Create and run interactive UI
     ui = InteractiveSearchUI(
         search_fn=search_fn,
-        config=config,
+        config=deps.config,
         initial_query="",  # Always start with empty query, user types interactively
-        topk=topk,
+        topk=deps.topk,
         path_filter=path_filter,
         lang_filter=lang_filter,
         show_scores=not no_scores,
@@ -1014,7 +1068,7 @@ def search(
 
     # If user selected a file, open it in editor
     if selected_file and selected_line:
-        file_path = repo_root / selected_file
+        file_path = deps.repo_root / selected_file
         open_file_in_editor(file_path, selected_line)
 
 

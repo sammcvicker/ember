@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Consistent with validation pattern used by all other config classes
 
 ### Changed
+- **Eliminated code duplication between find and search commands** (#353)
+  - Created `SearchCommandDependencies` dataclass to encapsulate shared setup state
+  - Created `_setup_search_command()` function for common initialization logic
+  - Both commands now use the same setup code for config loading, auto-sync, and search usecase creation
+  - Reduces maintenance burden and ensures consistent behavior between commands
 - **Reduced domain entity `__post_init__` complexity** (#352)
   - Extracted validation methods for `Chunk`: `_validate_line_numbers()`, `_validate_content()`, `_validate_blake3_hash()`, `_validate_tree_sha()`, `_validate_language()`
   - Extracted validation methods for `RepoState`: `_validate_tree_sha()`, `_normalize_sync_mode()`, `_validate_version()`, `_validate_initialized_state()`, `_normalize_indexed_at()`
