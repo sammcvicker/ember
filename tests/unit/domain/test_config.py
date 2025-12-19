@@ -196,6 +196,47 @@ class TestRedactionConfigValidation:
         with pytest.raises(ValueError, match="max_file_mb must be positive"):
             RedactionConfig(max_file_mb=-1)
 
+    def test_redaction_config_valid_regex_patterns(self):
+        """Test that valid regex patterns are accepted."""
+        config = RedactionConfig(
+            patterns=[
+                r"api_key\s*=\s*\w+",
+                r"(?i)password",
+                r"[A-Za-z0-9]{32}",
+            ]
+        )
+        assert len(config.patterns) == 3
+
+    def test_redaction_config_invalid_regex_raises_error(self):
+        """Test that invalid regex patterns raise ValueError."""
+        with pytest.raises(ValueError, match="Invalid regex pattern"):
+            RedactionConfig(patterns=[r"[invalid(regex"])
+
+    def test_redaction_config_invalid_regex_identifies_pattern(self):
+        """Test that error message identifies which pattern is invalid."""
+        with pytest.raises(ValueError, match=r"\[invalid\(regex"):
+            RedactionConfig(patterns=[r"valid_pattern", r"[invalid(regex"])
+
+    def test_redaction_config_empty_patterns_list_valid(self):
+        """Test that empty patterns list is valid (no redaction)."""
+        config = RedactionConfig(patterns=[])
+        assert config.patterns == []
+
+    def test_redaction_config_multiple_invalid_patterns_reports_first(self):
+        """Test that first invalid pattern is reported in error."""
+        # Note: validation stops at first error, so order matters
+        with pytest.raises(ValueError, match=r"\[first"):
+            RedactionConfig(patterns=[r"[first", r"[second"])
+
+    def test_redaction_config_default_patterns_are_valid(self):
+        """Test that all default patterns compile successfully."""
+        # This ensures we don't ship with broken default patterns
+        config = RedactionConfig()
+        import re
+
+        for pattern in config.patterns:
+            re.compile(pattern)  # Should not raise
+
 
 # =============================================================================
 # ModelConfig validation tests
@@ -372,6 +413,12 @@ class TestRedactionConfigFromPartial:
         base = RedactionConfig()
         with pytest.raises(ValueError, match="max_file_mb must be positive"):
             RedactionConfig.from_partial(base, {"max_file_mb": 0})
+
+    def test_from_partial_validates_regex_patterns(self):
+        """Test that from_partial validates regex patterns."""
+        base = RedactionConfig()
+        with pytest.raises(ValueError, match="Invalid regex pattern"):
+            RedactionConfig.from_partial(base, {"patterns": [r"[invalid("]})
 
 
 class TestModelConfigFromPartial:

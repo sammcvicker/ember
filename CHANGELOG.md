@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Regex pattern validation for RedactionConfig** (#355)
+  - `RedactionConfig.patterns` are now validated at config load time
+  - Invalid regex patterns raise `ValueError` with clear message identifying which pattern failed
+  - Users get immediate feedback instead of delayed failure during redaction
 - **Glob pattern validation for IndexConfig** (#354)
   - `IndexConfig.include` and `IndexConfig.ignore` patterns are now validated at config load time
   - Reuses existing `PathFilter` validation (empty patterns, malformed `//` segments)
