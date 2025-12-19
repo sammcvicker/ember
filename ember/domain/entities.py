@@ -108,9 +108,15 @@ class Chunk:
         tree_sha: Git tree SHA when chunk was indexed (40 hex chars or empty).
         rev: Git revision (commit SHA) when indexed, or "worktree".
 
+    Domain Invariants:
+        - Line numbers are 1-indexed and start_line <= end_line
+        - Content must be non-empty (not just whitespace)
+        - content_hash and file_hash must be valid blake3 hashes (64 lowercase hex)
+        - tree_sha must be empty or a valid git SHA (40 lowercase hex)
+        - lang must be in SUPPORTED_LANGUAGES
+
     Raises:
-        ValueError: If any field fails validation (invalid hashes, unknown language,
-            empty content, or invalid line numbers).
+        ValueError: If any field fails validation.
     """
 
     id: str
@@ -131,47 +137,53 @@ class Chunk:
     # Regex for validating git SHAs (40 lowercase hex chars)
     _GIT_SHA_PATTERN = re.compile(r"^[a-f0-9]{40}$")
 
-    def __post_init__(self) -> None:
-        """Validate chunk data after initialization."""
-        # Validate line numbers
-        if self.start_line < 1 or self.end_line < 1:
+    @staticmethod
+    def _validate_line_numbers(start_line: int, end_line: int) -> None:
+        """Validate line number constraints."""
+        if start_line < 1 or end_line < 1:
             raise ValueError("Line numbers must be >= 1")
-        if self.start_line > self.end_line:
-            raise ValueError(
-                f"start_line ({self.start_line}) > end_line ({self.end_line})"
-            )
+        if start_line > end_line:
+            raise ValueError(f"start_line ({start_line}) > end_line ({end_line})")
 
-        # Validate content is not empty
-        if not self.content or not self.content.strip():
+    @staticmethod
+    def _validate_content(content: str) -> None:
+        """Validate content is non-empty."""
+        if not content or not content.strip():
             raise ValueError("content cannot be empty")
 
-        # Validate content_hash (required, 64 lowercase hex chars)
-        if not self._BLAKE3_PATTERN.match(self.content_hash):
+    @classmethod
+    def _validate_blake3_hash(cls, value: str, field_name: str) -> None:
+        """Validate a blake3 hash field."""
+        if not cls._BLAKE3_PATTERN.match(value):
             raise ValueError(
-                f"Invalid blake3 hash for content_hash: must be 64 lowercase hex chars, "
-                f"got: {self.content_hash!r}"
+                f"Invalid blake3 hash for {field_name}: must be 64 lowercase hex chars, "
+                f"got: {value!r}"
             )
 
-        # Validate file_hash (required, 64 lowercase hex chars)
-        if not self._BLAKE3_PATTERN.match(self.file_hash):
-            raise ValueError(
-                f"Invalid blake3 hash for file_hash: must be 64 lowercase hex chars, "
-                f"got: {self.file_hash!r}"
-            )
-
-        # Validate tree_sha (empty or 40 lowercase hex chars)
-        if self.tree_sha and not self._GIT_SHA_PATTERN.match(self.tree_sha):
+    @classmethod
+    def _validate_tree_sha(cls, tree_sha: str) -> None:
+        """Validate tree SHA (empty or 40 hex chars)."""
+        if tree_sha and not cls._GIT_SHA_PATTERN.match(tree_sha):
             raise ValueError(
                 f"Invalid git SHA for tree_sha: must be empty or 40 lowercase hex chars, "
-                f"got: {self.tree_sha!r}"
+                f"got: {tree_sha!r}"
             )
 
-        # Validate language code
-        if self.lang not in SUPPORTED_LANGUAGES:
+    @staticmethod
+    def _validate_language(lang: str) -> None:
+        """Validate language code."""
+        if lang not in SUPPORTED_LANGUAGES:
             supported = ", ".join(sorted(SUPPORTED_LANGUAGES))
-            raise ValueError(
-                f"Unknown language '{self.lang}'. Supported languages: {supported}"
-            )
+            raise ValueError(f"Unknown language '{lang}'. Supported languages: {supported}")
+
+    def __post_init__(self) -> None:
+        """Validate chunk data after initialization."""
+        self._validate_line_numbers(self.start_line, self.end_line)
+        self._validate_content(self.content)
+        self._validate_blake3_hash(self.content_hash, "content_hash")
+        self._validate_blake3_hash(self.file_hash, "file_hash")
+        self._validate_tree_sha(self.tree_sha)
+        self._validate_language(self.lang)
 
     @staticmethod
     def compute_content_hash(content: str) -> str:
@@ -253,9 +265,14 @@ class RepoState:
             Accepts either a string (validated and converted to ISO8601Timestamp)
             or an ISO8601Timestamp instance.
 
+    Domain Invariants:
+        - tree_sha must be empty (uninitialized) or a valid 40-char hex SHA
+        - sync_mode must be a SyncMode enum, a known mode string, or a commit SHA
+        - version must be non-empty
+        - Initialized state (non-empty tree_sha) requires a model_fingerprint
+
     Raises:
-        ValueError: If any field fails validation (invalid SHA format,
-            invalid sync mode, empty version, or invalid timestamp).
+        ValueError: If any field fails validation.
     """
 
     last_tree_sha: str
@@ -267,51 +284,63 @@ class RepoState:
     # Regex for validating git SHA (40 hex characters)
     _SHA_PATTERN = re.compile(r"^[a-f0-9]{40}$")
 
-    def __post_init__(self) -> None:
-        """Validate RepoState fields after initialization."""
-        # Validate tree_sha: must be empty or valid 40-char hex SHA
-        if self.last_tree_sha and not self._SHA_PATTERN.match(self.last_tree_sha):
+    @classmethod
+    def _validate_tree_sha(cls, tree_sha: str) -> None:
+        """Validate tree SHA format."""
+        if tree_sha and not cls._SHA_PATTERN.match(tree_sha):
             raise ValueError(
                 f"tree_sha must be empty or a valid 40-character hex SHA, "
-                f"got: {self.last_tree_sha!r}"
+                f"got: {tree_sha!r}"
             )
 
-        # Validate and normalize sync_mode
-        if isinstance(self.last_sync_mode, SyncMode):
-            pass  # Already a SyncMode enum
-        elif isinstance(self.last_sync_mode, str):
-            # Try to convert string to SyncMode enum
+    @staticmethod
+    def _normalize_sync_mode(sync_mode: str | SyncMode) -> str | SyncMode:
+        """Normalize and validate sync_mode, returning SyncMode enum or commit SHA."""
+        if isinstance(sync_mode, SyncMode):
+            return sync_mode
+        if isinstance(sync_mode, str):
             try:
-                object.__setattr__(self, "last_sync_mode", SyncMode(self.last_sync_mode))
+                return SyncMode(sync_mode)
             except ValueError:
-                # Not a known SyncMode - check if it's a commit SHA
-                if not SyncMode.is_commit_sha(self.last_sync_mode):
+                if not SyncMode.is_commit_sha(sync_mode):
                     raise ValueError(
                         f"sync_mode must be 'none', 'worktree', 'staged', or a valid "
-                        f"commit SHA (7-40 hex chars), got: {self.last_sync_mode!r}"
+                        f"commit SHA (7-40 hex chars), got: {sync_mode!r}"
                     ) from None
-        else:
-            raise ValueError(
-                f"sync_mode must be SyncMode enum or string, "
-                f"got: {type(self.last_sync_mode).__name__}"
-            )
+                return sync_mode
+        raise ValueError(
+            f"sync_mode must be SyncMode enum or string, "
+            f"got: {type(sync_mode).__name__}"
+        )
 
-        # Validate version is not empty
-        if not self.version:
+    @staticmethod
+    def _validate_version(version: str) -> None:
+        """Validate version is non-empty."""
+        if not version:
             raise ValueError("version cannot be empty")
 
-        # Validate invariant: initialized state requires model_fingerprint
-        # An initialized state has a non-empty tree_sha, and must have a model_fingerprint
-        if self.last_tree_sha and not self.model_fingerprint:
+    @staticmethod
+    def _validate_initialized_state(tree_sha: str, model_fingerprint: str) -> None:
+        """Validate initialized state invariant."""
+        if tree_sha and not model_fingerprint:
             raise ValueError(
                 "model_fingerprint is required when tree_sha is set (initialized state)"
             )
 
-        # Validate and convert indexed_at to ISO8601Timestamp
-        if not isinstance(self.indexed_at, ISO8601Timestamp):
-            object.__setattr__(
-                self, "indexed_at", ISO8601Timestamp.from_string(self.indexed_at)
-            )
+    @staticmethod
+    def _normalize_indexed_at(indexed_at: ISO8601Timestamp | str) -> ISO8601Timestamp:
+        """Normalize indexed_at to ISO8601Timestamp."""
+        if isinstance(indexed_at, ISO8601Timestamp):
+            return indexed_at
+        return ISO8601Timestamp.from_string(indexed_at)
+
+    def __post_init__(self) -> None:
+        """Validate and normalize RepoState fields after initialization."""
+        self._validate_tree_sha(self.last_tree_sha)
+        self.last_sync_mode = self._normalize_sync_mode(self.last_sync_mode)
+        self._validate_version(self.version)
+        self._validate_initialized_state(self.last_tree_sha, self.model_fingerprint)
+        self.indexed_at = self._normalize_indexed_at(self.indexed_at)
 
     @property
     def is_uninitialized(self) -> bool:
@@ -476,6 +505,12 @@ class Query:
             or a LanguageFilter instance.
         json_output: Whether to output JSON instead of human-readable text.
 
+    Domain Invariants:
+        - text must be non-empty (not just whitespace)
+        - topk must be positive
+        - path_filter (if provided) must be a valid glob pattern
+        - lang_filter (if provided) must be a supported language code
+
     Raises:
         ValueError: If text is empty, topk is not positive, or filters are invalid.
     """
@@ -486,20 +521,40 @@ class Query:
     lang_filter: LanguageFilter | str | None = None
     json_output: bool = False
 
-    def __post_init__(self) -> None:
-        """Validate query data after initialization."""
-        if not self.text or not self.text.strip():
+    @staticmethod
+    def _validate_text(text: str) -> None:
+        """Validate query text is non-empty."""
+        if not text or not text.strip():
             raise ValueError("Query text cannot be empty")
-        if self.topk <= 0:
-            raise ValueError(f"topk must be positive, got {self.topk}")
 
-        # Validate and convert path_filter
-        if self.path_filter is not None and not isinstance(self.path_filter, PathFilter):
-            object.__setattr__(self, "path_filter", PathFilter(self.path_filter))
+    @staticmethod
+    def _validate_topk(topk: int) -> None:
+        """Validate topk is positive."""
+        if topk <= 0:
+            raise ValueError(f"topk must be positive, got {topk}")
 
-        # Validate and convert lang_filter
-        if self.lang_filter is not None and not isinstance(self.lang_filter, LanguageFilter):
-            object.__setattr__(self, "lang_filter", LanguageFilter(self.lang_filter))
+    @staticmethod
+    def _normalize_path_filter(path_filter: PathFilter | str | None) -> PathFilter | None:
+        """Normalize path_filter to PathFilter or None."""
+        if path_filter is None or isinstance(path_filter, PathFilter):
+            return path_filter
+        return PathFilter(path_filter)
+
+    @staticmethod
+    def _normalize_lang_filter(
+        lang_filter: LanguageFilter | str | None,
+    ) -> LanguageFilter | None:
+        """Normalize lang_filter to LanguageFilter or None."""
+        if lang_filter is None or isinstance(lang_filter, LanguageFilter):
+            return lang_filter
+        return LanguageFilter(lang_filter)
+
+    def __post_init__(self) -> None:
+        """Validate and normalize query data after initialization."""
+        self._validate_text(self.text)
+        self._validate_topk(self.topk)
+        self.path_filter = self._normalize_path_filter(self.path_filter)
+        self.lang_filter = self._normalize_lang_filter(self.lang_filter)
 
     @property
     def path_filter_str(self) -> str | None:
