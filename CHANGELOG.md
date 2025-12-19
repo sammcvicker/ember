@@ -23,6 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Consistent with validation pattern used by all other config classes
 
 ### Changed
+- **Extracted IndexingOrchestrator for cleaner execute() method** (#349)
+  - Created `IndexingOrchestrator` class to handle indexing pipeline phases
+  - Reduced `IndexingUseCase.execute()` from ~100 lines to ~40 lines
+  - Separated concerns: verification, detection, preparation, indexing, finalization
+  - Each orchestration phase is now independently testable
+  - No external API changes - pure internal refactor
 - **Consolidated model registry to single source of truth** (#332)
   - Created `ModelSpec` dataclass containing all model metadata (id, presets, dim, params, memory, max_seq_length, description)
   - `MODEL_REGISTRY` is now the single source of truth for all supported embedding models
