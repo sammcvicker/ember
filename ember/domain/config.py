@@ -5,6 +5,7 @@ for indexing, search, and redaction behavior. This module defines the domain
 models that represent validated configuration state.
 """
 
+import re
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -199,6 +200,13 @@ class RedactionConfig:
         """Validate redaction config after initialization."""
         if self.max_file_mb <= 0:
             raise ValueError(f"max_file_mb must be positive, got {self.max_file_mb}")
+
+        # Validate regex patterns compile
+        for pattern in self.patterns:
+            try:
+                re.compile(pattern)
+            except re.error as e:
+                raise ValueError(f"Invalid regex pattern '{pattern}': {e}") from e
 
     @staticmethod
     def from_partial(base: "RedactionConfig", partial: dict) -> "RedactionConfig":
