@@ -23,6 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Consistent with validation pattern used by all other config classes
 
 ### Changed
+- **Reduced domain entity `__post_init__` complexity** (#352)
+  - Extracted validation methods for `Chunk`: `_validate_line_numbers()`, `_validate_content()`, `_validate_blake3_hash()`, `_validate_tree_sha()`, `_validate_language()`
+  - Extracted validation methods for `RepoState`: `_validate_tree_sha()`, `_normalize_sync_mode()`, `_validate_version()`, `_validate_initialized_state()`, `_normalize_indexed_at()`
+  - Extracted validation methods for `Query`: `_validate_text()`, `_validate_topk()`, `_normalize_path_filter()`, `_normalize_lang_filter()`
+  - Removed all `object.__setattr__()` calls in domain entities (4 occurrences)
+  - All `__post_init__` methods now have CC ≤5 (down from CC=11 for Chunk/RepoState)
+  - Validation logic is now testable in isolation (33 new tests)
+  - Documented domain invariants in class docstrings
 - **Reduced ensure_synced() complexity** (#350)
   - Extracted `_check_index_staleness()` for staleness detection
   - Extracted `_execute_sync()` for sync execution with progress

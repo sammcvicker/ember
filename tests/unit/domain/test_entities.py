@@ -1235,3 +1235,208 @@ class TestSearchExplanationEffectiveScore:
         """Test effective_score when fused_score is 1.0."""
         explanation = SearchExplanation(fused_score=1.0)
         assert explanation.effective_score == 1.0
+
+
+# =============================================================================
+# Isolated validator tests (#352)
+# =============================================================================
+
+
+class TestChunkValidatorsInIsolation:
+    """Tests for Chunk validators called independently of __post_init__.
+
+    These tests verify that validation logic is testable in isolation,
+    one of the success criteria for #352.
+    """
+
+    def test_validate_line_numbers_valid(self):
+        """Test _validate_line_numbers accepts valid values."""
+        # Should not raise
+        Chunk._validate_line_numbers(1, 10)
+        Chunk._validate_line_numbers(5, 5)  # Single line
+
+    def test_validate_line_numbers_zero_start(self):
+        """Test _validate_line_numbers rejects zero start_line."""
+        with pytest.raises(ValueError, match="Line numbers must be >= 1"):
+            Chunk._validate_line_numbers(0, 10)
+
+    def test_validate_line_numbers_zero_end(self):
+        """Test _validate_line_numbers rejects zero end_line."""
+        with pytest.raises(ValueError, match="Line numbers must be >= 1"):
+            Chunk._validate_line_numbers(1, 0)
+
+    def test_validate_line_numbers_start_greater_than_end(self):
+        """Test _validate_line_numbers rejects start > end."""
+        with pytest.raises(ValueError, match="start_line.*>.*end_line"):
+            Chunk._validate_line_numbers(20, 10)
+
+    def test_validate_content_valid(self):
+        """Test _validate_content accepts non-empty content."""
+        # Should not raise
+        Chunk._validate_content("code")
+        Chunk._validate_content("  code  ")
+
+    def test_validate_content_empty(self):
+        """Test _validate_content rejects empty content."""
+        with pytest.raises(ValueError, match="content cannot be empty"):
+            Chunk._validate_content("")
+
+    def test_validate_content_whitespace_only(self):
+        """Test _validate_content rejects whitespace-only content."""
+        with pytest.raises(ValueError, match="content cannot be empty"):
+            Chunk._validate_content("   \n\t  ")
+
+    def test_validate_blake3_hash_valid(self):
+        """Test _validate_blake3_hash accepts valid hash."""
+        # Should not raise
+        Chunk._validate_blake3_hash("a" * 64, "content_hash")
+
+    def test_validate_blake3_hash_invalid(self):
+        """Test _validate_blake3_hash rejects invalid hash."""
+        with pytest.raises(ValueError, match="Invalid blake3 hash"):
+            Chunk._validate_blake3_hash("invalid", "content_hash")
+
+    def test_validate_tree_sha_valid(self):
+        """Test _validate_tree_sha accepts valid SHA."""
+        # Should not raise
+        Chunk._validate_tree_sha("a" * 40)
+        Chunk._validate_tree_sha("")  # Empty is valid
+
+    def test_validate_tree_sha_invalid(self):
+        """Test _validate_tree_sha rejects invalid SHA."""
+        with pytest.raises(ValueError, match="Invalid git SHA"):
+            Chunk._validate_tree_sha("invalid")
+
+    def test_validate_language_valid(self):
+        """Test _validate_language accepts supported languages."""
+        # Should not raise
+        Chunk._validate_language("py")
+        Chunk._validate_language("ts")
+
+    def test_validate_language_invalid(self):
+        """Test _validate_language rejects unsupported languages."""
+        with pytest.raises(ValueError, match="Unknown language"):
+            Chunk._validate_language("unknown")
+
+
+class TestRepoStateValidatorsInIsolation:
+    """Tests for RepoState validators called independently of __post_init__.
+
+    These tests verify that validation logic is testable in isolation.
+    """
+
+    def test_validate_tree_sha_valid(self):
+        """Test _validate_tree_sha accepts valid SHA."""
+        # Should not raise
+        RepoState._validate_tree_sha("a" * 40)
+        RepoState._validate_tree_sha("")  # Empty is valid
+
+    def test_validate_tree_sha_invalid(self):
+        """Test _validate_tree_sha rejects invalid SHA."""
+        with pytest.raises(ValueError, match="tree_sha must be empty or a valid"):
+            RepoState._validate_tree_sha("invalid")
+
+    def test_normalize_sync_mode_enum(self):
+        """Test _normalize_sync_mode returns SyncMode enum unchanged."""
+        result = RepoState._normalize_sync_mode(SyncMode.WORKTREE)
+        assert result == SyncMode.WORKTREE
+
+    def test_normalize_sync_mode_string(self):
+        """Test _normalize_sync_mode converts string to SyncMode."""
+        result = RepoState._normalize_sync_mode("worktree")
+        assert result == SyncMode.WORKTREE
+
+    def test_normalize_sync_mode_commit_sha(self):
+        """Test _normalize_sync_mode accepts commit SHA."""
+        sha = "abc123def456789012345678901234567890abcd"
+        result = RepoState._normalize_sync_mode(sha)
+        assert result == sha
+
+    def test_normalize_sync_mode_invalid(self):
+        """Test _normalize_sync_mode rejects invalid values."""
+        with pytest.raises(ValueError, match="sync_mode must be"):
+            RepoState._normalize_sync_mode("invalid_mode")
+
+    def test_validate_version_valid(self):
+        """Test _validate_version accepts non-empty version."""
+        # Should not raise
+        RepoState._validate_version("1.0.0")
+
+    def test_validate_version_empty(self):
+        """Test _validate_version rejects empty version."""
+        with pytest.raises(ValueError, match="version cannot be empty"):
+            RepoState._validate_version("")
+
+    def test_validate_initialized_state_valid(self):
+        """Test _validate_initialized_state with valid state."""
+        # Should not raise
+        RepoState._validate_initialized_state("a" * 40, "model")
+        RepoState._validate_initialized_state("", "")  # Uninitialized OK
+
+    def test_validate_initialized_state_missing_fingerprint(self):
+        """Test _validate_initialized_state requires fingerprint when initialized."""
+        with pytest.raises(ValueError, match="model_fingerprint.*required"):
+            RepoState._validate_initialized_state("a" * 40, "")
+
+
+class TestQueryValidatorsInIsolation:
+    """Tests for Query validators called independently of __post_init__.
+
+    These tests verify that validation logic is testable in isolation.
+    """
+
+    def test_validate_text_valid(self):
+        """Test _validate_text accepts non-empty text."""
+        # Should not raise
+        Query._validate_text("search term")
+        Query._validate_text("  search  ")
+
+    def test_validate_text_empty(self):
+        """Test _validate_text rejects empty text."""
+        with pytest.raises(ValueError, match="Query text cannot be empty"):
+            Query._validate_text("")
+
+    def test_validate_text_whitespace_only(self):
+        """Test _validate_text rejects whitespace-only text."""
+        with pytest.raises(ValueError, match="Query text cannot be empty"):
+            Query._validate_text("   ")
+
+    def test_validate_topk_valid(self):
+        """Test _validate_topk accepts positive values."""
+        # Should not raise
+        Query._validate_topk(1)
+        Query._validate_topk(100)
+
+    def test_validate_topk_zero(self):
+        """Test _validate_topk rejects zero."""
+        with pytest.raises(ValueError, match="topk must be positive"):
+            Query._validate_topk(0)
+
+    def test_validate_topk_negative(self):
+        """Test _validate_topk rejects negative values."""
+        with pytest.raises(ValueError, match="topk must be positive"):
+            Query._validate_topk(-5)
+
+    def test_normalize_path_filter_none(self):
+        """Test _normalize_path_filter returns None for None input."""
+        result = Query._normalize_path_filter(None)
+        assert result is None
+
+    def test_normalize_path_filter_string(self):
+        """Test _normalize_path_filter converts string to PathFilter."""
+        from ember.domain.value_objects import PathFilter
+
+        result = Query._normalize_path_filter("*.py")
+        assert isinstance(result, PathFilter)
+
+    def test_normalize_lang_filter_none(self):
+        """Test _normalize_lang_filter returns None for None input."""
+        result = Query._normalize_lang_filter(None)
+        assert result is None
+
+    def test_normalize_lang_filter_string(self):
+        """Test _normalize_lang_filter converts string to LanguageFilter."""
+        from ember.domain.value_objects import LanguageFilter
+
+        result = Query._normalize_lang_filter("py")
+        assert isinstance(result, LanguageFilter)
