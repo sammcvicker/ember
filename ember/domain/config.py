@@ -10,6 +10,8 @@ from typing import Literal
 
 from pygments.styles import get_all_styles
 
+from ember.domain.value_objects import PathFilter
+
 # Valid Pygments themes plus "ansi" for terminal-native colors
 VALID_THEMES: frozenset[str] = frozenset(get_all_styles()) | {"ansi"}
 
@@ -93,6 +95,19 @@ class IndexConfig:
             )
         if self.batch_size <= 0:
             raise ValueError(f"batch_size must be positive, got {self.batch_size}")
+
+        # Validate glob patterns early to fail fast
+        for pattern in self.include:
+            try:
+                PathFilter(pattern)
+            except ValueError as e:
+                raise ValueError(f"Invalid glob in include: {e}") from e
+
+        for pattern in self.ignore:
+            try:
+                PathFilter(pattern)
+            except ValueError as e:
+                raise ValueError(f"Invalid glob in ignore: {e}") from e
 
     @staticmethod
     def from_partial(
