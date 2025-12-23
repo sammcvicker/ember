@@ -19,6 +19,7 @@ from ember.adapters.daemon.protocol import (
     receive_message,
     send_message,
 )
+from ember.adapters.daemon.timeouts import DaemonTimeouts
 
 if TYPE_CHECKING:
     from ember.ports.embedders import Embedder
@@ -34,7 +35,7 @@ logger = logging.getLogger(__name__)
 @contextmanager
 def daemon_socket_connection(
     socket_path: Path,
-    timeout: float = 5.0,
+    timeout: float = DaemonTimeouts.SOCKET_OPERATION,
 ) -> Iterator[socket.socket]:
     """Context manager for daemon socket connections.
 
@@ -239,7 +240,9 @@ class DaemonEmbedderClient:
             raise DaemonError(f"Daemon socket not found: {self.socket_path}")
 
         try:
-            with daemon_socket_connection(self.socket_path, timeout=5.0) as sock:
+            with daemon_socket_connection(
+                self.socket_path, timeout=DaemonTimeouts.SOCKET_OPERATION
+            ) as sock:
                 # Send request
                 request = Request(method="embed_texts", params={"texts": texts})
                 send_message(sock, request)
@@ -314,7 +317,9 @@ def is_daemon_running(socket_path: Path | None = None) -> bool:
         return False
 
     try:
-        with daemon_socket_connection(socket_path, timeout=2.0) as sock:
+        with daemon_socket_connection(
+            socket_path, timeout=DaemonTimeouts.HEALTH_CHECK
+        ) as sock:
             request = Request(method="health", params={})
             send_message(sock, request)
             response = receive_message(sock, Response)
@@ -342,7 +347,9 @@ def get_daemon_pid(socket_path: Path | None = None) -> int | None:
         return None
 
     try:
-        with daemon_socket_connection(socket_path, timeout=2.0) as sock:
+        with daemon_socket_connection(
+            socket_path, timeout=DaemonTimeouts.HEALTH_CHECK
+        ) as sock:
             request = Request(method="health", params={})
             send_message(sock, request)
             response = receive_message(sock, Response)

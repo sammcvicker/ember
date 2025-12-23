@@ -22,6 +22,7 @@ from ember.adapters.daemon.protocol import (
     receive_message,
     send_message,
 )
+from ember.adapters.daemon.timeouts import DaemonTimeouts
 
 if TYPE_CHECKING:
     from ember.ports.embedders import Embedder
@@ -108,7 +109,7 @@ class DaemonServer:
         self.server_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.server_socket.bind(str(self.socket_path))
         self.server_socket.listen(5)
-        self.server_socket.settimeout(1.0)  # Allow periodic timeout checks
+        self.server_socket.settimeout(DaemonTimeouts.SERVER_ACCEPT)
 
         logger.info(f"Listening on {self.socket_path}")
 

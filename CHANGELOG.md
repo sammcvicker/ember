@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Centralized daemon timeout configuration** (#356)
+  - Created `DaemonTimeouts` class with all timeout values in one place
+  - No more hardcoded timeout values scattered across daemon code
+  - Each timeout has comprehensive documentation explaining its purpose
+  - Easy to tune for different environments (e.g., slower systems)
+  - Timeouts covered: socket operations, daemon ready wait, SIGTERM/SIGKILL waits, server accept, health checks
+
 ### Added
 - **Regex pattern validation for RedactionConfig** (#355)
   - `RedactionConfig.patterns` are now validated at config load time
