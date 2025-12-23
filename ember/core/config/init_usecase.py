@@ -63,6 +63,69 @@ class InitResponse:
     error: str | None = None
     already_exists: bool = False
 
+    @classmethod
+    def create_success(
+        cls,
+        *,
+        ember_dir: Path,
+        config_path: Path,
+        db_path: Path,
+        state_path: Path,
+        was_reinitialized: bool,
+        global_config_created: bool = False,
+        global_config_path: Path | None = None,
+    ) -> "InitResponse":
+        """Create a success response with created paths.
+
+        Args:
+            ember_dir: Path to created .ember/ directory.
+            config_path: Path to created config.toml.
+            db_path: Path to created index.db.
+            state_path: Path to created state.json.
+            was_reinitialized: True if existing .ember/ was replaced.
+            global_config_created: True if global config was created.
+            global_config_path: Path to global config file.
+
+        Returns:
+            InitResponse with success=True and all paths.
+        """
+        return cls(
+            ember_dir=ember_dir,
+            config_path=config_path,
+            db_path=db_path,
+            state_path=state_path,
+            was_reinitialized=was_reinitialized,
+            global_config_created=global_config_created,
+            global_config_path=global_config_path,
+            success=True,
+            error=None,
+            already_exists=False,
+        )
+
+    @classmethod
+    def create_error(cls, message: str, *, already_exists: bool = False) -> "InitResponse":
+        """Create an error response.
+
+        Args:
+            message: Error message describing what went wrong.
+            already_exists: True if error is because .ember/ already exists.
+
+        Returns:
+            InitResponse with success=False and all paths as None.
+        """
+        return cls(
+            ember_dir=None,
+            config_path=None,
+            db_path=None,
+            state_path=None,
+            was_reinitialized=False,
+            global_config_created=False,
+            global_config_path=None,
+            success=False,
+            error=message,
+            already_exists=already_exists,
+        )
+
 
 class InitUseCase:
     """Use case for initializing a new ember index.
@@ -93,18 +156,7 @@ class InitUseCase:
         Returns:
             InitResponse with success=False.
         """
-        return InitResponse(
-            ember_dir=None,
-            config_path=None,
-            db_path=None,
-            state_path=None,
-            was_reinitialized=False,
-            global_config_created=False,
-            global_config_path=None,
-            success=False,
-            error=error,
-            already_exists=already_exists,
-        )
+        return InitResponse.create_error(error, already_exists=already_exists)
 
     def execute(self, request: InitRequest) -> InitResponse:
         """Execute the init operation.
@@ -164,7 +216,7 @@ class InitUseCase:
             # Create initial state.json
             create_initial_state(state_path, version=self.version)
 
-            return InitResponse(
+            return InitResponse.create_success(
                 ember_dir=ember_dir,
                 config_path=config_path,
                 db_path=db_path,
@@ -172,9 +224,6 @@ class InitUseCase:
                 was_reinitialized=was_reinitialized,
                 global_config_created=global_config_created,
                 global_config_path=global_config_path,
-                success=True,
-                error=None,
-                already_exists=False,
             )
         except (KeyboardInterrupt, SystemExit):
             raise

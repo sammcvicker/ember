@@ -51,6 +51,63 @@ class StatusResponse:
     success: bool = True
     error: str | None = None
 
+    @classmethod
+    def create_success(
+        cls,
+        *,
+        repo_root: Path,
+        indexed_files: int,
+        total_chunks: int,
+        last_tree_sha: str | None,
+        is_stale: bool,
+        model_fingerprint: str | None,
+        config: EmberConfig,
+    ) -> "StatusResponse":
+        """Create a success response with status information.
+
+        Args:
+            repo_root: Repository root path.
+            indexed_files: Number of unique files indexed.
+            total_chunks: Total number of chunks in index.
+            last_tree_sha: Last indexed tree SHA (or None if never synced).
+            is_stale: Whether index is out of sync with working tree.
+            model_fingerprint: Model fingerprint string (or None).
+            config: Current configuration.
+
+        Returns:
+            StatusResponse with success=True and all status information.
+        """
+        return cls(
+            initialized=True,
+            repo_root=repo_root,
+            indexed_files=indexed_files,
+            total_chunks=total_chunks,
+            last_tree_sha=last_tree_sha,
+            is_stale=is_stale,
+            model_fingerprint=model_fingerprint,
+            config=config,
+            success=True,
+            error=None,
+        )
+
+    @classmethod
+    def create_error(cls, message: str, *, repo_root: Path) -> "StatusResponse":
+        """Create an error response.
+
+        Args:
+            message: Error message describing what went wrong.
+            repo_root: Repository root path.
+
+        Returns:
+            StatusResponse with success=False.
+        """
+        return cls(
+            initialized=True,
+            repo_root=repo_root,
+            success=False,
+            error=message,
+        )
+
 
 class StatusUseCase:
     """Use case for retrieving ember index status."""
@@ -106,8 +163,7 @@ class StatusUseCase:
             # Get model fingerprint
             model_fingerprint = self.meta_repo.get("model_fingerprint")
 
-            return StatusResponse(
-                initialized=True,
+            return StatusResponse.create_success(
                 repo_root=request.repo_root,
                 indexed_files=indexed_files,
                 total_chunks=total_chunks,
@@ -115,16 +171,12 @@ class StatusUseCase:
                 is_stale=is_stale,
                 model_fingerprint=model_fingerprint,
                 config=self.config,
-                success=True,
-                error=None,
             )
         except (KeyboardInterrupt, SystemExit):
             raise
         except Exception as e:
             log_use_case_error(e, "status check")
-            return StatusResponse(
-                initialized=True,
+            return StatusResponse.create_error(
+                format_error_message(e, "status check"),
                 repo_root=request.repo_root,
-                success=False,
-                error=format_error_message(e, "status check"),
             )

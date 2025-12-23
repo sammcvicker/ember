@@ -167,6 +167,70 @@ class IndexResponse:
     success: bool = True
     error: str | None = None
 
+    @classmethod
+    def create_success(
+        cls,
+        *,
+        files_indexed: int,
+        chunks_created: int,
+        chunks_updated: int,
+        chunks_deleted: int,
+        vectors_stored: int,
+        tree_sha: str,
+        is_incremental: bool = False,
+        files_failed: int = 0,
+    ) -> "IndexResponse":
+        """Create a success response with indexing statistics.
+
+        Args:
+            files_indexed: Number of files processed.
+            chunks_created: Number of chunks created.
+            chunks_updated: Number of chunks updated.
+            chunks_deleted: Number of chunks deleted.
+            vectors_stored: Number of vectors stored.
+            tree_sha: Git tree SHA that was indexed.
+            is_incremental: Whether this was an incremental sync.
+            files_failed: Number of files that failed to chunk.
+
+        Returns:
+            IndexResponse with success=True and all statistics.
+        """
+        return cls(
+            files_indexed=files_indexed,
+            chunks_created=chunks_created,
+            chunks_updated=chunks_updated,
+            chunks_deleted=chunks_deleted,
+            vectors_stored=vectors_stored,
+            tree_sha=tree_sha,
+            files_failed=files_failed,
+            is_incremental=is_incremental,
+            success=True,
+            error=None,
+        )
+
+    @classmethod
+    def create_error(cls, message: str) -> "IndexResponse":
+        """Create an error response with zero counts.
+
+        Args:
+            message: Error message describing what went wrong.
+
+        Returns:
+            IndexResponse with success=False and all counts set to zero.
+        """
+        return cls(
+            files_indexed=0,
+            chunks_created=0,
+            chunks_updated=0,
+            chunks_deleted=0,
+            vectors_stored=0,
+            tree_sha="",
+            files_failed=0,
+            is_incremental=False,
+            success=False,
+            error=message,
+        )
+
 
 class IndexingOrchestrator:
     """Orchestrates the indexing pipeline phases.
@@ -341,17 +405,7 @@ class IndexingUseCase:
         Returns:
             IndexResponse with success=False and all counts set to zero.
         """
-        return IndexResponse(
-            files_indexed=0,
-            chunks_created=0,
-            chunks_updated=0,
-            chunks_deleted=0,
-            vectors_stored=0,
-            tree_sha="",
-            is_incremental=False,
-            success=False,
-            error=error,
-        )
+        return IndexResponse.create_error(error)
 
     def _verify_model_compatibility(self, force_reindex: bool) -> None:
         """Verify embedding model compatibility with stored fingerprint.
@@ -507,17 +561,15 @@ class IndexingUseCase:
             log_msg += f", {files_failed} failed"
         logger.info(log_msg)
 
-        return IndexResponse(
+        return IndexResponse.create_success(
             files_indexed=files_indexed,
             chunks_created=chunks_created,
             chunks_updated=chunks_updated,
             chunks_deleted=chunks_deleted,
             vectors_stored=vectors_stored,
             tree_sha=tree_sha,
-            files_failed=files_failed,
             is_incremental=is_incremental,
-            success=True,
-            error=None,
+            files_failed=files_failed,
         )
 
     def execute(
