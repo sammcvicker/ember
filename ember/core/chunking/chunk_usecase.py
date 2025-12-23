@@ -41,6 +41,43 @@ class ChunkFileResponse:
     success: bool = True
     error: str | None = None
 
+    @classmethod
+    def create_success(
+        cls, *, chunks: list[ChunkData], strategy: str
+    ) -> "ChunkFileResponse":
+        """Create a success response with chunks.
+
+        Args:
+            chunks: List of extracted chunks.
+            strategy: Strategy used ("tree-sitter", "line-based", or "none").
+
+        Returns:
+            ChunkFileResponse with success=True and chunks.
+        """
+        return cls(
+            chunks=chunks,
+            strategy=strategy,
+            success=True,
+            error=None,
+        )
+
+    @classmethod
+    def create_error(cls, message: str) -> "ChunkFileResponse":
+        """Create an error response.
+
+        Args:
+            message: Error message describing what went wrong.
+
+        Returns:
+            ChunkFileResponse with success=False and empty chunks.
+        """
+        return cls(
+            chunks=[],
+            strategy="",
+            success=False,
+            error=message,
+        )
+
 
 class ChunkFileUseCase:
     """Use case for chunking files with automatic fallback.
@@ -75,12 +112,7 @@ class ChunkFileUseCase:
         """
         # Validate input
         if not request.content.strip():
-            return ChunkFileResponse(
-                chunks=[],
-                strategy="none",
-                success=True,
-                error=None,
-            )
+            return ChunkFileResponse.create_success(chunks=[], strategy="none")
 
         # Try tree-sitter first for supported languages
         if request.lang in self.tree_sitter.supported_languages:
@@ -92,11 +124,8 @@ class ChunkFileUseCase:
 
             # If tree-sitter succeeded and returned chunks, use them
             if chunks:
-                return ChunkFileResponse(
-                    chunks=chunks,
-                    strategy="tree-sitter",
-                    success=True,
-                    error=None,
+                return ChunkFileResponse.create_success(
+                    chunks=chunks, strategy="tree-sitter"
                 )
 
             # Tree-sitter failed or returned no chunks, fall back to line-based
@@ -108,9 +137,4 @@ class ChunkFileUseCase:
             lang=request.lang,
         )
 
-        return ChunkFileResponse(
-            chunks=chunks,
-            strategy="line-based",
-            success=True,
-            error=None,
-        )
+        return ChunkFileResponse.create_success(chunks=chunks, strategy="line-based")

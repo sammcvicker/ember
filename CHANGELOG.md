@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Consolidated response creation patterns in use cases** (#361)
+  - Added factory class methods (`create_success()`, `create_error()`) to response dataclasses:
+    - `IndexResponse`: Centralizes 10-field construction for success/error responses
+    - `StatusResponse`: Provides consistent success/error response creation
+    - `InitResponse`: Simplifies error response creation with all-None paths
+    - `ChunkFileResponse`: Adds factory methods for chunking responses
+  - Use cases now call factory methods instead of manual field construction
+  - Adding new response fields now only requires changes in one place
+  - Reduces duplication between success and error response creation code
+
 - **Reduced test brittleness from string-based output assertions** (#360)
   - Added new semantic assertion helpers to `tests/helpers/cli_assertions.py`:
     - `assert_has_line_numbers()`: Detects line number formats (colon, pipe, Rich)
