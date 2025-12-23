@@ -99,6 +99,25 @@ class SyncService:
         last_tree_sha = self._meta_repo.get("last_tree_sha")
         return last_tree_sha != current_tree_sha
 
+    def quick_check_unchanged(self, sync_mode: str, force_reindex: bool) -> bool:
+        """Quick check if index is up-to-date without expensive setup.
+
+        This method allows the CLI to skip expensive model initialization
+        when the index is already up to date.
+
+        Args:
+            sync_mode: Sync mode (worktree, staged, or revision SHA).
+            force_reindex: Whether force reindex is requested.
+
+        Returns:
+            True if index is unchanged and sync can be skipped, False otherwise.
+        """
+        # Quick check only applies to worktree mode without force reindex
+        if force_reindex or sync_mode != "worktree":
+            return False
+
+        return not self.is_stale()
+
     def check_staleness(self) -> SyncResult:
         """Check if sync is needed without performing it.
 

@@ -5,7 +5,7 @@ Handles conversion of path arguments to repository-relative glob patterns.
 
 from pathlib import Path
 
-from ember.core.errors import EmberCliError, path_not_in_repo_error
+from ember.domain.exceptions import ConflictingFiltersError, PathNotInRepositoryError
 
 
 def normalize_path_filter(
@@ -30,8 +30,8 @@ def normalize_path_filter(
         Normalized path filter glob pattern, or None if no path filtering.
 
     Raises:
-        EmberCliError: If both path and existing_filter are provided,
-            or if path is outside the repository.
+        PathNotInRepositoryError: If path is outside the repository.
+        ConflictingFiltersError: If both path and existing_filter are provided.
     """
     if path is None:
         return existing_filter
@@ -43,11 +43,14 @@ def normalize_path_filter(
     try:
         path_rel_to_repo = path_abs.relative_to(repo_root)
     except ValueError:
-        path_not_in_repo_error(path)
+        raise PathNotInRepositoryError(
+            f"Path '{path}' is not within repository",
+            hint="Specify a path relative to or within the repository root",
+        ) from None
 
     # Check for mutually exclusive filter options
     if existing_filter:
-        raise EmberCliError(
+        raise ConflictingFiltersError(
             f"Cannot use both PATH argument ('{path}') and --in filter ('{existing_filter}')",
             hint="Use PATH to search a directory subtree, OR --in for glob patterns, but not both",
         )

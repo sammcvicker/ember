@@ -534,8 +534,10 @@ class TestNormalizePathFilter:
         assert result == "*.py"
 
     def test_raises_when_both_path_and_filter_provided(self, tmp_path: Path) -> None:
-        """Should raise EmberCliError when both path and filter are provided."""
-        with pytest.raises(EmberCliError) as exc_info:
+        """Should raise ConflictingFiltersError when both path and filter provided."""
+        from ember.domain.exceptions import ConflictingFiltersError
+
+        with pytest.raises(ConflictingFiltersError) as exc_info:
             normalize_path_filter(
                 path="src",
                 existing_filter="*.py",
@@ -547,13 +549,15 @@ class TestNormalizePathFilter:
         assert exc_info.value.hint is not None
 
     def test_raises_when_path_outside_repo(self, tmp_path: Path) -> None:
-        """Should raise EmberCliError when path is outside repository."""
+        """Should raise PathNotInRepositoryError when path is outside repository."""
+        from ember.domain.exceptions import PathNotInRepositoryError
+
         repo_root = tmp_path / "repo"
         repo_root.mkdir()
         outside_path = tmp_path / "outside"
         outside_path.mkdir()
 
-        with pytest.raises(EmberCliError) as exc_info:
+        with pytest.raises(PathNotInRepositoryError) as exc_info:
             normalize_path_filter(
                 path=str(outside_path),
                 existing_filter=None,

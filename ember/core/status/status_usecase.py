@@ -51,6 +51,20 @@ class StatusResponse:
     success: bool = True
     error: str | None = None
 
+    @property
+    def model_name(self) -> str | None:
+        """Extract the model name from the fingerprint.
+
+        The fingerprint format is "model-name:dimension:hash" where only
+        the model name portion is user-friendly for display.
+
+        Returns:
+            Model name (e.g., "jina-embeddings-v2-base-code") or None if no fingerprint.
+        """
+        if not self.model_fingerprint:
+            return None
+        return self.model_fingerprint.split(":")[0]
+
     @classmethod
     def create_success(
         cls,
