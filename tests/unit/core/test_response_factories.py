@@ -109,6 +109,43 @@ class TestStatusResponseFactories:
         assert response.model_fingerprint == "model-v1"
         assert response.config == config
 
+    def test_model_name_extracts_from_fingerprint(self) -> None:
+        """model_name property should extract model name from fingerprint."""
+        config = EmberConfig()
+        response = StatusResponse.create_success(
+            repo_root=Path("/test/repo"),
+            indexed_files=100,
+            total_chunks=500,
+            last_tree_sha="abc123",
+            is_stale=False,
+            model_fingerprint="jina-embeddings-v2-base-code:768:abc123",
+            config=config,
+        )
+
+        assert response.model_name == "jina-embeddings-v2-base-code"
+
+    def test_model_name_handles_no_colon(self) -> None:
+        """model_name property should return full fingerprint if no colon."""
+        config = EmberConfig()
+        response = StatusResponse.create_success(
+            repo_root=Path("/test/repo"),
+            indexed_files=100,
+            total_chunks=500,
+            last_tree_sha="abc123",
+            is_stale=False,
+            model_fingerprint="simple-model",
+            config=config,
+        )
+
+        assert response.model_name == "simple-model"
+
+    def test_model_name_returns_none_when_no_fingerprint(self) -> None:
+        """model_name property should return None when no fingerprint."""
+        response = StatusResponse(initialized=True)
+
+        assert response.model_fingerprint is None
+        assert response.model_name is None
+
 
 class TestInitResponseFactories:
     """Tests for InitResponse factory methods."""

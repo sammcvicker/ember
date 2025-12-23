@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Moved business logic out of CLI into use cases** (#362)
+  - Path normalization in `core/path_utils.py` now raises domain exceptions instead of CLI exceptions
+  - `StatusResponse` now has a `model_name` property that extracts the model name from fingerprint
+  - `SyncService` now has a `quick_check_unchanged()` method to consolidate staleness checking
+  - Created `EditorPort` interface in `ports/editor.py` with domain exceptions
+  - Created `ember/adapters/editor/` adapter implementing the port with subprocess
+  - Added domain exceptions in `ember/domain/exceptions.py`: `EmberDomainError`, `PathNotInRepositoryError`, `ConflictingFiltersError`
+  - CLI error handler now catches and converts domain exceptions to CLI exceptions
+  - This improves clean architecture compliance: core/ no longer depends on CLI infrastructure
+
 - **Consolidated response creation patterns in use cases** (#361)
   - Added factory class methods (`create_success()`, `create_error()`) to response dataclasses:
     - `IndexResponse`: Centralizes 10-field construction for success/error responses

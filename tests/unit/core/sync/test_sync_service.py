@@ -195,3 +195,51 @@ class TestSyncService:
         assert result.error is not None
         assert "locked" in result.error.lower()
         assert result.error_type == SyncErrorType.DATABASE_ERROR
+
+    def test_quick_check_unchanged_returns_false_when_force_reindex(self) -> None:
+        """quick_check_unchanged() returns False when force_reindex is True."""
+        mock_vcs = MagicMock()
+        mock_meta = MagicMock()
+
+        service = SyncService(mock_vcs, mock_meta)
+        result = service.quick_check_unchanged("worktree", force_reindex=True)
+
+        assert result is False
+        # Verify VCS was not called - optimization skipped
+        mock_vcs.get_worktree_tree_sha.assert_not_called()
+
+    def test_quick_check_unchanged_returns_false_for_non_worktree_mode(self) -> None:
+        """quick_check_unchanged() returns False for non-worktree sync modes."""
+        mock_vcs = MagicMock()
+        mock_meta = MagicMock()
+
+        service = SyncService(mock_vcs, mock_meta)
+
+        assert service.quick_check_unchanged("staged", force_reindex=False) is False
+        assert service.quick_check_unchanged("abc123", force_reindex=False) is False
+        # Verify VCS was not called
+        mock_vcs.get_worktree_tree_sha.assert_not_called()
+
+    def test_quick_check_unchanged_returns_true_when_index_up_to_date(self) -> None:
+        """quick_check_unchanged() returns True when index matches worktree."""
+        mock_vcs = MagicMock()
+        mock_vcs.get_worktree_tree_sha.return_value = "same_sha"
+        mock_meta = MagicMock()
+        mock_meta.get.return_value = "same_sha"
+
+        service = SyncService(mock_vcs, mock_meta)
+        result = service.quick_check_unchanged("worktree", force_reindex=False)
+
+        assert result is True
+
+    def test_quick_check_unchanged_returns_false_when_index_stale(self) -> None:
+        """quick_check_unchanged() returns False when index is stale."""
+        mock_vcs = MagicMock()
+        mock_vcs.get_worktree_tree_sha.return_value = "new_sha"
+        mock_meta = MagicMock()
+        mock_meta.get.return_value = "old_sha"
+
+        service = SyncService(mock_vcs, mock_meta)
+        result = service.quick_check_unchanged("worktree", force_reindex=False)
+
+        assert result is False

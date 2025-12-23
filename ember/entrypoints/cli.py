@@ -41,6 +41,7 @@ from ember.core.indexing.index_usecase import ModelMismatchError
 from ember.core.presentation import ResultPresenter
 from ember.core.sync import classify_sync_error
 from ember.domain.entities import SyncErrorType, SyncResult
+from ember.domain.exceptions import EmberDomainError
 from ember.version import __version__
 
 
@@ -66,6 +67,9 @@ def handle_cli_errors(command_name: str):
             except EmberCliError:
                 # Let EmberCliError propagate to use its format_message()
                 raise
+            except EmberDomainError as e:
+                # Convert domain exceptions to CLI exceptions
+                raise EmberCliError(e.message, hint=e.hint) from e
             except ModelMismatchError as e:
                 # Embedding model changed - clear action required
                 raise EmberCliError(
@@ -708,8 +712,8 @@ def _quick_check_unchanged(
 ) -> bool:
     """Check if index is up-to-date without expensive setup.
 
-    Performs a quick check to see if the worktree tree SHA matches
-    the last indexed SHA, allowing us to skip expensive model initialization.
+    Delegates to SyncService.quick_check_unchanged() to avoid duplicating
+    business logic in the CLI layer.
 
     Args:
         repo_root: Repository root path.
@@ -720,18 +724,15 @@ def _quick_check_unchanged(
     Returns:
         True if index is unchanged and sync can be skipped, False otherwise.
     """
-    if reindex or sync_mode != "worktree":
-        return False
-
     from ember.adapters.factory import RepositoryFactory
+    from ember.core.sync.sync_service import SyncService
 
-    repo_factory = RepositoryFactory()
-    vcs = repo_factory.create_git_adapter(repo_root)
-    meta_repo = repo_factory.create_meta_repository(db_path)
     try:
-        current_tree_sha = vcs.get_worktree_tree_sha()
-        last_indexed_sha = meta_repo.get("last_tree_sha")
-        return current_tree_sha == last_indexed_sha
+        repo_factory = RepositoryFactory()
+        vcs = repo_factory.create_git_adapter(repo_root)
+        meta_repo = repo_factory.create_meta_repository(db_path)
+        sync_service = SyncService(vcs, meta_repo)
+        return sync_service.quick_check_unchanged(sync_mode, reindex)
     except Exception as e:
         # If quick check fails, fall through to full sync
         click.echo(f"Warning: Quick check failed, performing full sync: {e}", err=True)
@@ -1286,10 +1287,8 @@ def status(ctx: click.Context) -> None:
         if response.config.index.chunk == "lines":
             click.echo(f"  Line window: {response.config.index.line_window} lines")
             click.echo(f"  Overlap: {response.config.index.overlap_lines} lines")
-        if response.model_fingerprint:
-            # Extract model name from fingerprint (e.g., "jina-embeddings-v2-base-code")
-            model_name = response.model_fingerprint.split(":")[0] if ":" in response.model_fingerprint else response.model_fingerprint
-            click.echo(f"  Model: {model_name}")
+        if response.model_name:
+            click.echo(f"  Model: {response.model_name}")
 
 
 # Configuration management commands
