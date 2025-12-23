@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Reduced test brittleness from string-based output assertions** (#360)
+  - Added new semantic assertion helpers to `tests/helpers/cli_assertions.py`:
+    - `assert_has_line_numbers()`: Detects line number formats (colon, pipe, Rich)
+    - `assert_has_rank_indicators()`: Detects result ranking formats ([1], #1, etc.)
+    - `assert_has_separator()`: Validates separator characters in output
+    - `assert_result_list_format()`: High-level result format validation
+  - Migrated ~20 brittle assertions in integration tests to semantic helpers
+  - Tests now resilient to cosmetic output changes (spacing, bracket styles)
+  - Updated module docstring with complete helper reference
+
 - **Clarified search port contracts for sync-based implementations** (#359)
   - `TextSearch` and `VectorSearch` ports now document two valid implementation patterns:
     - Push-based: `add()` inserts data immediately

@@ -5,8 +5,12 @@ from tests.helpers.cli_assertions import (
     assert_command_success,
     assert_error_message,
     assert_files_created,
+    assert_has_line_numbers,
+    assert_has_rank_indicators,
+    assert_has_separator,
     assert_output_contains,
     assert_output_matches,
+    assert_result_list_format,
     assert_success_indicator,
 )
 
@@ -18,4 +22,8 @@ __all__ = [
     "assert_error_message",
     "assert_success_indicator",
     "assert_files_created",
+    "assert_has_line_numbers",
+    "assert_has_rank_indicators",
+    "assert_has_separator",
+    "assert_result_list_format",
 ]

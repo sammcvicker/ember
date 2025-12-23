@@ -13,6 +13,12 @@ from click.testing import CliRunner
 
 from ember.entrypoints.cli import cli
 from tests.conftest import create_git_repo, git_add_and_commit
+from tests.helpers.cli_assertions import (
+    assert_has_line_numbers,
+    assert_has_rank_indicators,
+    assert_has_separator,
+    assert_output_contains,
+)
 
 
 @pytest.fixture
@@ -66,9 +72,7 @@ class TestFindContextSyntaxHighlighting:
 
         assert result.exit_code == 0
         # Output should have line numbers (format: [rank] line_num:content or line_num:content)
-        lines = [line for line in result.output.split('\n') if line.strip() and not line.startswith('[')]
-        has_line_numbers = any(line.strip() and line[0:5].strip().isdigit() for line in lines)
-        assert has_line_numbers, f"Expected line numbers in output. Lines: {lines[:5]}"
+        assert_has_line_numbers(result, context="find --context output")
 
     def test_find_context_uses_plain_format(
         self, runner: CliRunner, python_repo: Path, monkeypatch
@@ -99,10 +103,9 @@ class TestFindContextSyntaxHighlighting:
 
         assert result.exit_code == 0
         # Plain format uses colon separator: line_num:content
-        assert ":" in result.output, f"Expected colon separator in output. Output: {result.output}"
+        assert_has_separator(result, ":", context="plain format output")
         # Should have rank indicator [1], [2], etc.
-        assert "[1]" in result.output or "[2]" in result.output, \
-            f"Expected rank indicator in output. Output: {result.output}"
+        assert_has_rank_indicators(result, context="find --context output")
 
     def test_find_context_ignores_theme_setting(
         self, runner: CliRunner, python_repo: Path, monkeypatch
@@ -131,9 +134,7 @@ class TestFindContextSyntaxHighlighting:
 
         assert result.exit_code == 0
         # Output should still have line numbers (plain format)
-        lines = [line for line in result.output.split('\n') if line.strip() and not line.startswith('[')]
-        has_line_numbers = any(line.strip() and line[0:5].strip().isdigit() for line in lines)
-        assert has_line_numbers
+        assert_has_line_numbers(result, context="find --context ignores theme")
 
     def test_find_context_works_with_any_file_type(
         self, runner: CliRunner, python_repo: Path, monkeypatch
@@ -148,9 +149,7 @@ class TestFindContextSyntaxHighlighting:
 
         assert result.exit_code == 0
         # Should show line numbers in plain format
-        lines = [line for line in result.output.split('\n') if line.strip() and not line.startswith('[')]
-        has_line_numbers = any(line.strip() and line[0:5].strip().isdigit() for line in lines)
-        assert has_line_numbers
+        assert_has_line_numbers(result, context="find --context any file type")
 
     def test_find_context_shows_rank_before_code(
         self, runner: CliRunner, python_repo: Path, monkeypatch
@@ -165,7 +164,7 @@ class TestFindContextSyntaxHighlighting:
 
         assert result.exit_code == 0
         # Rank should be displayed as [1], [2], etc.
-        assert "[1]" in result.output or "[2]" in result.output
+        assert_has_rank_indicators(result, context="find --context rank display")
 
     def test_find_without_context_unchanged(
         self, runner: CliRunner, python_repo: Path, monkeypatch
@@ -181,9 +180,7 @@ class TestFindContextSyntaxHighlighting:
         assert result.exit_code == 0
         # Original format: [rank] line_number: content
         # Should have colon separator (not the | from context mode)
-        assert ":" in result.output
-        # Should NOT have the line numbers in column format from syntax highlighting
-        # (because this tests the non-context mode which remains unchanged)
+        assert_has_separator(result, ":", context="find without context")
 
     @pytest.mark.skip(reason="Search doesn't always return results for non-code files")
     def test_find_context_graceful_fallback_for_unknown_language(
@@ -215,7 +212,7 @@ class TestFindContextSyntaxHighlighting:
 
         assert result.exit_code == 0
         # Should work even with unknown file type (fallback to plain text)
-        assert "content" in result.output
+        assert_output_contains(result, "content", context="unknown file type fallback")
 
     def test_find_context_json_output_unchanged(
         self, runner: CliRunner, python_repo: Path, monkeypatch
