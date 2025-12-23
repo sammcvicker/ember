@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Error path test coverage for core components** (#357)
+  - Tests for ChunkStorageService error logging (embedding failures, rollback messages)
+  - Tests for IndexingUseCase error logging (model mismatch, chunking failures)
+  - Tests for partial sync rollback scenarios
+  - Tests for Query empty text validation
+  - Validates that error paths log appropriate messages for debugging
+
 ### Changed
 - **Centralized daemon timeout configuration** (#356)
   - Created `DaemonTimeouts` class with all timeout values in one place
