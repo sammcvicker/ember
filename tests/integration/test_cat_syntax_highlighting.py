@@ -12,6 +12,11 @@ from click.testing import CliRunner
 
 from ember.entrypoints.cli import cli
 from tests.conftest import create_git_repo
+from tests.helpers.cli_assertions import (
+    assert_has_line_numbers,
+    assert_has_separator,
+    assert_output_contains,
+)
 
 
 @pytest.fixture
@@ -67,14 +72,7 @@ class TestCatSyntaxHighlighting:
 
         assert result.exit_code == 0
         # Rich's syntax highlighting produces formatted output with line numbers
-        # The CliRunner sanitizes output, but we can verify Rich was used by checking
-        # for line numbers at the start of lines (e.g., "  1 " or "  2 ")
-        # Each line should start with padded line number
-        lines = [line for line in result.output.split('\n') if line.strip() and not line.startswith('[')]
-        # Check that we have lines starting with space-padded numbers
-        # Rich typically formats like "  1 code here"
-        has_line_numbers = any(line.strip() and line[0:5].strip().isdigit() for line in lines)
-        assert has_line_numbers, f"Expected line numbers in output. Lines: {lines[:5]}"
+        assert_has_line_numbers(result, context="cat with syntax highlighting")
 
     def test_cat_respects_syntax_highlighting_disabled(
         self, runner: CliRunner, python_repo: Path, monkeypatch
@@ -152,9 +150,7 @@ class TestCatSyntaxHighlighting:
 
         assert result.exit_code == 0
         # With syntax highlighting enabled and a valid theme, should have Rich line numbers
-        lines = [line for line in result.output.split('\n') if line.strip() and not line.startswith('[')]
-        has_line_numbers = any(line.strip() and line[0:5].strip().isdigit() for line in lines)
-        assert has_line_numbers
+        assert_has_line_numbers(result, context="cat with configured theme")
 
     def test_cat_detects_language_from_file_extension(
         self, runner: CliRunner, python_repo: Path, monkeypatch
@@ -180,9 +176,7 @@ class TestCatSyntaxHighlighting:
 
         assert result.exit_code == 0
         # Should have Rich syntax highlighting with line numbers
-        lines = [line for line in result.output.split('\n') if line.strip() and not line.startswith('[')]
-        has_line_numbers = any(line.strip() and line[0:5].strip().isdigit() for line in lines)
-        assert has_line_numbers
+        assert_has_line_numbers(result, context="cat with language detection")
 
     def test_cat_shows_line_numbers_with_highlighting(
         self, runner: CliRunner, python_repo: Path, monkeypatch
@@ -205,9 +199,7 @@ class TestCatSyntaxHighlighting:
 
         assert result.exit_code == 0
         # Rich's Syntax adds line numbers
-        lines = [line for line in result.output.split('\n') if line.strip() and not line.startswith('[')]
-        has_line_numbers = any(line.strip() and line[0:5].strip().isdigit() for line in lines)
-        assert has_line_numbers, "Expected Rich line numbers"
+        assert_has_line_numbers(result, context="cat line numbers")
 
     def test_cat_with_context_and_highlighting(
         self, runner: CliRunner, python_repo: Path, monkeypatch
@@ -231,7 +223,7 @@ class TestCatSyntaxHighlighting:
         assert result.exit_code == 0
         # When context is used, it shows plain line-by-line output with | separator (not Rich)
         # This is expected because context mode reads and displays surrounding lines
-        assert "|" in result.output  # Context includes line number separator
+        assert_has_separator(result, "|", context="cat --context output")
 
     def test_cat_with_hash_id_applies_highlighting(
         self, runner: CliRunner, python_repo: Path, monkeypatch
@@ -256,9 +248,7 @@ class TestCatSyntaxHighlighting:
 
         assert result.exit_code == 0
         # Should have Rich line numbers
-        lines = [line for line in result.output.split('\n') if line.strip() and not line.startswith('[')]
-        has_line_numbers = any(line.strip() and line[0:5].strip().isdigit() for line in lines)
-        assert has_line_numbers
+        assert_has_line_numbers(result, context="cat with hash ID")
 
     def test_cat_header_format_consistent_between_numeric_and_hash(
         self, runner: CliRunner, python_repo: Path, monkeypatch
@@ -364,4 +354,4 @@ class TestCatSyntaxHighlighting:
 
         assert result.exit_code == 0
         # Should still complete successfully (may or may not have highlighting depending on fallback)
-        assert "content" in result.output
+        assert_output_contains(result, "content", context="unknown file type fallback")

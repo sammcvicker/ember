@@ -23,8 +23,10 @@ from tests.helpers import (
     assert_command_success,
     assert_error_message,
     assert_files_created,
+    assert_has_separator,
     assert_output_contains,
     assert_output_matches,
+    assert_result_list_format,
     assert_success_indicator,
 )
 
@@ -363,12 +365,12 @@ class TestFindCommand:
         assert_command_success(result, context="find --context")
 
         # If results were found, verify context format (semantic check)
-        if "No results" not in result.output and result.output.strip() != "":
-            # Should have line numbers or pipe separator for context display
-            lines = [line for line in result.output.split('\n') if line.strip() and not line.startswith('[')]
-            has_line_numbers = any(line.strip() and line[0:5].strip().isdigit() for line in lines) if lines else False
-            has_pipe = "|" in result.output
-            assert has_line_numbers or has_pipe, "Expected line number format in context output"
+        assert_result_list_format(
+            result,
+            expect_line_numbers=True,
+            expect_ranks=False,
+            context="find --context output",
+        )
 
     def test_find_with_context_json_output(
         self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
@@ -574,7 +576,7 @@ class TestCatCommand:
 
         assert_command_success(result, context="cat --context")
         # Should show line numbers (semantic check for context format)
-        assert "|" in result.output  # Line number separator
+        assert_has_separator(result, "|", context="cat --context line separator")
 
     def test_cat_fails_without_prior_search(self, runner: CliRunner, git_repo_isolated: Path, monkeypatch) -> None:
         """Test that cat fails if no search was performed."""

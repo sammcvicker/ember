@@ -4,10 +4,20 @@ These helpers prioritize semantic assertions (exit codes, file existence) over
 exact string matching. When output validation is necessary, they use regex
 patterns to be resilient to cosmetic changes like emoji or wording updates.
 
-Rationale (Issue #330):
+Rationale (Issue #330, Issue #360):
 - Exact string matches break when emojis change or messages are reworded
 - Tests should validate behavior, not presentation
 - Regex patterns allow flexibility while still verifying key content
+
+Available helpers:
+- assert_command_success/failed: Exit code validation
+- assert_output_matches/contains: Pattern and substring matching
+- assert_error_message/success_indicator: Error and success detection
+- assert_files_created: Semantic file existence checks
+- assert_has_line_numbers: Line number format detection
+- assert_has_rank_indicators: Result ranking format detection
+- assert_has_separator: Output separator detection
+- assert_result_list_format: High-level result format validation
 """
 
 import re
@@ -217,3 +227,129 @@ def assert_files_created(
     for rel_path in relative_paths:
         full_path = base_path / rel_path
         assert full_path.exists(), f"Expected file not created: {full_path}"
+
+
+def assert_has_line_numbers(result: Result, *, context: str = "") -> None:
+    """Assert that output contains line numbers in standard format.
+
+    Checks for common line number patterns used in code output:
+    - Leading digit with separator (e.g., "  1 |", "  1:", "1:")
+    - Rich-style line numbers (padded numbers at line start)
+
+    This is resilient to formatting changes (spacing, separator style).
+
+    Args:
+        result: Click test runner Result object.
+        context: Optional context string for error messages.
+
+    Example:
+        result = runner.invoke(cli, ["cat", "1"])
+        assert_has_line_numbers(result, context="cat output")
+    """
+    ctx = f" ({context})" if context else ""
+
+    # Check for various line number formats:
+    # - "  1 |" or "  1|" (pipe separator)
+    # - "  1:" or "1:" (colon separator)
+    # - Lines starting with padded numbers (Rich format)
+    line_number_pattern = r"^\s*\d+\s*[|:]|^\s+\d+\s+\S"
+
+    lines = result.output.split("\n")
+    has_line_numbers = any(re.match(line_number_pattern, line) for line in lines)
+
+    assert has_line_numbers, (
+        f"Expected line numbers in output{ctx}:\n"
+        f"  Pattern: {line_number_pattern}\n"
+        f"  First 5 lines: {lines[:5]}"
+    )
+
+
+def assert_has_rank_indicators(result: Result, *, context: str = "") -> None:
+    """Assert that output contains result rank indicators like [1], [2], etc.
+
+    Resilient to:
+    - Different bracket styles ([1] vs (1) vs #1)
+    - Spacing variations
+
+    Args:
+        result: Click test runner Result object.
+        context: Optional context string for error messages.
+
+    Example:
+        result = runner.invoke(cli, ["find", "query", "--context", "3"])
+        assert_has_rank_indicators(result)
+    """
+    ctx = f" ({context})" if context else ""
+
+    # Match [N], (N), #N, or "Result N" patterns
+    rank_pattern = r"\[\d+\]|\(\d+\)|#\d+|[Rr]esult\s+\d+"
+    has_ranks = re.search(rank_pattern, result.output) is not None
+
+    assert has_ranks, (
+        f"Expected rank indicators in output{ctx}:\n"
+        f"  Pattern: {rank_pattern}\n"
+        f"  Output: {result.output[:500]}"
+    )
+
+
+def assert_has_separator(
+    result: Result,
+    separator: str = "|",
+    *,
+    context: str = "",
+) -> None:
+    """Assert that output uses a specific separator character.
+
+    Use for checking output format uses expected separators (|, :, etc.)
+    without being brittle to exact positioning.
+
+    Args:
+        result: Click test runner Result object.
+        separator: The separator character to look for.
+        context: Optional context string for error messages.
+
+    Example:
+        result = runner.invoke(cli, ["cat", "1", "--context", "2"])
+        assert_has_separator(result, "|", context="context output")
+    """
+    ctx = f" ({context})" if context else ""
+
+    assert separator in result.output, (
+        f"Expected separator '{separator}' in output{ctx}:\n"
+        f"  Output: {result.output[:500]}"
+    )
+
+
+def assert_result_list_format(
+    result: Result,
+    *,
+    expect_line_numbers: bool = True,
+    expect_ranks: bool = False,
+    context: str = "",
+) -> None:
+    """Assert that output follows expected result list format.
+
+    High-level semantic check for search/find result formatting.
+    Validates structure without checking exact text.
+
+    Args:
+        result: Click test runner Result object.
+        expect_line_numbers: Whether line numbers should be present.
+        expect_ranks: Whether rank indicators ([1], [2]) should be present.
+        context: Optional context string for error messages.
+
+    Example:
+        result = runner.invoke(cli, ["find", "query", "--context", "3"])
+        assert_result_list_format(result, expect_line_numbers=True, expect_ranks=True)
+    """
+    ctx = f" ({context})" if context else ""
+
+    # Skip empty results
+    if not result.output.strip() or "No results" in result.output:
+        return
+
+    if expect_line_numbers:
+        assert_has_line_numbers(result, context=f"result list{ctx}")
+
+    if expect_ranks:
+        assert_has_rank_indicators(result, context=f"result list{ctx}")
