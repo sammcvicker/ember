@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Clarified search port contracts for sync-based implementations** (#359)
+  - `TextSearch` and `VectorSearch` ports now document two valid implementation patterns:
+    - Push-based: `add()` inserts data immediately
+    - Sync-based: `add()` is a no-op, data flows via triggers or external sync
+  - Added `sync()` method to both protocols for explicit synchronization
+  - Updated `SQLiteFTS` and `SqliteVecAdapter` class/method docstrings to document their sync-based pattern
+  - Added comprehensive tests verifying the documented behavior
+  - This clarifies the contract and prevents confusion about no-op `add()` methods
+
 - **Standardized exception handling pattern across use cases** (#358)
   - All use cases now follow the same error handling contract:
     - `KeyboardInterrupt`/`SystemExit` are always re-raised

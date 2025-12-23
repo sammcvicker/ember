@@ -1,4 +1,9 @@
-"""SQLite FTS5 adapter implementing TextSearch protocol for full-text search."""
+"""SQLite FTS5 adapter implementing TextSearch protocol for full-text search.
+
+This is a sync-based implementation that uses database triggers to keep the
+FTS5 index in sync with the chunks table. The add() method is a no-op since
+data flows through triggers automatically.
+"""
 
 from pathlib import Path
 
@@ -8,9 +13,16 @@ from ember.adapters.sqlite.base_repository import SQLiteBaseRepository
 class SQLiteFTS(SQLiteBaseRepository):
     """SQLite FTS5 implementation of TextSearch for BM25-style full-text search.
 
+    Implementation pattern: Sync-based (trigger-driven)
+
     This adapter uses the FTS5 virtual table 'chunk_text' which is automatically
-    kept in sync with the 'chunks' table via triggers. Therefore, the add() method
-    is a no-op - chunks are indexed automatically when added to chunks table.
+    kept in sync with the 'chunks' table via database triggers. This means:
+
+    - add(): No-op - chunks are indexed automatically when added to chunks table
+    - sync(): No-op - triggers keep the index in sync automatically
+
+    The trigger-based approach ensures the FTS index is always up-to-date without
+    requiring explicit sync calls.
     """
 
     def __init__(self, db_path: Path) -> None:
@@ -33,6 +45,16 @@ class SQLiteFTS(SQLiteBaseRepository):
             metadata: Additional metadata (unused).
         """
         # No-op: FTS5 table is automatically synced via triggers
+        pass
+
+    def sync(self) -> None:
+        """Synchronize the FTS index with the chunks table.
+
+        This is a no-op because the FTS5 table uses database triggers that
+        automatically keep it in sync with the chunks table. The index is
+        always up-to-date without explicit sync calls.
+        """
+        # No-op: triggers keep the FTS index in sync automatically
         pass
 
     def query(

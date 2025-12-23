@@ -1,5 +1,9 @@
 """SQLite-vec adapter for efficient vector similarity search.
 
+This is a sync-based implementation that pulls vectors from a VectorRepository
+into the sqlite-vec index. The add() method is a no-op since vectors are
+managed by VectorRepository and synced explicitly.
+
 This adapter uses the sqlite-vec extension for optimized vector search.
 sqlite-vec provides much better performance than brute-force methods,
 especially for larger datasets.
@@ -41,6 +45,8 @@ def _load_sqlite_vec(conn: sqlite3.Connection) -> None:
 class SqliteVecAdapter(SQLiteBaseRepository):
     """Vector search adapter using sqlite-vec extension.
 
+    Implementation pattern: Sync-based (explicit sync from VectorRepository)
+
     This adapter uses the sqlite-vec extension (https://github.com/asg017/sqlite-vec)
     for efficient vector similarity search. It's significantly faster than brute-force
     methods and works well for datasets of any size.
@@ -48,9 +54,18 @@ class SqliteVecAdapter(SQLiteBaseRepository):
     The adapter creates a vec0 virtual table that stores vectors and provides
     fast k-nearest-neighbors search using cosine similarity.
 
+    Data flow:
+    - add(): No-op - vectors are managed by VectorRepository
+    - sync(): Pulls new vectors from VectorRepository's vectors table
+
     Performance optimization: The adapter tracks whether vectors need syncing
     via a dirty flag. Sync only runs when new vectors have been added since
     the last sync, avoiding unnecessary database scans on read-heavy workloads.
+
+    Usage:
+        # After adding vectors via VectorRepository:
+        adapter.mark_dirty()  # Signal that new vectors exist
+        adapter.sync()        # Or sync_if_needed() for lazy sync
     """
 
     def __init__(self, db_path: Path, vector_dim: int = 768) -> None:
@@ -260,6 +275,18 @@ class SqliteVecAdapter(SQLiteBaseRepository):
             self._sync_vectors()
             return True
         return False
+
+    def sync(self) -> None:
+        """Synchronize the vector index with the VectorRepository.
+
+        Pulls any new vectors from the vectors table into the vec_chunks
+        search index. This is idempotent - calling sync() multiple times
+        without data changes will only sync once (due to dirty flag tracking).
+
+        For efficiency, use mark_dirty() after adding vectors via VectorRepository,
+        then call sync() (or sync_if_needed()) to update the search index.
+        """
+        self.sync_if_needed()
 
     def query(
         self,
