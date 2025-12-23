@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from ember.adapters.daemon.lifecycle import DaemonLifecycle
+from ember.adapters.daemon.timeouts import DaemonTimeouts
 
 
 class TestTokenizersParallelismEnvVar:
@@ -245,7 +246,9 @@ class TestStopHelperMethods:
             result = lifecycle._stop_with_sigkill(12345)
 
             assert result is True
-            mock_signal.assert_called_once_with(12345, signal.SIGKILL, 2.5)
+            mock_signal.assert_called_once_with(
+                12345, signal.SIGKILL, DaemonTimeouts.SIGKILL_WAIT
+            )
 
     def test_stop_with_sigkill_returns_false_when_process_survives(
         self, lifecycle: DaemonLifecycle

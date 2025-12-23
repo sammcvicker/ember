@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 
 from ember.adapters.daemon.client import get_daemon_pid, is_daemon_running
+from ember.adapters.daemon.timeouts import DaemonTimeouts
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +110,7 @@ class DaemonLifecycle:
         Returns:
             True if process died, False if still alive after timeout
         """
-        check_interval = 0.5
+        check_interval = DaemonTimeouts.DEATH_CHECK_INTERVAL
         checks = int(timeout_secs / check_interval)
         for _ in range(checks):
             time.sleep(check_interval)
@@ -158,7 +159,9 @@ class DaemonLifecycle:
         """Clean up PID file after a failed startup attempt."""
         self.pid_file.unlink(missing_ok=True)
 
-    def _wait_for_daemon_ready(self, max_wait_secs: float = 20.0) -> bool:
+    def _wait_for_daemon_ready(
+        self, max_wait_secs: float = DaemonTimeouts.READY_WAIT
+    ) -> bool:
         """Wait for daemon to become ready.
 
         Args:
@@ -167,7 +170,7 @@ class DaemonLifecycle:
         Returns:
             True if daemon is ready, False if timeout
         """
-        check_interval = 0.5
+        check_interval = DaemonTimeouts.READY_CHECK_INTERVAL
         num_checks = int(max_wait_secs / check_interval)
 
         for i in range(num_checks):
@@ -291,13 +294,14 @@ class DaemonLifecycle:
             # 2. Process eventually becomes ready
             # 3. Status shows "running (PID None)" because no PID file
             logger.warning(
-                f"Daemon process {process.pid} not responding after 20s, terminating..."
+                f"Daemon process {process.pid} not responding after "
+                f"{DaemonTimeouts.READY_WAIT}s, terminating..."
             )
             try:
                 os.kill(process.pid, signal.SIGTERM)
                 # Give process brief time to exit gracefully
-                for _ in range(10):  # Up to 1 second
-                    time.sleep(0.1)
+                for _ in range(DaemonTimeouts.STARTUP_FAILURE_LOOP_COUNT):
+                    time.sleep(DaemonTimeouts.STARTUP_FAILURE_LOOP_WAIT)
                     if not self.is_process_alive(process.pid):
                         break
                 else:
@@ -308,7 +312,8 @@ class DaemonLifecycle:
 
             self._cleanup_failed_startup()
             raise RuntimeError(
-                "Daemon process started but not responding to health checks after 20s. "
+                f"Daemon process started but not responding to health checks after "
+                f"{DaemonTimeouts.READY_WAIT}s. "
                 "Process was terminated. This may indicate model loading issues. "
                 f"Check daemon logs at: {self.log_file}"
             )
@@ -414,8 +419,9 @@ class DaemonLifecycle:
             True if killed, False if survived
         """
         logger.warning("Daemon did not stop gracefully, sending SIGKILL...")
-        sigkill_timeout = 2.5  # Unified timeout constant
-        result = self._send_signal_and_wait(pid, signal.SIGKILL, sigkill_timeout)
+        result = self._send_signal_and_wait(
+            pid, signal.SIGKILL, DaemonTimeouts.SIGKILL_WAIT
+        )
 
         if result is True:
             logger.info("Daemon force-killed")
@@ -431,7 +437,7 @@ class DaemonLifecycle:
             logger.error("Daemon survived SIGKILL! Manual cleanup required.")
         return False
 
-    def stop(self, timeout: int = 10) -> bool:
+    def stop(self, timeout: int = DaemonTimeouts.SIGTERM_WAIT) -> bool:
         """Stop the daemon gracefully.
 
         Shutdown sequence:
