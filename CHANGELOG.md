@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Standardized exception handling pattern across use cases** (#358)
+  - All use cases now follow the same error handling contract:
+    - `KeyboardInterrupt`/`SystemExit` are always re-raised
+    - All other exceptions are caught and converted to error responses
+    - Responses include `success: bool` and `error: str | None` fields
+  - Created `ember.core.use_case_errors` module with shared error handling utilities:
+    - `EmberError` base exception class for domain errors
+    - `format_error_message()` for consistent error message formatting
+    - `log_use_case_error()` for consistent error logging
+  - `ModelMismatchError` now extends `EmberError`
+  - `InitResponse` now includes `success`, `error`, and `already_exists` fields
+  - `InitUseCase` returns error responses instead of raising exceptions
+  - Simplified error handling code in use cases by using shared utilities
+
 ### Added
 - **Error path test coverage for core components** (#357)
   - Tests for ChunkStorageService error logging (embedding failures, rollback messages)

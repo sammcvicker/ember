@@ -15,6 +15,11 @@ from pathlib import Path
 from ember.core.chunking.chunk_usecase import ChunkFileRequest, ChunkFileUseCase
 from ember.core.indexing.chunk_storage import ChunkStorageService
 from ember.core.indexing.file_preprocessor import FilePreprocessor, PreprocessedFile
+from ember.core.use_case_errors import (
+    EmberError,
+    format_error_message,
+    log_use_case_error,
+)
 from ember.domain.entities import Chunk
 from ember.ports.chunkers import ChunkData
 from ember.ports.embedders import Embedder
@@ -47,7 +52,7 @@ class IndexingContext:
     stats: dict[str, int] = field(default_factory=dict)
 
 
-class ModelMismatchError(Exception):
+class ModelMismatchError(EmberError):
     """Raised when embedding model differs from the one used to build the index.
 
     This error prevents dimension mismatch errors during search by requiring
@@ -57,10 +62,11 @@ class ModelMismatchError(Exception):
     def __init__(self, stored_model: str, current_model: str) -> None:
         self.stored_model = stored_model
         self.current_model = current_model
-        super().__init__(
+        message = (
             f"Embedding model changed: {stored_model} → {current_model}. "
             f"Run 'ember sync --force' to rebuild the index with the new model."
         )
+        super().__init__(message)
 
 # Code file extensions to index (whitelist approach)
 # Only source code files are indexed - data, config, docs, and binary files are skipped
@@ -522,6 +528,11 @@ class IndexingUseCase:
         Delegates to IndexingOrchestrator for the pipeline execution,
         handling all error cases uniformly.
 
+        Error handling contract:
+            - KeyboardInterrupt/SystemExit are re-raised (user wants to exit)
+            - All other exceptions are caught and converted to error responses
+            - See ember.core.use_case_errors for the error handling pattern
+
         Args:
             request: Indexing request with mode and filters.
             progress: Optional progress callback for reporting progress.
@@ -534,30 +545,12 @@ class IndexingUseCase:
         try:
             orchestrator = IndexingOrchestrator(self)
             return orchestrator.run(request, progress)
-
         except (KeyboardInterrupt, SystemExit):
             logger.info("Indexing interrupted by user")
             raise
-
-        except ModelMismatchError as e:
-            logger.error(str(e))
-            return self._create_error_response(str(e))
-
-        except OSError as e:
-            logger.error(f"I/O error during indexing: {e}")
-            return self._create_error_response(
-                f"I/O error: {e}. Check file permissions, disk space, and filesystem access."
-            )
-
-        except (ValueError, RuntimeError) as e:
-            logger.error(f"Error during indexing: {e}")
-            return self._create_error_response(f"Indexing error: {e}")
-
-        except Exception:
-            logger.exception("Unexpected error during indexing")
-            return self._create_error_response(
-                "Internal error during indexing. Check logs for details."
-            )
+        except Exception as e:
+            log_use_case_error(e, "indexing")
+            return self._create_error_response(format_error_message(e, "indexing"))
 
     def _get_tree_sha(self, repo_root: Path, sync_mode: str) -> str:
         """Get tree SHA based on sync mode.

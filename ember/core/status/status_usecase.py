@@ -4,6 +4,7 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
+from ember.core.use_case_errors import format_error_message, log_use_case_error
 from ember.domain.config import EmberConfig
 from ember.ports.repositories import ChunkRepository, MetaRepository
 from ember.ports.vcs import VCS
@@ -77,6 +78,11 @@ class StatusUseCase:
     def execute(self, request: StatusRequest) -> StatusResponse:
         """Execute status check.
 
+        Error handling contract:
+            - KeyboardInterrupt/SystemExit are re-raised (user wants to exit)
+            - All other exceptions are caught and converted to error responses
+            - See ember.core.use_case_errors for the error handling pattern
+
         Args:
             request: Status request with repo root.
 
@@ -112,12 +118,13 @@ class StatusUseCase:
                 success=True,
                 error=None,
             )
-
+        except (KeyboardInterrupt, SystemExit):
+            raise
         except Exception as e:
-            logger.error(f"Failed to get status: {e}", exc_info=True)
+            log_use_case_error(e, "status check")
             return StatusResponse(
                 initialized=True,
                 repo_root=request.repo_root,
                 success=False,
-                error=str(e),
+                error=format_error_message(e, "status check"),
             )

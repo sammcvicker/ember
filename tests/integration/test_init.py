@@ -180,11 +180,14 @@ def test_init_fails_if_ember_dir_exists(tmp_path: Path, db_initializer: SqliteDa
         # First init
         use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
         request = InitRequest(repo_root=tmp_path, force=False)
-        use_case.execute(request)
+        response = use_case.execute(request)
+        assert response.success
 
-        # Second init without force should fail
-        with pytest.raises(FileExistsError, match="already exists"):
-            use_case.execute(request)
+        # Second init without force should return error response
+        response2 = use_case.execute(request)
+        assert not response2.success
+        assert response2.already_exists
+        assert "already exists" in (response2.error or "")
 
 
 def test_init_force_reinitializes(tmp_path: Path, db_initializer: SqliteDatabaseInitializer) -> None:

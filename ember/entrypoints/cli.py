@@ -589,11 +589,19 @@ def _report_init_results(
 ) -> None:
     """Report init command results to user.
 
+    Note: This function should only be called when response.success is True.
+
     Args:
-        response: The InitResponse from the use case.
+        response: The InitResponse from the use case (must have success=True).
         selected_model: The model that was selected.
         quiet: If True, suppress detailed output.
     """
+    # These are guaranteed to be non-None when success=True
+    assert response.ember_dir is not None
+    assert response.config_path is not None
+    assert response.db_path is not None
+    assert response.state_path is not None
+
     if response.global_config_created and not quiet:
         click.echo(f"Created global config at {response.global_config_path}")
         click.echo(f"  ✓ Using model: {selected_model}")
@@ -658,19 +666,15 @@ def init(ctx: click.Context, force: bool, model: str | None, yes: bool) -> None:
     use_case = InitUseCase(db_initializer=db_initializer, version=__version__)
     request = InitRequest(repo_root=repo_root, force=force, model=selected_model)
 
-    try:
-        response = use_case.execute(request)
-        _report_init_results(response, selected_model, quiet)
-    except FileExistsError as e:
-        raise EmberCliError(
-            str(e),
-            hint="Use 'ember init --force' to reinitialize",
-        ) from e
-    except Exception as e:
-        raise EmberCliError(
-            f"Failed to initialize ember: {e}",
-            hint="Check permissions and try again, or use --force to reinitialize",
-        ) from e
+    response = use_case.execute(request)
+    if not response.success:
+        hint = (
+            "Use 'ember init --force' to reinitialize"
+            if response.already_exists
+            else "Check permissions and try again, or use --force to reinitialize"
+        )
+        raise EmberCliError(response.error or "Unknown error", hint=hint)
+    _report_init_results(response, selected_model, quiet)
 
 
 def _parse_sync_mode(rev: str | None, staged: bool, worktree: bool) -> str:
