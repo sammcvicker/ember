@@ -625,6 +625,44 @@ def _report_init_results(
         click.echo("\nNext: Run 'ember sync' to index your codebase")
 
 
+def _ensure_model_downloaded(model_name: str, quiet: bool) -> bool:
+    """Ensure the embedding model is downloaded before daemon starts.
+
+    This prevents daemon startup timeouts on fresh install by downloading
+    the model during init when the user expects setup time.
+
+    Args:
+        model_name: The model preset or HuggingFace ID to download.
+        quiet: If True, suppress progress output.
+
+    Returns:
+        True if model was downloaded or already cached, False on error.
+    """
+    from ember.adapters.local_models import create_embedder, is_model_cached
+
+    if is_model_cached(model_name):
+        return True
+
+    if not quiet:
+        click.echo(f"Downloading embedding model: {model_name}")
+        click.echo("  (this may take a minute on first run)")
+
+    try:
+        # Create embedder and call ensure_loaded() to trigger download
+        embedder = create_embedder(model_name)
+        embedder.ensure_loaded()
+
+        if not quiet:
+            click.echo("  ✓ Model downloaded successfully")
+        return True
+    except Exception as e:
+        # Model download failed, but don't block init - daemon will retry
+        if not quiet:
+            click.echo(f"  ⚠ Model download failed: {e}")
+            click.echo("    (model will be downloaded when sync runs)")
+        return False
+
+
 @cli.command()
 @click.option(
     "--force",
@@ -678,6 +716,11 @@ def init(ctx: click.Context, force: bool, model: str | None, yes: bool) -> None:
             else "Check permissions and try again, or use --force to reinitialize"
         )
         raise EmberCliError(response.error or "Unknown error", hint=hint)
+
+    # Pre-download the embedding model to prevent daemon startup timeouts (#378)
+    # This happens after init succeeds but before reporting results
+    _ensure_model_downloaded(selected_model, quiet)
+
     _report_init_results(response, selected_model, quiet)
 
 

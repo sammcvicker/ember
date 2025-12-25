@@ -13,6 +13,7 @@ from ember.adapters.local_models.registry import (
     _build_embedder_kwargs,
     create_embedder,
     get_model_info,
+    is_model_cached,
     list_available_models,
     resolve_model_name,
 )
@@ -371,3 +372,97 @@ class TestModelRegistry:
         assert len(models) == len(MODEL_REGISTRY)
         model_ids = {m["name"] for m in models}
         assert model_ids == set(MODEL_REGISTRY.keys())
+
+
+class TestIsModelCached:
+    """Tests for is_model_cached function (#378)."""
+
+    def test_returns_true_when_model_loads_locally(self):
+        """Test returns True when model loads with local_files_only."""
+        with patch("sentence_transformers.SentenceTransformer") as mock_st:
+            mock_st.return_value = MagicMock()
+
+            result = is_model_cached("minilm")
+
+            assert result is True
+            # Should be called with local_files_only=True
+            call_kwargs = mock_st.call_args[1]
+            assert call_kwargs["local_files_only"] is True
+
+    def test_returns_false_when_oserror_raised(self):
+        """Test returns False when OSError raised (model not cached)."""
+        with patch("sentence_transformers.SentenceTransformer") as mock_st:
+            mock_st.side_effect = OSError("Model not found locally")
+
+            result = is_model_cached("minilm")
+
+            assert result is False
+
+    def test_returns_false_when_valueerror_raised(self):
+        """Test returns False when ValueError raised (model not cached)."""
+        with patch("sentence_transformers.SentenceTransformer") as mock_st:
+            mock_st.side_effect = ValueError("Model files not found")
+
+            result = is_model_cached("minilm")
+
+            assert result is False
+
+    def test_returns_false_when_import_fails(self):
+        """Test returns False when sentence-transformers not installed."""
+        # Remove the module from sys.modules to force re-import attempt
+        import sys
+
+        original_module = sys.modules.get("sentence_transformers")
+        try:
+            # Remove the module if it exists
+            if "sentence_transformers" in sys.modules:
+                del sys.modules["sentence_transformers"]
+
+            # Mock the import to fail
+            with patch.dict(sys.modules, {"sentence_transformers": None}):
+                result = is_model_cached("minilm")
+                assert result is False
+        finally:
+            # Restore the module
+            if original_module is not None:
+                sys.modules["sentence_transformers"] = original_module
+
+    def test_uses_trust_remote_code_for_jina(self):
+        """Test that trust_remote_code=True is set for Jina model."""
+        with patch("sentence_transformers.SentenceTransformer") as mock_st:
+            mock_st.return_value = MagicMock()
+
+            is_model_cached("jina-code-v2")
+
+            call_kwargs = mock_st.call_args[1]
+            assert call_kwargs["trust_remote_code"] is True
+
+    def test_no_trust_remote_code_for_other_models(self):
+        """Test that trust_remote_code is False for non-Jina models."""
+        with patch("sentence_transformers.SentenceTransformer") as mock_st:
+            mock_st.return_value = MagicMock()
+
+            is_model_cached("bge-small")
+
+            call_kwargs = mock_st.call_args[1]
+            assert call_kwargs["trust_remote_code"] is False
+
+    def test_resolves_model_name(self):
+        """Test that preset names are resolved to full model IDs."""
+        with patch("sentence_transformers.SentenceTransformer") as mock_st:
+            mock_st.return_value = MagicMock()
+
+            is_model_cached("minilm")
+
+            # Should resolve "minilm" to full model ID
+            call_args = mock_st.call_args[0]
+            assert call_args[0] == "sentence-transformers/all-MiniLM-L6-v2"
+
+    def test_returns_false_on_unexpected_exception(self):
+        """Test returns False on unexpected errors (corrupted cache)."""
+        with patch("sentence_transformers.SentenceTransformer") as mock_st:
+            mock_st.side_effect = RuntimeError("Corrupted cache")
+
+            result = is_model_cached("minilm")
+
+            assert result is False

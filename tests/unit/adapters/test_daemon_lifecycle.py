@@ -260,3 +260,98 @@ class TestStopHelperMethods:
             result = lifecycle._stop_with_sigkill(12345)
 
             assert result is False
+
+
+class TestDynamicStartupTimeout:
+    """Tests for dynamic startup timeout based on model cache status (#378)."""
+
+    @pytest.fixture
+    def lifecycle(self, tmp_path: Path) -> DaemonLifecycle:
+        """Create a DaemonLifecycle instance for testing."""
+        return DaemonLifecycle(
+            socket_path=tmp_path / "test.sock",
+            pid_file=tmp_path / "test.pid",
+            log_file=tmp_path / "test.log",
+            model_name="minilm",
+        )
+
+    def test_get_startup_timeout_returns_fast_timeout_when_cached(
+        self, lifecycle: DaemonLifecycle
+    ) -> None:
+        """Test _get_startup_timeout returns READY_WAIT when model is cached."""
+        with patch("ember.adapters.local_models.is_model_cached") as mock_cached:
+            mock_cached.return_value = True
+
+            result = lifecycle._get_startup_timeout()
+
+            assert result == DaemonTimeouts.READY_WAIT
+            mock_cached.assert_called_once_with("minilm")
+
+    def test_get_startup_timeout_returns_slow_timeout_when_not_cached(
+        self, lifecycle: DaemonLifecycle
+    ) -> None:
+        """Test _get_startup_timeout returns READY_WAIT_FIRST_RUN when model not cached."""
+        with patch("ember.adapters.local_models.is_model_cached") as mock_cached:
+            mock_cached.return_value = False
+
+            result = lifecycle._get_startup_timeout()
+
+            assert result == DaemonTimeouts.READY_WAIT_FIRST_RUN
+
+    def test_get_startup_timeout_returns_default_when_no_model_name(
+        self, tmp_path: Path
+    ) -> None:
+        """Test _get_startup_timeout returns READY_WAIT when no model specified."""
+        lifecycle = DaemonLifecycle(
+            socket_path=tmp_path / "test.sock",
+            pid_file=tmp_path / "test.pid",
+            log_file=tmp_path / "test.log",
+            model_name=None,  # No model specified
+        )
+
+        result = lifecycle._get_startup_timeout()
+
+        assert result == DaemonTimeouts.READY_WAIT
+
+    def test_get_startup_timeout_returns_slow_timeout_on_exception(
+        self, lifecycle: DaemonLifecycle
+    ) -> None:
+        """Test _get_startup_timeout returns extended timeout when cache check fails."""
+        with patch("ember.adapters.local_models.is_model_cached") as mock_cached:
+            mock_cached.side_effect = RuntimeError("Cache check failed")
+
+            result = lifecycle._get_startup_timeout()
+
+            assert result == DaemonTimeouts.READY_WAIT_FIRST_RUN
+
+    def test_wait_for_daemon_ready_uses_dynamic_timeout(
+        self, lifecycle: DaemonLifecycle
+    ) -> None:
+        """Test _wait_for_daemon_ready uses _get_startup_timeout when no timeout given."""
+        with patch.object(
+            lifecycle, "_get_startup_timeout"
+        ) as mock_get_timeout:
+            mock_get_timeout.return_value = 60.0
+
+            with patch.object(lifecycle, "is_running") as mock_running:
+                mock_running.return_value = False  # Never ready
+
+                with patch("time.sleep"):
+                    lifecycle._wait_for_daemon_ready()
+
+                    mock_get_timeout.assert_called_once()
+
+    def test_wait_for_daemon_ready_respects_explicit_timeout(
+        self, lifecycle: DaemonLifecycle
+    ) -> None:
+        """Test _wait_for_daemon_ready uses explicit timeout when provided."""
+        with patch.object(
+            lifecycle, "_get_startup_timeout"
+        ) as mock_get_timeout, patch.object(lifecycle, "is_running") as mock_running:
+            mock_running.return_value = False
+
+            with patch("time.sleep"):
+                lifecycle._wait_for_daemon_ready(max_wait_secs=5.0)
+
+                # Should NOT call _get_startup_timeout when explicit timeout given
+                mock_get_timeout.assert_not_called()

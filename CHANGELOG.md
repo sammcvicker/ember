@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Daemon startup fails on fresh install during model download** (#378)
+  - On first run, embedding models must be downloaded from HuggingFace (Jina ~1.6GB, MiniLM ~100MB)
+  - The 20-second daemon startup timeout was not sufficient for model download
+  - Now pre-downloads the model during `ember init` when users expect setup time
+  - Added dynamic timeout: uses 120s for first-run (uncached model), 20s for cached
+  - Added `is_model_cached()` helper to detect if model download will be needed
+
 - **BM25 score validation incorrectly assumed normalized 0-1 range** (#377)
   - `ember find` was failing with validation errors because BM25 scores from SQLite FTS5 are raw, unbounded positive values
   - Changed `SearchExplanation.bm25_score` validation to only require non-negative values (≥0) instead of normalized range (0.0-1.0)
