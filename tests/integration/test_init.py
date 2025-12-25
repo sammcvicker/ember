@@ -1,7 +1,7 @@
 """Integration tests for init command and use case.
 
-Tests the complete init flow including database schema creation,
-config file generation, and state initialization.
+Tests the complete init flow including database schema creation
+and config file generation.
 """
 
 import sqlite3
@@ -14,7 +14,6 @@ from ember.adapters.config.toml_config_provider import TomlConfigProvider
 from ember.adapters.sqlite.initializer import SqliteDatabaseInitializer
 from ember.core.config.init_usecase import InitRequest, InitUseCase
 from ember.shared.config_io import load_config
-from ember.shared.state_io import load_state
 
 
 @pytest.fixture
@@ -33,7 +32,7 @@ def test_init_creates_all_files(tmp_path: Path, db_initializer: SqliteDatabaseIn
         return_value=temp_global_path,
     ):
         # Execute init
-        use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
+        use_case = InitUseCase(db_initializer=db_initializer)
         request = InitRequest(repo_root=tmp_path, force=False)
         response = use_case.execute(request)
 
@@ -45,7 +44,6 @@ def test_init_creates_all_files(tmp_path: Path, db_initializer: SqliteDatabaseIn
     # Verify all files exist
     assert response.config_path.exists()
     assert response.db_path.exists()
-    assert response.state_path.exists()
 
     # Verify global config was created
     assert response.global_config_created
@@ -70,7 +68,7 @@ def test_init_config_is_valid_toml(tmp_path: Path, db_initializer: SqliteDatabas
         "ember.core.config.init_usecase.get_global_config_path",
         return_value=temp_global_path,
     ):
-        use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
+        use_case = InitUseCase(db_initializer=db_initializer)
         request = InitRequest(repo_root=tmp_path)
         response = use_case.execute(request)
 
@@ -112,7 +110,7 @@ def test_init_creates_valid_database_schema(tmp_path: Path, db_initializer: Sqli
         "ember.core.config.init_usecase.get_global_config_path",
         return_value=temp_global_path,
     ):
-        use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
+        use_case = InitUseCase(db_initializer=db_initializer)
         request = InitRequest(repo_root=tmp_path)
         response = use_case.execute(request)
 
@@ -145,29 +143,6 @@ def test_init_creates_valid_database_schema(tmp_path: Path, db_initializer: Sqli
     conn.close()
 
 
-def test_init_creates_valid_state_json(tmp_path: Path, db_initializer: SqliteDatabaseInitializer) -> None:
-    """Test that state.json is created with correct initial values."""
-    # Use a temp global config path to avoid affecting real global config
-    temp_global_path = tmp_path / "global_config" / "ember" / "config.toml"
-
-    with patch(
-        "ember.core.config.init_usecase.get_global_config_path",
-        return_value=temp_global_path,
-    ):
-        use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
-        request = InitRequest(repo_root=tmp_path)
-        response = use_case.execute(request)
-
-    # Load and verify state
-    state = load_state(response.state_path)
-
-    assert state.last_tree_sha == ""
-    assert state.last_sync_mode == "none"
-    assert state.model_fingerprint == ""
-    assert state.version == "0.1.0"
-    assert state.indexed_at  # Should have a timestamp
-
-
 def test_init_fails_if_ember_dir_exists(tmp_path: Path, db_initializer: SqliteDatabaseInitializer) -> None:
     """Test that init fails if .ember/ already exists without --force."""
     # Use a temp global config path to avoid affecting real global config
@@ -178,7 +153,7 @@ def test_init_fails_if_ember_dir_exists(tmp_path: Path, db_initializer: SqliteDa
         return_value=temp_global_path,
     ):
         # First init
-        use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
+        use_case = InitUseCase(db_initializer=db_initializer)
         request = InitRequest(repo_root=tmp_path, force=False)
         response = use_case.execute(request)
         assert response.success
@@ -199,7 +174,7 @@ def test_init_force_reinitializes(tmp_path: Path, db_initializer: SqliteDatabase
         "ember.core.config.init_usecase.get_global_config_path",
         return_value=temp_global_path,
     ):
-        use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
+        use_case = InitUseCase(db_initializer=db_initializer)
 
         # First init
         request1 = InitRequest(repo_root=tmp_path, force=False)
@@ -233,7 +208,7 @@ def test_init_database_has_fts5_triggers(tmp_path: Path, db_initializer: SqliteD
         "ember.core.config.init_usecase.get_global_config_path",
         return_value=temp_global_path,
     ):
-        use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
+        use_case = InitUseCase(db_initializer=db_initializer)
         request = InitRequest(repo_root=tmp_path)
         response = use_case.execute(request)
 
@@ -259,7 +234,7 @@ def test_init_with_custom_model(tmp_path: Path, db_initializer: SqliteDatabaseIn
         "ember.core.config.init_usecase.get_global_config_path",
         return_value=temp_global_path,
     ):
-        use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
+        use_case = InitUseCase(db_initializer=db_initializer)
         request = InitRequest(repo_root=tmp_path, model="jina-code-v2")
         response = use_case.execute(request)
 
@@ -286,7 +261,7 @@ def test_init_respects_existing_global_config(
         "ember.core.config.init_usecase.get_global_config_path",
         return_value=temp_global_path,
     ):
-        use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
+        use_case = InitUseCase(db_initializer=db_initializer)
         request = InitRequest(repo_root=tmp_path, model="jina-code-v2")
         response = use_case.execute(request)
 
@@ -306,7 +281,7 @@ def test_project_config_overrides_global(
         "ember.core.config.init_usecase.get_global_config_path",
         return_value=temp_global_path,
     ):
-        use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
+        use_case = InitUseCase(db_initializer=db_initializer)
         request = InitRequest(repo_root=tmp_path, model="jina-code-v2")
         response = use_case.execute(request)
 

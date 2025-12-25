@@ -221,7 +221,6 @@ def assert_files_created(
             repo_path / ".ember",
             "config.toml",
             "index.db",
-            "state.json",
         )
     """
     for rel_path in relative_paths:

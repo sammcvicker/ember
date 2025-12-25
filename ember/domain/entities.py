@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 
@@ -16,7 +15,6 @@ import blake3
 
 from ember.domain.value_objects import (
     SUPPORTED_LANGUAGES,
-    ISO8601Timestamp,
     LanguageFilter,
     PathFilter,
 )
@@ -248,187 +246,6 @@ class Chunk:
         if lang_filter is None:
             return True
         return self.lang == lang_filter
-
-
-@dataclass
-class RepoState:
-    """Repository indexing state.
-
-    Tracks what has been indexed and with which model.
-
-    Attributes:
-        last_tree_sha: Git tree SHA that was last indexed (empty if uninitialized).
-        last_sync_mode: Sync mode used (SyncMode enum or commit SHA string).
-        model_fingerprint: Fingerprint of embedding model used.
-        version: Ember version that created the index.
-        indexed_at: ISO-8601 timestamp of last indexing.
-            Accepts either a string (validated and converted to ISO8601Timestamp)
-            or an ISO8601Timestamp instance.
-
-    Domain Invariants:
-        - tree_sha must be empty (uninitialized) or a valid 40-char hex SHA
-        - sync_mode must be a SyncMode enum, a known mode string, or a commit SHA
-        - version must be non-empty
-        - Initialized state (non-empty tree_sha) requires a model_fingerprint
-
-    Raises:
-        ValueError: If any field fails validation.
-    """
-
-    last_tree_sha: str
-    last_sync_mode: str | SyncMode
-    model_fingerprint: str
-    version: str
-    indexed_at: ISO8601Timestamp | str
-
-    # Regex for validating git SHA (40 hex characters)
-    _SHA_PATTERN = re.compile(r"^[a-f0-9]{40}$")
-
-    @classmethod
-    def _validate_tree_sha(cls, tree_sha: str) -> None:
-        """Validate tree SHA format."""
-        if tree_sha and not cls._SHA_PATTERN.match(tree_sha):
-            raise ValueError(
-                f"tree_sha must be empty or a valid 40-character hex SHA, "
-                f"got: {tree_sha!r}"
-            )
-
-    @staticmethod
-    def _normalize_sync_mode(sync_mode: str | SyncMode) -> str | SyncMode:
-        """Normalize and validate sync_mode, returning SyncMode enum or commit SHA."""
-        if isinstance(sync_mode, SyncMode):
-            return sync_mode
-        if isinstance(sync_mode, str):
-            try:
-                return SyncMode(sync_mode)
-            except ValueError:
-                if not SyncMode.is_commit_sha(sync_mode):
-                    raise ValueError(
-                        f"sync_mode must be 'none', 'worktree', 'staged', or a valid "
-                        f"commit SHA (7-40 hex chars), got: {sync_mode!r}"
-                    ) from None
-                return sync_mode
-        raise ValueError(
-            f"sync_mode must be SyncMode enum or string, "
-            f"got: {type(sync_mode).__name__}"
-        )
-
-    @staticmethod
-    def _validate_version(version: str) -> None:
-        """Validate version is non-empty."""
-        if not version:
-            raise ValueError("version cannot be empty")
-
-    @staticmethod
-    def _validate_initialized_state(tree_sha: str, model_fingerprint: str) -> None:
-        """Validate initialized state invariant."""
-        if tree_sha and not model_fingerprint:
-            raise ValueError(
-                "model_fingerprint is required when tree_sha is set (initialized state)"
-            )
-
-    @staticmethod
-    def _normalize_indexed_at(indexed_at: ISO8601Timestamp | str) -> ISO8601Timestamp:
-        """Normalize indexed_at to ISO8601Timestamp."""
-        if isinstance(indexed_at, ISO8601Timestamp):
-            return indexed_at
-        return ISO8601Timestamp.from_string(indexed_at)
-
-    def __post_init__(self) -> None:
-        """Validate and normalize RepoState fields after initialization."""
-        self._validate_tree_sha(self.last_tree_sha)
-        self.last_sync_mode = self._normalize_sync_mode(self.last_sync_mode)
-        self._validate_version(self.version)
-        self._validate_initialized_state(self.last_tree_sha, self.model_fingerprint)
-        self.indexed_at = self._normalize_indexed_at(self.indexed_at)
-
-    @property
-    def is_uninitialized(self) -> bool:
-        """Check if the repository has never been indexed.
-
-        Returns:
-            True if no indexing has been performed (empty tree_sha).
-        """
-        return not self.last_tree_sha
-
-    @property
-    def indexed_at_str(self) -> str:
-        """Get indexed_at as string for serialization."""
-        return str(self.indexed_at)
-
-    def is_stale(self, threshold_seconds: int) -> bool:
-        """Check if the index is older than a threshold.
-
-        Args:
-            threshold_seconds: Age threshold in seconds.
-
-        Returns:
-            True if the index is older than threshold_seconds.
-        """
-        # Use the pre-parsed timestamp from ISO8601Timestamp
-        return self.indexed_at.is_older_than(threshold_seconds)
-
-    def needs_model_update(self, current_model_fingerprint: str) -> bool:
-        """Check if the index needs updating due to model change.
-
-        Args:
-            current_model_fingerprint: Fingerprint of current embedding model.
-
-        Returns:
-            True if the stored fingerprint differs from current model.
-        """
-        return self.model_fingerprint != current_model_fingerprint
-
-    @classmethod
-    def uninitialized(cls, version: str) -> RepoState:
-        """Create an uninitialized repo state.
-
-        Factory method for creating a RepoState representing a repository
-        that has never been indexed.
-
-        Args:
-            version: Ember version string (e.g., "1.2.0").
-
-        Returns:
-            RepoState with empty tree_sha and default values.
-        """
-        return cls(
-            last_tree_sha="",
-            last_sync_mode=SyncMode.NONE,
-            model_fingerprint="",
-            version=version,
-            indexed_at=datetime.now(UTC).isoformat(),
-        )
-
-    @classmethod
-    def from_sync(
-        cls,
-        tree_sha: str,
-        sync_mode: str | SyncMode,
-        model_fingerprint: str,
-        version: str,
-    ) -> RepoState:
-        """Create state after a successful sync.
-
-        Factory method for creating a RepoState representing a repository
-        that has been successfully indexed.
-
-        Args:
-            tree_sha: Git tree SHA that was indexed.
-            sync_mode: Sync mode used (SyncMode enum or commit SHA string).
-            model_fingerprint: Fingerprint of embedding model used.
-            version: Ember version string (e.g., "1.2.0").
-
-        Returns:
-            RepoState with the provided sync information and current timestamp.
-        """
-        return cls(
-            last_tree_sha=tree_sha,
-            last_sync_mode=sync_mode,
-            model_fingerprint=model_fingerprint,
-            version=version,
-            indexed_at=datetime.now(UTC).isoformat(),
-        )
 
 
 @dataclass(frozen=True)

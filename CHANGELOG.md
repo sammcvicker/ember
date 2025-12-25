@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **`ember status` always reports "Out of date" after sync** (#382)
+  - The `state.json` file was never updated after initialization, causing `ember status` to always report the index as stale
+  - Investigation revealed `state.json` was dead code: the SQLite `meta` table has always been the true source of truth for tracking sync state
+  - Removed `state.json` entirely along with the `RepoState` entity and `state_io.py` module
+  - The `.ember/` directory now contains only `config.toml` and `index.db` - simpler and more maintainable
+
 - **`ember find` fails with ValueError for edge-case vector scores** (#381)
   - Floating-point precision can cause cosine distance to be slightly > 1.0
   - This resulted in negative similarity scores (e.g., -0.0006) that failed validation

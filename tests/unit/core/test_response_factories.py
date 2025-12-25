@@ -159,7 +159,6 @@ class TestInitResponseFactories:
         assert response.ember_dir is None
         assert response.config_path is None
         assert response.db_path is None
-        assert response.state_path is None
         assert response.was_reinitialized is False
         assert response.already_exists is False
 
@@ -176,7 +175,6 @@ class TestInitResponseFactories:
             ember_dir=Path("/test/.ember"),
             config_path=Path("/test/.ember/config.toml"),
             db_path=Path("/test/.ember/index.db"),
-            state_path=Path("/test/.ember/state.json"),
             was_reinitialized=True,
             global_config_created=True,
             global_config_path=Path("~/.config/ember/config.toml"),
@@ -187,7 +185,6 @@ class TestInitResponseFactories:
         assert response.ember_dir == Path("/test/.ember")
         assert response.config_path == Path("/test/.ember/config.toml")
         assert response.db_path == Path("/test/.ember/index.db")
-        assert response.state_path == Path("/test/.ember/state.json")
         assert response.was_reinitialized is True
         assert response.global_config_created is True
         assert response.global_config_path == Path("~/.config/ember/config.toml")

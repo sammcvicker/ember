@@ -44,7 +44,7 @@ def test_init_from_subdirectory_finds_git_root(test_repo_with_subdirs):
 
     # Now actually initialize
     db_initializer = SqliteDatabaseInitializer()
-    use_case = InitUseCase(db_initializer=db_initializer, version="0.2.0")
+    use_case = InitUseCase(db_initializer=db_initializer)
     request = InitRequest(repo_root=repo_root, force=False)
     response = use_case.execute(request)
 
@@ -63,7 +63,7 @@ def test_find_ember_root_from_subdirectory(test_repo_with_subdirs):
     from ember.core.config.init_usecase import InitRequest, InitUseCase
 
     db_initializer = SqliteDatabaseInitializer()
-    use_case = InitUseCase(db_initializer=db_initializer, version="0.2.0")
+    use_case = InitUseCase(db_initializer=db_initializer)
     request = InitRequest(repo_root=repo, force=False)
     use_case.execute(request)
 
@@ -107,7 +107,7 @@ def test_path_scoped_search_from_subdirectory(test_repo_with_subdirs):
     from ember.core.config.init_usecase import InitRequest, InitUseCase
 
     db_initializer = SqliteDatabaseInitializer()
-    use_case = InitUseCase(db_initializer=db_initializer, version="0.2.0")
+    use_case = InitUseCase(db_initializer=db_initializer)
     request = InitRequest(repo_root=repo, force=False)
     use_case.execute(request)
 
