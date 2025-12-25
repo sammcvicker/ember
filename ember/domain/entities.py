@@ -439,11 +439,12 @@ class SearchExplanation:
 
     Attributes:
         fused_score: Combined score from reciprocal rank fusion (0.0-1.0).
-        bm25_score: BM25 full-text search score (0.0-1.0).
+        bm25_score: Raw BM25 full-text search score from FTS5 (non-negative, unbounded).
         vector_score: Semantic vector similarity score (0.0-1.0).
 
     Raises:
-        ValueError: If any score is outside the valid range [0.0, 1.0].
+        ValueError: If fused_score or vector_score is outside [0.0, 1.0],
+            or if bm25_score is negative.
     """
 
     fused_score: float
@@ -456,9 +457,9 @@ class SearchExplanation:
             raise ValueError(
                 f"fused_score must be between 0.0 and 1.0, got: {self.fused_score}"
             )
-        if not 0.0 <= self.bm25_score <= 1.0:
+        if self.bm25_score < 0.0:
             raise ValueError(
-                f"bm25_score must be between 0.0 and 1.0, got: {self.bm25_score}"
+                f"bm25_score must be non-negative, got: {self.bm25_score}"
             )
         if not 0.0 <= self.vector_score <= 1.0:
             raise ValueError(

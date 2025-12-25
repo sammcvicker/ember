@@ -1030,13 +1030,14 @@ class TestSearchExplanationScoreValidation:
 
     def test_negative_bm25_score_raises_error(self):
         """Test that negative bm25_score raises ValueError."""
-        with pytest.raises(ValueError, match="bm25_score must be between"):
+        with pytest.raises(ValueError, match="bm25_score must be non-negative"):
             SearchExplanation(fused_score=0.5, bm25_score=-0.1)
 
-    def test_bm25_score_above_one_raises_error(self):
-        """Test that bm25_score > 1.0 raises ValueError."""
-        with pytest.raises(ValueError, match="bm25_score must be between"):
-            SearchExplanation(fused_score=0.5, bm25_score=1.1)
+    def test_bm25_score_above_one_valid(self):
+        """Test that bm25_score > 1.0 is valid (raw FTS5 scores are unbounded)."""
+        # BM25 scores from SQLite FTS5 are raw, unbounded positive values
+        explanation = SearchExplanation(fused_score=0.5, bm25_score=10.378)
+        assert explanation.bm25_score == 10.378
 
     def test_negative_vector_score_raises_error(self):
         """Test that negative vector_score raises ValueError."""

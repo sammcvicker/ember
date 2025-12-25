@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **BM25 score validation incorrectly assumed normalized 0-1 range** (#377)
+  - `ember find` was failing with validation errors because BM25 scores from SQLite FTS5 are raw, unbounded positive values
+  - Changed `SearchExplanation.bm25_score` validation to only require non-negative values (≥0) instead of normalized range (0.0-1.0)
+  - The `fused_score` (from RRF) remains normalized and is used for ranking; raw BM25 scores are preserved for debugging
+
 ### Changed
 - **Moved business logic out of CLI into use cases** (#362)
   - Path normalization in `core/path_utils.py` now raises domain exceptions instead of CLI exceptions
