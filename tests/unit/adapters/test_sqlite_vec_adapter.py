@@ -129,3 +129,50 @@ def test_sqlite_vec_adapter_dimension_768_for_jina(db_path: Path) -> None:
     # Should succeed without dimension errors
     assert isinstance(results, list)
     adapter.close()
+
+
+# =============================================================================
+# Vector similarity score clamping tests (#381)
+# =============================================================================
+
+
+def test_similarity_score_clamping_clamps_negative_values() -> None:
+    """Test that _clamp_similarity handles slightly negative values.
+
+    This is a regression test for issue #381: floating-point precision can
+    cause cosine distance > 1.0, resulting in negative similarity scores.
+    The _clamp_similarity function should clamp these to 0.0.
+    """
+    from ember.adapters.vss.sqlite_vec_adapter import _clamp_similarity
+
+    # Exact boundary
+    assert _clamp_similarity(0.0) == 0.0
+
+    # Slightly negative due to floating-point
+    assert _clamp_similarity(-0.0006161928176879883) == 0.0
+    assert _clamp_similarity(-1e-10) == 0.0
+    assert _clamp_similarity(-0.5) == 0.0
+
+
+def test_similarity_score_clamping_clamps_values_above_one() -> None:
+    """Test that _clamp_similarity handles values slightly > 1.0.
+
+    Floating-point precision can also cause similarity > 1.0 in rare cases.
+    """
+    from ember.adapters.vss.sqlite_vec_adapter import _clamp_similarity
+
+    # Exact boundary
+    assert _clamp_similarity(1.0) == 1.0
+
+    # Slightly above due to floating-point
+    assert _clamp_similarity(1.0000001) == 1.0
+    assert _clamp_similarity(1.5) == 1.0
+
+
+def test_similarity_score_clamping_preserves_valid_values() -> None:
+    """Test that _clamp_similarity preserves values in valid range."""
+    from ember.adapters.vss.sqlite_vec_adapter import _clamp_similarity
+
+    assert _clamp_similarity(0.5) == 0.5
+    assert _clamp_similarity(0.95) == 0.95
+    assert _clamp_similarity(0.123456789) == 0.123456789
