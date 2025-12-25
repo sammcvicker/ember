@@ -19,6 +19,26 @@ import sqlite_vec
 from ember.adapters.sqlite.base_repository import SQLiteBaseRepository
 
 
+def _clamp_similarity(similarity: float) -> float:
+    """Clamp similarity score to [0.0, 1.0] range.
+
+    Cosine distance from sqlite-vec should theoretically produce similarity
+    values in [0.0, 1.0] (for normalized embeddings), but floating-point
+    precision can cause slightly out-of-range values (e.g., -0.0006 or 1.0001).
+
+    Args:
+        similarity: Raw similarity score (1 - distance).
+
+    Returns:
+        Similarity clamped to [0.0, 1.0].
+    """
+    if similarity < 0.0:
+        return 0.0
+    if similarity > 1.0:
+        return 1.0
+    return similarity
+
+
 class DimensionMismatchError(Exception):
     """Raised when query vector dimension doesn't match stored vectors.
 
@@ -384,7 +404,8 @@ class SqliteVecAdapter(SQLiteBaseRepository):
             # Convert distance to similarity
             # For cosine distance: similarity = 1 - distance
             # This makes it compatible with the existing API where higher = more similar
-            similarity = 1.0 - distance
+            # Clamp to [0.0, 1.0] to handle floating-point precision edge cases (#381)
+            similarity = _clamp_similarity(1.0 - distance)
 
             results.append((chunk_id, similarity))
 

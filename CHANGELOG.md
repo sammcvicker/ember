@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **`ember find` fails with ValueError for edge-case vector scores** (#381)
+  - Floating-point precision can cause cosine distance to be slightly > 1.0
+  - This resulted in negative similarity scores (e.g., -0.0006) that failed validation
+  - Fixed by clamping similarity scores to [0.0, 1.0] at the source in sqlite-vec adapter
+
 - **Daemon startup fails on fresh install during model download** (#378)
   - On first run, embedding models must be downloaded from HuggingFace (Jina ~1.6GB, MiniLM ~100MB)
   - The 20-second daemon startup timeout was not sufficient for model download
