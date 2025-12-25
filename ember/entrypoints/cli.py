@@ -604,7 +604,6 @@ def _report_init_results(
     assert response.ember_dir is not None
     assert response.config_path is not None
     assert response.db_path is not None
-    assert response.state_path is not None
 
     if response.global_config_created and not quiet:
         click.echo(f"Created global config at {response.global_config_path}")
@@ -619,7 +618,6 @@ def _report_init_results(
     if not quiet:
         click.echo(f"  ✓ Created {response.config_path.name}")
         click.echo(f"  ✓ Created {response.db_path.name}")
-        click.echo(f"  ✓ Created {response.state_path.name}")
         if not response.global_config_created:
             click.echo(f"  ✓ Using model: {selected_model} (from global config)")
         click.echo("\nNext: Run 'ember sync' to index your codebase")
@@ -705,7 +703,7 @@ def init(ctx: click.Context, force: bool, model: str | None, yes: bool) -> None:
 
     config_factory = ConfigFactory()
     db_initializer = config_factory.create_db_initializer()
-    use_case = InitUseCase(db_initializer=db_initializer, version=__version__)
+    use_case = InitUseCase(db_initializer=db_initializer)
     request = InitRequest(repo_root=repo_root, force=force, model=selected_model)
 
     response = use_case.execute(request)

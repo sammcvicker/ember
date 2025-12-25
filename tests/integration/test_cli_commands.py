@@ -77,7 +77,6 @@ class TestInitCommand:
             ".ember",
             ".ember/config.toml",
             ".ember/index.db",
-            ".ember/state.json",
         )
         # Verify output mentions initialization (flexible pattern)
         assert_output_matches(result, r"[Ii]nitialized.*ember", context="init message")

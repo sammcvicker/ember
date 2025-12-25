@@ -20,7 +20,7 @@ def test_init_creates_valid_config():
 
         # Initialize ember
         db_initializer = SqliteDatabaseInitializer()
-        use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
+        use_case = InitUseCase(db_initializer=db_initializer)
         request = InitRequest(repo_root=repo_root, force=False)
         response = use_case.execute(request)
 
@@ -41,7 +41,7 @@ def test_config_provider_loads_init_config():
 
         # Initialize ember
         db_initializer = SqliteDatabaseInitializer()
-        use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
+        use_case = InitUseCase(db_initializer=db_initializer)
         request = InitRequest(repo_root=repo_root, force=False)
         response = use_case.execute(request)
 
@@ -63,7 +63,7 @@ def test_modified_config_is_loaded():
 
         # Initialize ember
         db_initializer = SqliteDatabaseInitializer()
-        use_case = InitUseCase(db_initializer=db_initializer, version="0.1.0")
+        use_case = InitUseCase(db_initializer=db_initializer)
         request = InitRequest(repo_root=repo_root, force=False)
         response = use_case.execute(request)
 
