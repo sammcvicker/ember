@@ -9,6 +9,7 @@ from ember.adapters.local_models.registry import (
     SUPPORTED_MODELS,
     create_embedder,
     get_model_info,
+    is_model_cached,
     list_available_models,
     resolve_model_name,
 )
@@ -18,6 +19,7 @@ __all__ = [
     "SUPPORTED_MODELS",
     "create_embedder",
     "get_model_info",
+    "is_model_cached",
     "list_available_models",
     "resolve_model_name",
 ]

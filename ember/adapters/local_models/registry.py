@@ -255,3 +255,47 @@ def list_available_models() -> list[dict]:
             "presets": list(spec.presets),
         })
     return models
+
+
+def is_model_cached(model_name: str) -> bool:
+    """Check if a model is cached locally.
+
+    Attempts to load the model with local_files_only=True to see if it's cached.
+    This is useful to determine if model download will be needed.
+
+    Args:
+        model_name: Model preset name or HuggingFace ID
+
+    Returns:
+        True if model is cached locally, False if download would be needed.
+    """
+    import os
+
+    # Prevent tokenizer parallelism warning
+    os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+
+    try:
+        from sentence_transformers import SentenceTransformer
+    except ImportError:
+        # If sentence-transformers not installed, model definitely not cached
+        return False
+
+    resolved = resolve_model_name(model_name)
+
+    # Need trust_remote_code for Jina model
+    trust_remote_code = resolved == "jinaai/jina-embeddings-v2-base-code"
+
+    try:
+        # Try to load with local_files_only - will fail if not cached
+        SentenceTransformer(
+            resolved,
+            trust_remote_code=trust_remote_code,
+            local_files_only=True,
+        )
+        return True
+    except (OSError, ValueError):
+        # Model not cached
+        return False
+    except Exception:
+        # Other errors (e.g., corrupted cache) - treat as not cached
+        return False

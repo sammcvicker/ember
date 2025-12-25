@@ -44,12 +44,26 @@ class DaemonTimeouts:
     """Maximum time to wait for daemon to become ready after startup.
 
     This timeout covers:
-    - Model loading (typically 2-5s for Jina models)
+    - Model loading (typically 2-5s for Jina models from cache)
     - Socket creation and binding
     - Any startup initialization
 
-    On slower systems or with larger models, this may need to be increased.
+    This is the timeout used when the model is already cached locally.
+    For first-time startup requiring model download, use READY_WAIT_FIRST_RUN.
     The daemon will log its actual startup time for tuning reference.
+    """
+
+    READY_WAIT_FIRST_RUN: float = 120.0
+    """Maximum time to wait when model needs to be downloaded.
+
+    On first run (or if model cache is cleared), the embedding model must be
+    downloaded from HuggingFace. This can take significant time:
+    - Jina model (~1.6GB): 30-120s depending on network
+    - MiniLM (~100MB): 5-30s
+    - BGE-small (~130MB): 5-30s
+
+    This longer timeout prevents startup failures on fresh installs.
+    Once cached, subsequent startups use READY_WAIT.
     """
 
     READY_CHECK_INTERVAL: float = 0.5

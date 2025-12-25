@@ -159,17 +159,50 @@ class DaemonLifecycle:
         """Clean up PID file after a failed startup attempt."""
         self.pid_file.unlink(missing_ok=True)
 
+    def _get_startup_timeout(self) -> float:
+        """Determine the appropriate startup timeout based on model cache status.
+
+        Returns longer timeout if model needs to be downloaded, shorter if cached.
+
+        Returns:
+            Timeout in seconds.
+        """
+        if not self.model_name:
+            # No model specified, use default timeout
+            return DaemonTimeouts.READY_WAIT
+
+        try:
+            from ember.adapters.local_models import is_model_cached
+
+            if is_model_cached(self.model_name):
+                logger.debug(f"Model {self.model_name} is cached, using fast timeout")
+                return DaemonTimeouts.READY_WAIT
+            else:
+                logger.info(
+                    f"Model {self.model_name} not cached, using extended timeout "
+                    f"({DaemonTimeouts.READY_WAIT_FIRST_RUN}s) for download"
+                )
+                return DaemonTimeouts.READY_WAIT_FIRST_RUN
+        except Exception as e:
+            # If we can't check cache status, use longer timeout to be safe
+            logger.warning(f"Could not check model cache status: {e}, using extended timeout")
+            return DaemonTimeouts.READY_WAIT_FIRST_RUN
+
     def _wait_for_daemon_ready(
-        self, max_wait_secs: float = DaemonTimeouts.READY_WAIT
+        self, max_wait_secs: float | None = None
     ) -> bool:
         """Wait for daemon to become ready.
 
         Args:
-            max_wait_secs: Maximum seconds to wait for daemon to be ready
+            max_wait_secs: Maximum seconds to wait for daemon to be ready.
+                           If None, automatically determines based on cache status.
 
         Returns:
             True if daemon is ready, False if timeout
         """
+        if max_wait_secs is None:
+            max_wait_secs = self._get_startup_timeout()
+
         check_interval = DaemonTimeouts.READY_CHECK_INTERVAL
         num_checks = int(max_wait_secs / check_interval)
 
@@ -278,15 +311,22 @@ class DaemonLifecycle:
             error_msg += f"\nCheck daemon logs at: {self.log_file}"
             raise RuntimeError(error_msg)
 
-    def _handle_startup_timeout(self, process: subprocess.Popen) -> None:
+    def _handle_startup_timeout(
+        self, process: subprocess.Popen, timeout_used: float | None = None
+    ) -> None:
         """Handle the case where daemon didn't become ready in time.
 
         Args:
             process: The spawned process
+            timeout_used: The timeout that was used (for error messages).
+                          If None, uses READY_WAIT.
 
         Raises:
             RuntimeError: With appropriate message based on process state
         """
+        if timeout_used is None:
+            timeout_used = DaemonTimeouts.READY_WAIT
+
         if self.is_process_alive(process.pid):
             # Process is alive but not responding - terminate it to avoid orphan
             # This prevents the race condition where:
@@ -295,7 +335,7 @@ class DaemonLifecycle:
             # 3. Status shows "running (PID None)" because no PID file
             logger.warning(
                 f"Daemon process {process.pid} not responding after "
-                f"{DaemonTimeouts.READY_WAIT}s, terminating..."
+                f"{timeout_used}s, terminating..."
             )
             try:
                 os.kill(process.pid, signal.SIGTERM)
@@ -313,7 +353,7 @@ class DaemonLifecycle:
             self._cleanup_failed_startup()
             raise RuntimeError(
                 f"Daemon process started but not responding to health checks after "
-                f"{DaemonTimeouts.READY_WAIT}s. "
+                f"{timeout_used}s. "
                 "Process was terminated. This may indicate model loading issues. "
                 f"Check daemon logs at: {self.log_file}"
             )
@@ -373,10 +413,13 @@ class DaemonLifecycle:
                 if process.stderr:
                     process.stderr.close()
 
-            if self._wait_for_daemon_ready():
+            # Determine timeout based on whether model is cached
+            startup_timeout = self._get_startup_timeout()
+
+            if self._wait_for_daemon_ready(startup_timeout):
                 return True
 
-            self._handle_startup_timeout(process)
+            self._handle_startup_timeout(process, startup_timeout)
 
         except RuntimeError:
             # Re-raise RuntimeError from helper methods (already formatted)
