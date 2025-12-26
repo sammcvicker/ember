@@ -275,16 +275,21 @@ class TestDynamicStartupTimeout:
             model_name="minilm",
         )
 
-    def test_get_startup_timeout_returns_fast_timeout_when_cached(
+    def test_get_startup_timeout_returns_model_specific_timeout_when_cached(
         self, lifecycle: DaemonLifecycle
     ) -> None:
-        """Test _get_startup_timeout returns READY_WAIT when model is cached."""
-        with patch("ember.adapters.local_models.is_model_cached") as mock_cached:
+        """Test _get_startup_timeout returns model-specific timeout when cached (#385)."""
+        with (
+            patch("ember.adapters.local_models.is_model_cached") as mock_cached,
+            patch("ember.adapters.local_models.resolve_model_name") as mock_resolve,
+        ):
             mock_cached.return_value = True
+            mock_resolve.return_value = "sentence-transformers/all-MiniLM-L6-v2"
 
             result = lifecycle._get_startup_timeout()
 
-            assert result == DaemonTimeouts.READY_WAIT
+            # MiniLM has a 20s timeout
+            assert result == 20.0
             mock_cached.assert_called_once_with("minilm")
 
     def test_get_startup_timeout_returns_slow_timeout_when_not_cached(
@@ -301,7 +306,7 @@ class TestDynamicStartupTimeout:
     def test_get_startup_timeout_returns_default_when_no_model_name(
         self, tmp_path: Path
     ) -> None:
-        """Test _get_startup_timeout returns READY_WAIT when no model specified."""
+        """Test _get_startup_timeout returns READY_WAIT_DEFAULT when no model specified."""
         lifecycle = DaemonLifecycle(
             socket_path=tmp_path / "test.sock",
             pid_file=tmp_path / "test.pid",
@@ -311,7 +316,7 @@ class TestDynamicStartupTimeout:
 
         result = lifecycle._get_startup_timeout()
 
-        assert result == DaemonTimeouts.READY_WAIT
+        assert result == DaemonTimeouts.READY_WAIT_DEFAULT
 
     def test_get_startup_timeout_returns_slow_timeout_on_exception(
         self, lifecycle: DaemonLifecycle
@@ -323,6 +328,29 @@ class TestDynamicStartupTimeout:
             result = lifecycle._get_startup_timeout()
 
             assert result == DaemonTimeouts.READY_WAIT_FIRST_RUN
+
+    def test_get_startup_timeout_returns_longer_timeout_for_jina_model(
+        self, tmp_path: Path
+    ) -> None:
+        """Test _get_startup_timeout returns 45s for Jina model (#385)."""
+        lifecycle = DaemonLifecycle(
+            socket_path=tmp_path / "test.sock",
+            pid_file=tmp_path / "test.pid",
+            log_file=tmp_path / "test.log",
+            model_name="jina-code-v2",
+        )
+
+        with (
+            patch("ember.adapters.local_models.is_model_cached") as mock_cached,
+            patch("ember.adapters.local_models.resolve_model_name") as mock_resolve,
+        ):
+            mock_cached.return_value = True
+            mock_resolve.return_value = "jinaai/jina-embeddings-v2-base-code"
+
+            result = lifecycle._get_startup_timeout()
+
+            # Jina model has a 45s timeout (was 20s before #385)
+            assert result == 45.0
 
     def test_wait_for_daemon_ready_uses_dynamic_timeout(
         self, lifecycle: DaemonLifecycle

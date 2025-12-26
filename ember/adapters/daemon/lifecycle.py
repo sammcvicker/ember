@@ -160,23 +160,32 @@ class DaemonLifecycle:
         self.pid_file.unlink(missing_ok=True)
 
     def _get_startup_timeout(self) -> float:
-        """Determine the appropriate startup timeout based on model cache status.
+        """Determine the appropriate startup timeout based on model and cache status.
 
-        Returns longer timeout if model needs to be downloaded, shorter if cached.
+        Uses model-aware timeouts (#385) because different models have different
+        load times. The Jina model in particular is 1.6GB and can take 15-25s to
+        load on Apple Silicon, while smaller models like MiniLM load in ~5s.
 
         Returns:
             Timeout in seconds.
         """
         if not self.model_name:
             # No model specified, use default timeout
-            return DaemonTimeouts.READY_WAIT
+            return DaemonTimeouts.READY_WAIT_DEFAULT
 
         try:
-            from ember.adapters.local_models import is_model_cached
+            from ember.adapters.local_models import is_model_cached, resolve_model_name
+
+            # Resolve preset name to canonical model ID for timeout lookup
+            resolved_model = resolve_model_name(self.model_name)
 
             if is_model_cached(self.model_name):
-                logger.debug(f"Model {self.model_name} is cached, using fast timeout")
-                return DaemonTimeouts.READY_WAIT
+                # Use model-specific timeout for cached models
+                timeout = DaemonTimeouts.get_model_timeout(resolved_model)
+                logger.debug(
+                    f"Model {self.model_name} is cached, using {timeout}s timeout"
+                )
+                return timeout
             else:
                 logger.info(
                     f"Model {self.model_name} not cached, using extended timeout "
@@ -325,7 +334,7 @@ class DaemonLifecycle:
             RuntimeError: With appropriate message based on process state
         """
         if timeout_used is None:
-            timeout_used = DaemonTimeouts.READY_WAIT
+            timeout_used = DaemonTimeouts.READY_WAIT_DEFAULT
 
         if self.is_process_alive(process.pid):
             # Process is alive but not responding - terminate it to avoid orphan

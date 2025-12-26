@@ -377,9 +377,58 @@ class TestModelRegistry:
 class TestIsModelCached:
     """Tests for is_model_cached function (#378)."""
 
+    def test_fast_path_returns_true_when_cached(self):
+        """Test returns True via fast path when try_to_load_from_cache returns a path."""
+        with patch(
+            "huggingface_hub.try_to_load_from_cache"
+        ) as mock_cache:
+            mock_cache.return_value = "/path/to/cached/config.json"
+
+            result = is_model_cached("minilm")
+
+            assert result is True
+            mock_cache.assert_called_once_with(
+                "sentence-transformers/all-MiniLM-L6-v2", "config.json"
+            )
+
+    def test_fast_path_returns_false_when_not_cached(self):
+        """Test returns False via fast path when try_to_load_from_cache returns None."""
+        with patch(
+            "huggingface_hub.try_to_load_from_cache"
+        ) as mock_cache:
+            mock_cache.return_value = None
+
+            result = is_model_cached("minilm")
+
+            assert result is False
+
+    def test_fallback_when_fast_path_raises_exception(self):
+        """Test falls back to slow path when fast check raises exception."""
+        with (
+            patch(
+                "huggingface_hub.try_to_load_from_cache",
+                side_effect=Exception("Fast check failed"),
+            ),
+            patch("sentence_transformers.SentenceTransformer") as mock_st,
+        ):
+            mock_st.return_value = MagicMock()
+
+            result = is_model_cached("minilm")
+
+            assert result is True
+            # Should fall back to loading model
+            call_kwargs = mock_st.call_args[1]
+            assert call_kwargs["local_files_only"] is True
+
     def test_returns_true_when_model_loads_locally(self):
-        """Test returns True when model loads with local_files_only."""
-        with patch("sentence_transformers.SentenceTransformer") as mock_st:
+        """Test returns True when model loads with local_files_only (fallback path)."""
+        with (
+            patch(
+                "huggingface_hub.try_to_load_from_cache",
+                side_effect=Exception("Fast check failed"),
+            ),
+            patch("sentence_transformers.SentenceTransformer") as mock_st,
+        ):
             mock_st.return_value = MagicMock()
 
             result = is_model_cached("minilm")
@@ -391,7 +440,13 @@ class TestIsModelCached:
 
     def test_returns_false_when_oserror_raised(self):
         """Test returns False when OSError raised (model not cached)."""
-        with patch("sentence_transformers.SentenceTransformer") as mock_st:
+        with (
+            patch(
+                "huggingface_hub.try_to_load_from_cache",
+                side_effect=Exception("Fast check failed"),
+            ),
+            patch("sentence_transformers.SentenceTransformer") as mock_st,
+        ):
             mock_st.side_effect = OSError("Model not found locally")
 
             result = is_model_cached("minilm")
@@ -400,7 +455,13 @@ class TestIsModelCached:
 
     def test_returns_false_when_valueerror_raised(self):
         """Test returns False when ValueError raised (model not cached)."""
-        with patch("sentence_transformers.SentenceTransformer") as mock_st:
+        with (
+            patch(
+                "huggingface_hub.try_to_load_from_cache",
+                side_effect=Exception("Fast check failed"),
+            ),
+            patch("sentence_transformers.SentenceTransformer") as mock_st,
+        ):
             mock_st.side_effect = ValueError("Model files not found")
 
             result = is_model_cached("minilm")
@@ -408,7 +469,7 @@ class TestIsModelCached:
             assert result is False
 
     def test_returns_false_when_import_fails(self):
-        """Test returns False when sentence-transformers not installed."""
+        """Test returns False when both paths fail import."""
         # Remove the module from sys.modules to force re-import attempt
         import sys
 
@@ -418,8 +479,14 @@ class TestIsModelCached:
             if "sentence_transformers" in sys.modules:
                 del sys.modules["sentence_transformers"]
 
-            # Mock the import to fail
-            with patch.dict(sys.modules, {"sentence_transformers": None}):
+            # Mock the imports to fail
+            with (
+                patch(
+                    "huggingface_hub.try_to_load_from_cache",
+                    side_effect=Exception("Fast check failed"),
+                ),
+                patch.dict(sys.modules, {"sentence_transformers": None}),
+            ):
                 result = is_model_cached("minilm")
                 assert result is False
         finally:
@@ -428,8 +495,14 @@ class TestIsModelCached:
                 sys.modules["sentence_transformers"] = original_module
 
     def test_uses_trust_remote_code_for_jina(self):
-        """Test that trust_remote_code=True is set for Jina model."""
-        with patch("sentence_transformers.SentenceTransformer") as mock_st:
+        """Test that trust_remote_code=True is set for Jina model (fallback path)."""
+        with (
+            patch(
+                "huggingface_hub.try_to_load_from_cache",
+                side_effect=Exception("Fast check failed"),
+            ),
+            patch("sentence_transformers.SentenceTransformer") as mock_st,
+        ):
             mock_st.return_value = MagicMock()
 
             is_model_cached("jina-code-v2")
@@ -438,8 +511,14 @@ class TestIsModelCached:
             assert call_kwargs["trust_remote_code"] is True
 
     def test_no_trust_remote_code_for_other_models(self):
-        """Test that trust_remote_code is False for non-Jina models."""
-        with patch("sentence_transformers.SentenceTransformer") as mock_st:
+        """Test that trust_remote_code is False for non-Jina models (fallback path)."""
+        with (
+            patch(
+                "huggingface_hub.try_to_load_from_cache",
+                side_effect=Exception("Fast check failed"),
+            ),
+            patch("sentence_transformers.SentenceTransformer") as mock_st,
+        ):
             mock_st.return_value = MagicMock()
 
             is_model_cached("bge-small")
@@ -449,18 +528,27 @@ class TestIsModelCached:
 
     def test_resolves_model_name(self):
         """Test that preset names are resolved to full model IDs."""
-        with patch("sentence_transformers.SentenceTransformer") as mock_st:
-            mock_st.return_value = MagicMock()
+        with patch(
+            "huggingface_hub.try_to_load_from_cache"
+        ) as mock_cache:
+            mock_cache.return_value = "/path/to/cached/config.json"
 
             is_model_cached("minilm")
 
             # Should resolve "minilm" to full model ID
-            call_args = mock_st.call_args[0]
-            assert call_args[0] == "sentence-transformers/all-MiniLM-L6-v2"
+            mock_cache.assert_called_once_with(
+                "sentence-transformers/all-MiniLM-L6-v2", "config.json"
+            )
 
     def test_returns_false_on_unexpected_exception(self):
         """Test returns False on unexpected errors (corrupted cache)."""
-        with patch("sentence_transformers.SentenceTransformer") as mock_st:
+        with (
+            patch(
+                "huggingface_hub.try_to_load_from_cache",
+                side_effect=Exception("Fast check failed"),
+            ),
+            patch("sentence_transformers.SentenceTransformer") as mock_st,
+        ):
             mock_st.side_effect = RuntimeError("Corrupted cache")
 
             result = is_model_cached("minilm")
