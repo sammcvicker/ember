@@ -40,17 +40,38 @@ class DaemonTimeouts:
     # Daemon Ready Wait Timeouts
     # =========================================================================
 
-    READY_WAIT: float = 20.0
-    """Maximum time to wait for daemon to become ready after startup.
+    READY_WAIT_DEFAULT: float = 30.0
+    """Default timeout for cached models without specific timing data.
 
-    This timeout covers:
-    - Model loading (typically 2-5s for Jina models from cache)
-    - Socket creation and binding
-    - Any startup initialization
+    Used for unknown models or when model name isn't available.
+    Provides a reasonable margin for most embedding models.
+    """
 
-    This is the timeout used when the model is already cached locally.
-    For first-time startup requiring model download, use READY_WAIT_FIRST_RUN.
-    The daemon will log its actual startup time for tuning reference.
+    # Model-specific load times based on real-world measurements (#385)
+    # These times include model file loading, PyTorch initialization,
+    # and first tensor operations on Apple Silicon (M1/M2/M3).
+    MODEL_LOAD_TIMES: dict[str, float] = {
+        # Jina is 1.6GB with trust_remote_code - loading takes 15-25s on Apple Silicon
+        "jinaai/jina-embeddings-v2-base-code": 45.0,
+        # MiniLM is ~100MB - fast loading
+        "sentence-transformers/all-MiniLM-L6-v2": 20.0,
+        # BGE-small is ~130MB - fast loading
+        "BAAI/bge-small-en-v1.5": 20.0,
+    }
+    """Model-specific startup timeouts for cached models.
+
+    Different models have different load times based on:
+    - Model size (file I/O time)
+    - Architecture complexity (initialization time)
+    - Whether trust_remote_code is needed (additional setup)
+    - Hardware (Apple Silicon MPS vs CUDA vs CPU)
+
+    The Jina model in particular needs extra time because:
+    - It's 1.6GB vs ~100-130MB for other models
+    - It uses trust_remote_code which adds initialization overhead
+    - Apple Silicon MPS backend initialization can be slow on first use
+
+    These values include buffer time for socket creation and health checks.
     """
 
     READY_WAIT_FIRST_RUN: float = 120.0
@@ -63,7 +84,7 @@ class DaemonTimeouts:
     - BGE-small (~130MB): 5-30s
 
     This longer timeout prevents startup failures on fresh installs.
-    Once cached, subsequent startups use READY_WAIT.
+    Once cached, subsequent startups use model-specific timeouts.
     """
 
     READY_CHECK_INTERVAL: float = 0.5
@@ -159,3 +180,17 @@ class DaemonTimeouts:
     time spent trying to gracefully terminate an unresponsive daemon
     before falling back to SIGKILL.
     """
+
+    @classmethod
+    def get_model_timeout(cls, model_id: str | None) -> float:
+        """Get the startup timeout for a specific model.
+
+        Args:
+            model_id: The canonical HuggingFace model ID, or None.
+
+        Returns:
+            Model-specific timeout if known, otherwise READY_WAIT_DEFAULT.
+        """
+        if model_id is None:
+            return cls.READY_WAIT_DEFAULT
+        return cls.MODEL_LOAD_TIMES.get(model_id, cls.READY_WAIT_DEFAULT)

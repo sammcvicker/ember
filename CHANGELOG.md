@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Daemon startup timeout (20s) despite cached model on Apple Silicon** (#385)
+  - Model loading on Apple Silicon can take 15-25s for the Jina model (1.6GB), leaving no margin for the previous 20-second timeout
+  - Implemented model-aware timeouts: Jina gets 45s, smaller models (MiniLM, BGE-small) get 20s
+  - Added fast cache detection using `huggingface_hub.try_to_load_from_cache` instead of loading the full model just to check if it's cached
+  - The `is_model_cached()` function now completes in milliseconds instead of 10-15 seconds
+
 - **`ember status` always reports "Out of date" after sync** (#382)
   - The `state.json` file was never updated after initialization, causing `ember status` to always report the index as stale
   - Investigation revealed `state.json` was dead code: the SQLite `meta` table has always been the true source of truth for tracking sync state

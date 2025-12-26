@@ -260,8 +260,8 @@ def list_available_models() -> list[dict]:
 def is_model_cached(model_name: str) -> bool:
     """Check if a model is cached locally.
 
-    Attempts to load the model with local_files_only=True to see if it's cached.
-    This is useful to determine if model download will be needed.
+    Uses huggingface_hub's try_to_load_from_cache for fast cache inspection
+    without loading the model into memory.
 
     Args:
         model_name: Model preset name or HuggingFace ID
@@ -269,7 +269,29 @@ def is_model_cached(model_name: str) -> bool:
     Returns:
         True if model is cached locally, False if download would be needed.
     """
+    resolved = resolve_model_name(model_name)
+
+    # Fast check using huggingface_hub cache inspection
+    # This doesn't load the model, just checks if files exist in cache
+    try:
+        from huggingface_hub import try_to_load_from_cache
+        from huggingface_hub.utils import EntryNotFoundError
+
+        # Check for config.json - if this is cached, the model was downloaded
+        # Returns file path (str) if cached, None or _CACHED_NO_EXIST otherwise
+        result = try_to_load_from_cache(resolved, "config.json")
+        return isinstance(result, str)
+    except (ImportError, EntryNotFoundError):
+        # huggingface_hub not available or cache check failed
+        # Fall through to slower method
+        pass
+    except Exception:
+        # Any other error - try slower method
+        pass
+
+    # Fallback: actually try loading the model (slow but reliable)
     import os
+    import warnings
 
     # Prevent tokenizer parallelism warning
     os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
@@ -280,18 +302,23 @@ def is_model_cached(model_name: str) -> bool:
         # If sentence-transformers not installed, model definitely not cached
         return False
 
-    resolved = resolve_model_name(model_name)
-
     # Need trust_remote_code for Jina model
     trust_remote_code = resolved == "jinaai/jina-embeddings-v2-base-code"
 
     try:
-        # Try to load with local_files_only - will fail if not cached
-        SentenceTransformer(
-            resolved,
-            trust_remote_code=trust_remote_code,
-            local_files_only=True,
-        )
+        # Suppress the optimum warning when loading Jina model
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=".*optimum is not installed.*",
+                category=UserWarning,
+            )
+            # Try to load with local_files_only - will fail if not cached
+            SentenceTransformer(
+                resolved,
+                trust_remote_code=trust_remote_code,
+                local_files_only=True,
+            )
         return True
     except (OSError, ValueError):
         # Model not cached
