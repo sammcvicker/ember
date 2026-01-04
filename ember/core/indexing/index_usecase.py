@@ -9,14 +9,20 @@ This use case orchestrates the complete indexing pipeline:
 
 import logging
 import time
-from dataclasses import dataclass, field
 from pathlib import Path
 
 from ember.core.chunking.chunk_usecase import ChunkFileRequest, ChunkFileUseCase
 from ember.core.indexing.chunk_storage import ChunkStorageService
+from ember.core.indexing.file_detection import FileDetectionService
+from ember.core.indexing.file_filter import FileFilterService
 from ember.core.indexing.file_preprocessor import FilePreprocessor, PreprocessedFile
+from ember.core.indexing.orchestrator import IndexingOrchestrator
+from ember.core.indexing.types import (
+    IndexRequest,
+    IndexResponse,
+    ModelMismatchError,
+)
 from ember.core.use_case_errors import (
-    EmberError,
     format_error_message,
     log_use_case_error,
 )
@@ -34,313 +40,6 @@ from ember.ports.repositories import (
 from ember.ports.vcs import VCS
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class IndexingContext:
-    """Context passed between orchestration phases.
-
-    Holds intermediate state during the indexing pipeline, enabling
-    each phase to operate independently while sharing necessary data.
-    """
-
-    request: "IndexRequest"
-    tree_sha: str = ""
-    files_to_index: list[Path] = field(default_factory=list)
-    is_incremental: bool = False
-    chunks_deleted: int = 0
-    stats: dict[str, int] = field(default_factory=dict)
-
-
-class ModelMismatchError(EmberError):
-    """Raised when embedding model differs from the one used to build the index.
-
-    This error prevents dimension mismatch errors during search by requiring
-    an explicit --force flag to rebuild the index with the new model.
-    """
-
-    def __init__(self, stored_model: str, current_model: str) -> None:
-        self.stored_model = stored_model
-        self.current_model = current_model
-        message = (
-            f"Embedding model changed: {stored_model} → {current_model}. "
-            f"Run 'ember sync --force' to rebuild the index with the new model."
-        )
-        super().__init__(message)
-
-# Code file extensions to index (whitelist approach)
-# Only source code files are indexed - data, config, docs, and binary files are skipped
-CODE_FILE_EXTENSIONS = frozenset(
-    {
-        # Python
-        ".py",
-        ".pyi",
-        # JavaScript/TypeScript
-        ".js",
-        ".jsx",
-        ".ts",
-        ".tsx",
-        ".mjs",
-        ".cjs",
-        # Go
-        ".go",
-        # Rust
-        ".rs",
-        # Java/JVM
-        ".java",
-        ".kt",
-        ".scala",
-        # C/C++
-        ".c",
-        ".cpp",
-        ".cc",
-        ".cxx",
-        ".h",
-        ".hpp",
-        ".hh",
-        ".hxx",
-        # C#
-        ".cs",
-        # Ruby
-        ".rb",
-        # PHP
-        ".php",
-        # Swift
-        ".swift",
-        # Shell
-        ".sh",
-        ".bash",
-        ".zsh",
-        # Web frameworks
-        ".vue",
-        ".svelte",
-        # Other
-        ".sql",
-        ".proto",
-        ".graphql",
-    }
-)
-
-
-@dataclass
-class IndexRequest:
-    """Request to index (or re-index) files.
-
-    Attributes:
-        repo_root: Absolute path to repository root.
-        sync_mode: Mode to sync - "worktree" (uncommitted changes), "staged", or commit SHA.
-        path_filters: Optional list of path patterns to filter (e.g., ["src/**/*.py"]).
-        force_reindex: If True, reindex even if files haven't changed.
-    """
-
-    repo_root: Path
-    sync_mode: str = "worktree"
-    path_filters: list[str] = field(default_factory=list)
-    force_reindex: bool = False
-
-
-@dataclass
-class IndexResponse:
-    """Response from indexing operation.
-
-    Attributes:
-        files_indexed: Number of files processed.
-        chunks_created: Number of chunks created.
-        chunks_updated: Number of chunks updated (deduplicated).
-        chunks_deleted: Number of chunks deleted (from removed files).
-        vectors_stored: Number of vectors stored.
-        tree_sha: Git tree SHA that was indexed.
-        files_failed: Number of files that failed to chunk.
-        is_incremental: Whether this was an incremental sync (vs full reindex).
-        success: Whether indexing succeeded.
-        error: Error message if indexing failed.
-    """
-
-    files_indexed: int
-    chunks_created: int
-    chunks_updated: int
-    chunks_deleted: int
-    vectors_stored: int
-    tree_sha: str
-    files_failed: int = 0
-    is_incremental: bool = False
-    success: bool = True
-    error: str | None = None
-
-    @classmethod
-    def create_success(
-        cls,
-        *,
-        files_indexed: int,
-        chunks_created: int,
-        chunks_updated: int,
-        chunks_deleted: int,
-        vectors_stored: int,
-        tree_sha: str,
-        is_incremental: bool = False,
-        files_failed: int = 0,
-    ) -> "IndexResponse":
-        """Create a success response with indexing statistics.
-
-        Args:
-            files_indexed: Number of files processed.
-            chunks_created: Number of chunks created.
-            chunks_updated: Number of chunks updated.
-            chunks_deleted: Number of chunks deleted.
-            vectors_stored: Number of vectors stored.
-            tree_sha: Git tree SHA that was indexed.
-            is_incremental: Whether this was an incremental sync.
-            files_failed: Number of files that failed to chunk.
-
-        Returns:
-            IndexResponse with success=True and all statistics.
-        """
-        return cls(
-            files_indexed=files_indexed,
-            chunks_created=chunks_created,
-            chunks_updated=chunks_updated,
-            chunks_deleted=chunks_deleted,
-            vectors_stored=vectors_stored,
-            tree_sha=tree_sha,
-            files_failed=files_failed,
-            is_incremental=is_incremental,
-            success=True,
-            error=None,
-        )
-
-    @classmethod
-    def create_error(cls, message: str) -> "IndexResponse":
-        """Create an error response with zero counts.
-
-        Args:
-            message: Error message describing what went wrong.
-
-        Returns:
-            IndexResponse with success=False and all counts set to zero.
-        """
-        return cls(
-            files_indexed=0,
-            chunks_created=0,
-            chunks_updated=0,
-            chunks_deleted=0,
-            vectors_stored=0,
-            tree_sha="",
-            files_failed=0,
-            is_incremental=False,
-            success=False,
-            error=message,
-        )
-
-
-class IndexingOrchestrator:
-    """Orchestrates the indexing pipeline phases.
-
-    Separates the indexing workflow into discrete, testable phases:
-    1. Verification - Check model compatibility
-    2. Detection - Identify files needing indexing
-    3. Preparation - Handle deletions and load model
-    4. Indexing - Process files and store chunks/vectors
-    5. Finalization - Update metadata and create response
-    """
-
-    def __init__(self, usecase: "IndexingUseCase") -> None:
-        """Initialize orchestrator with reference to use case.
-
-        Args:
-            usecase: The IndexingUseCase containing dependencies.
-        """
-        self._usecase = usecase
-
-    def run(
-        self, request: "IndexRequest", progress: ProgressCallback | None = None
-    ) -> IndexResponse:
-        """Execute the complete indexing pipeline.
-
-        Args:
-            request: Indexing request with mode and filters.
-            progress: Optional progress callback for reporting progress.
-
-        Returns:
-            IndexResponse with statistics about what was indexed.
-        """
-        ctx = IndexingContext(request=request)
-
-        # Phase 1: Verify model compatibility
-        self._usecase._verify_model_compatibility(request.force_reindex)
-
-        # Phase 2: Detect files to index
-        ctx.tree_sha = self._usecase._get_tree_sha(request.repo_root, request.sync_mode)
-        logger.debug(f"Tree SHA for indexing: {ctx.tree_sha}")
-
-        ctx.files_to_index, ctx.is_incremental = self._usecase._get_files_to_index(
-            request.repo_root,
-            ctx.tree_sha,
-            request.path_filters,
-            request.force_reindex,
-        )
-
-        sync_type = "incremental" if ctx.is_incremental else "full"
-        logger.info(f"Indexing {len(ctx.files_to_index)} file(s) ({sync_type} sync)")
-
-        # Phase 3: Prepare - handle deletions and load model
-        ctx.chunks_deleted = self._handle_deletions_if_incremental(ctx)
-        self._load_model_if_needed(ctx, progress)
-
-        # Phase 4: Index files
-        ctx.stats = self._usecase._index_files_with_progress(
-            files_to_index=ctx.files_to_index,
-            repo_root=request.repo_root,
-            tree_sha=ctx.tree_sha,
-            sync_mode=request.sync_mode,
-            sync_type=sync_type,
-            progress=progress,
-        )
-
-        # Phase 5: Finalize - update metadata and create response
-        self._usecase._update_metadata(ctx.tree_sha, request.sync_mode)
-
-        return self._usecase._create_success_response(
-            files_indexed=ctx.stats["files_indexed"],
-            chunks_created=ctx.stats["chunks_created"],
-            chunks_updated=ctx.stats["chunks_updated"],
-            chunks_deleted=ctx.chunks_deleted,
-            vectors_stored=ctx.stats["vectors_stored"],
-            tree_sha=ctx.tree_sha,
-            is_incremental=ctx.is_incremental,
-            files_failed=ctx.stats["files_failed"],
-        )
-
-    def _handle_deletions_if_incremental(self, ctx: IndexingContext) -> int:
-        """Handle deletions for incremental syncs.
-
-        Args:
-            ctx: Current indexing context.
-
-        Returns:
-            Number of chunks deleted.
-        """
-        if not ctx.is_incremental:
-            return 0
-
-        chunks_deleted = self._usecase._handle_deletions(
-            repo_root=ctx.request.repo_root,
-            tree_sha=ctx.tree_sha,
-        )
-        if chunks_deleted > 0:
-            logger.info(f"Deleted {chunks_deleted} chunk(s) from removed files")
-        return chunks_deleted
-
-    def _load_model_if_needed(
-        self, ctx: IndexingContext, progress: ProgressCallback | None
-    ) -> None:
-        """Load embedding model if there are files to index.
-
-        Args:
-            ctx: Current indexing context.
-            progress: Optional progress callback.
-        """
-        if ctx.files_to_index:
-            self._usecase._ensure_model_loaded(progress)
 
 
 class IndexingUseCase:
@@ -364,6 +63,8 @@ class IndexingUseCase:
         *,
         file_preprocessor: FilePreprocessor | None = None,
         chunk_storage: ChunkStorageService | None = None,
+        file_detection: FileDetectionService | None = None,
+        file_filter: FileFilterService | None = None,
     ) -> None:
         """Initialize indexing use case.
 
@@ -379,6 +80,8 @@ class IndexingUseCase:
             project_id: Project identifier (typically repo root hash).
             file_preprocessor: Optional preprocessor service (created if not provided).
             chunk_storage: Optional chunk storage service (created if not provided).
+            file_detection: Optional file detection service (created if not provided).
+            file_filter: Optional file filter service (created if not provided).
         """
         self.vcs = vcs
         self.fs = fs
@@ -395,30 +98,15 @@ class IndexingUseCase:
         self.chunk_storage = chunk_storage or ChunkStorageService(
             chunk_repo, vector_repo, embedder
         )
+        self.file_detection = file_detection or FileDetectionService(vcs, meta_repo)
+        self.file_filter = file_filter or FileFilterService()
 
     def _create_error_response(self, error: str) -> IndexResponse:
-        """Create a standardized error response with zero counts.
-
-        Args:
-            error: Error message to include in the response.
-
-        Returns:
-            IndexResponse with success=False and all counts set to zero.
-        """
+        """Create a standardized error response with zero counts."""
         return IndexResponse.create_error(error)
 
     def _verify_model_compatibility(self, force_reindex: bool) -> None:
-        """Verify embedding model compatibility with stored fingerprint.
-
-        Raises ModelMismatchError if the model has changed and force_reindex is False,
-        to prevent dimension mismatch errors during search.
-
-        Args:
-            force_reindex: If True, allow model change (will rebuild index).
-
-        Raises:
-            ModelMismatchError: If model changed and force_reindex is False.
-        """
+        """Verify embedding model compatibility. Raises ModelMismatchError if changed."""
         stored_fingerprint = self.meta_repo.get("model_fingerprint")
         current_fingerprint = self.embedder.fingerprint()
 
@@ -435,14 +123,7 @@ class IndexingUseCase:
                 )
 
     def _ensure_model_loaded(self, progress: ProgressCallback | None) -> None:
-        """Eagerly load embedding model before indexing.
-
-        Loading the model upfront (can take 2-3 seconds) prevents misleading
-        progress reporting on the first file.
-
-        Args:
-            progress: Optional progress callback for reporting model loading.
-        """
+        """Eagerly load embedding model before indexing to prevent misleading progress."""
         if hasattr(self.embedder, "ensure_loaded"):
             logger.debug("Loading embedding model")
             if progress:
@@ -460,20 +141,7 @@ class IndexingUseCase:
         sync_type: str,
         progress: ProgressCallback | None,
     ) -> dict[str, int]:
-        """Index all files with progress reporting.
-
-        Args:
-            files_to_index: List of absolute file paths to index.
-            repo_root: Repository root path.
-            tree_sha: Current tree SHA.
-            sync_mode: Sync mode (for rev field).
-            sync_type: Human-readable sync type ("incremental" or "full").
-            progress: Optional progress callback.
-
-        Returns:
-            Dict with counts: files_indexed, chunks_created, chunks_updated,
-            vectors_stored, files_failed.
-        """
+        """Index all files with progress reporting. Returns counts dict."""
         files_indexed = 0
         chunks_created = 0
         chunks_updated = 0
@@ -516,12 +184,7 @@ class IndexingUseCase:
         }
 
     def _update_metadata(self, tree_sha: str, sync_mode: str) -> None:
-        """Update metadata after successful indexing.
-
-        Args:
-            tree_sha: Current tree SHA.
-            sync_mode: Sync mode that was used.
-        """
+        """Update metadata after successful indexing."""
         self.meta_repo.set("last_tree_sha", tree_sha)
         self.meta_repo.set("last_sync_mode", sync_mode)
         self.meta_repo.set("model_fingerprint", self.embedder.fingerprint())
@@ -614,14 +277,7 @@ class IndexingUseCase:
         Returns:
             Tree SHA string.
         """
-        if sync_mode == "worktree":
-            return self.vcs.get_worktree_tree_sha()
-        elif sync_mode == "staged":
-            # For now, use worktree SHA (staged support can be added later)
-            return self.vcs.get_worktree_tree_sha()
-        else:
-            # sync_mode is a commit SHA - get its tree SHA
-            return self.vcs.get_tree_sha(ref=sync_mode)
+        return self.file_detection.get_tree_sha(sync_mode)
 
     def _get_files_to_index(
         self,
@@ -642,7 +298,7 @@ class IndexingUseCase:
             Tuple of (list of absolute file paths to index, is_incremental flag).
         """
         # Determine which files need syncing based on git state
-        sync_result = self._determine_files_to_sync(tree_sha, force_reindex)
+        sync_result = self.file_detection.determine_files_to_sync(tree_sha, force_reindex)
         if sync_result is None:
             return ([], False)  # No changes since last sync
 
@@ -652,87 +308,13 @@ class IndexingUseCase:
         files = [repo_root / f for f in relative_files]
 
         # Filter to only include code files (skip docs, data, binary files)
-        files = self._filter_code_files(files)
+        files = self.file_filter.filter_code_files(files)
 
         # Apply path filters if provided
         if path_filters:
-            files = self._apply_path_filters(files, path_filters, repo_root)
+            files = self.file_filter.apply_path_filters(files, path_filters, repo_root)
 
         return (files, is_incremental)
-
-    def _determine_files_to_sync(
-        self,
-        tree_sha: str,
-        force_reindex: bool,
-    ) -> tuple[list[str], bool] | None:
-        """Determine which files need to be synced based on git state.
-
-        Args:
-            tree_sha: Current tree SHA.
-            force_reindex: Whether to force a full reindex.
-
-        Returns:
-            Tuple of (relative file paths, is_incremental) or None if no changes.
-        """
-        last_tree_sha = self.meta_repo.get("last_tree_sha")
-
-        if force_reindex or last_tree_sha is None:
-            # Full reindex: get all tracked files
-            return (self.vcs.list_tracked_files(), False)
-
-        if last_tree_sha == tree_sha:
-            # No changes since last sync
-            return None
-
-        # Incremental sync: only get changed files
-        changes = self.vcs.diff_files(from_sha=last_tree_sha, to_sha=tree_sha)
-
-        # Get added and modified files (deletions handled separately)
-        relative_files = [
-            path for status, path in changes if status in ("added", "modified", "renamed")
-        ]
-        return (relative_files, True)
-
-    def _filter_code_files(self, files: list[Path]) -> list[Path]:
-        """Filter list to only include code files.
-
-        Args:
-            files: List of file paths.
-
-        Returns:
-            Filtered list containing only code files.
-        """
-        return [f for f in files if self._is_code_file(f)]
-
-    def _apply_path_filters(
-        self,
-        files: list[Path],
-        path_filters: list[str],
-        repo_root: Path,
-    ) -> list[Path]:
-        """Apply glob pattern filters to file list.
-
-        Args:
-            files: List of absolute file paths.
-            path_filters: Glob patterns to match against.
-            repo_root: Repository root for computing relative paths.
-
-        Returns:
-            Filtered list of files matching at least one pattern.
-        """
-        filtered = []
-        for f in files:
-            try:
-                rel_path = f.relative_to(repo_root)
-            except ValueError:
-                # File is not relative to repo_root, skip it
-                continue
-
-            for pattern in path_filters:
-                if rel_path.match(pattern):
-                    filtered.append(f)
-                    break
-        return filtered
 
     def _handle_deletions(
         self,
@@ -749,13 +331,12 @@ class IndexingUseCase:
             Number of chunks deleted.
         """
         # Get last indexed tree SHA
-        last_tree_sha = self.meta_repo.get("last_tree_sha")
+        last_tree_sha = self.file_detection.get_last_tree_sha()
         if last_tree_sha is None:
             return 0  # No previous index, nothing to delete
 
-        # Get deleted files from git diff
-        changes = self.vcs.diff_files(from_sha=last_tree_sha, to_sha=tree_sha)
-        deleted_files = [path for status, path in changes if status == "deleted"]
+        # Get deleted files
+        deleted_files = self.file_detection.get_deleted_files(tree_sha)
 
         # Delete chunks for each deleted file
         total_deleted = 0
@@ -909,16 +490,4 @@ class IndexingUseCase:
             chunks.append(chunk)
 
         return chunks
-
-    def _is_code_file(self, file_path: Path) -> bool:
-        """Check if file is a code file that should be indexed.
-
-        Args:
-            file_path: Path to file.
-
-        Returns:
-            True if file should be indexed, False otherwise.
-        """
-        suffix = file_path.suffix.lower()
-        return suffix in CODE_FILE_EXTENSIONS
 
