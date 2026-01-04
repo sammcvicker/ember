@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Refactored IndexingUseCase to improve maintainability** (#387)
+  - Extracted file detection logic into `FileDetectionService` (git-based change detection)
+  - Extracted file filtering logic into `FileFilterService` (code file extension and glob pattern filtering)
+  - Moved `IndexRequest`, `IndexResponse`, and `ModelMismatchError` to `types.py` module
+  - Moved `IndexingOrchestrator` to its own module for separation of concerns
+  - Reduced `IndexingUseCase` from 925 lines to 493 lines (47% reduction)
+  - Added comprehensive unit tests for extracted services (40+ new tests)
+
 ### Fixed
 - **Daemon startup timeout (20s) despite cached model on Apple Silicon** (#385)
   - Model loading on Apple Silicon can take 15-25s for the Jina model (1.6GB), leaving no margin for the previous 20-second timeout
