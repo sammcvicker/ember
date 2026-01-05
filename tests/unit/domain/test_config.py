@@ -145,12 +145,26 @@ class TestSearchConfigValidation:
         config = SearchConfig()
         assert config.topk == 20
         assert config.rerank is False
+        assert config.rrf_k == 60
+        assert config.retrieval_pool_multiplier == 5
+        assert config.min_retrieval_pool == 100
 
     def test_search_config_valid_custom_values(self):
         """Test creating SearchConfig with valid custom values."""
         config = SearchConfig(topk=50, rerank=True)
         assert config.topk == 50
         assert config.rerank is True
+
+    def test_search_config_valid_retrieval_params(self):
+        """Test creating SearchConfig with custom retrieval parameters."""
+        config = SearchConfig(
+            rrf_k=30,
+            retrieval_pool_multiplier=10,
+            min_retrieval_pool=200,
+        )
+        assert config.rrf_k == 30
+        assert config.retrieval_pool_multiplier == 10
+        assert config.min_retrieval_pool == 200
 
     def test_search_config_topk_zero_raises_error(self):
         """Test that topk=0 raises ValueError."""
@@ -166,6 +180,40 @@ class TestSearchConfigValidation:
         """Test that topk=1 is valid."""
         config = SearchConfig(topk=1)
         assert config.topk == 1
+
+    def test_search_config_rrf_k_zero_raises_error(self):
+        """Test that rrf_k=0 raises ValueError."""
+        with pytest.raises(ValueError, match="rrf_k must be positive"):
+            SearchConfig(rrf_k=0)
+
+    def test_search_config_rrf_k_negative_raises_error(self):
+        """Test that negative rrf_k raises ValueError."""
+        with pytest.raises(ValueError, match="rrf_k must be positive"):
+            SearchConfig(rrf_k=-10)
+
+    def test_search_config_retrieval_pool_multiplier_zero_raises_error(self):
+        """Test that retrieval_pool_multiplier=0 raises ValueError."""
+        with pytest.raises(
+            ValueError, match="retrieval_pool_multiplier must be positive"
+        ):
+            SearchConfig(retrieval_pool_multiplier=0)
+
+    def test_search_config_retrieval_pool_multiplier_negative_raises_error(self):
+        """Test that negative retrieval_pool_multiplier raises ValueError."""
+        with pytest.raises(
+            ValueError, match="retrieval_pool_multiplier must be positive"
+        ):
+            SearchConfig(retrieval_pool_multiplier=-1)
+
+    def test_search_config_min_retrieval_pool_zero_raises_error(self):
+        """Test that min_retrieval_pool=0 raises ValueError."""
+        with pytest.raises(ValueError, match="min_retrieval_pool must be positive"):
+            SearchConfig(min_retrieval_pool=0)
+
+    def test_search_config_min_retrieval_pool_negative_raises_error(self):
+        """Test that negative min_retrieval_pool raises ValueError."""
+        with pytest.raises(ValueError, match="min_retrieval_pool must be positive"):
+            SearchConfig(min_retrieval_pool=-50)
 
 
 # =============================================================================
@@ -369,11 +417,12 @@ class TestSearchConfigFromPartial:
 
     def test_from_partial_empty_dict_returns_base(self):
         """Test that empty partial dict returns base values unchanged."""
-        base = SearchConfig(topk=50, rerank=True)
+        base = SearchConfig(topk=50, rerank=True, rrf_k=30)
         result = SearchConfig.from_partial(base, {})
 
         assert result.topk == 50
         assert result.rerank is True
+        assert result.rrf_k == 30
 
     def test_from_partial_overrides_specified_keys(self):
         """Test that only specified keys are overridden."""
@@ -383,11 +432,38 @@ class TestSearchConfigFromPartial:
         assert result.topk == 100
         assert result.rerank is False  # Unchanged
 
+    def test_from_partial_overrides_retrieval_params(self):
+        """Test that retrieval parameters can be overridden via from_partial."""
+        base = SearchConfig()
+        result = SearchConfig.from_partial(
+            base,
+            {
+                "rrf_k": 30,
+                "retrieval_pool_multiplier": 10,
+                "min_retrieval_pool": 200,
+            },
+        )
+
+        assert result.rrf_k == 30
+        assert result.retrieval_pool_multiplier == 10
+        assert result.min_retrieval_pool == 200
+        assert result.topk == 20  # Unchanged
+
     def test_from_partial_validates_result(self):
         """Test that merged config is validated."""
         base = SearchConfig()
         with pytest.raises(ValueError, match="topk must be positive"):
             SearchConfig.from_partial(base, {"topk": 0})
+
+    def test_from_partial_validates_retrieval_params(self):
+        """Test that retrieval parameters are validated in from_partial."""
+        base = SearchConfig()
+        with pytest.raises(ValueError, match="rrf_k must be positive"):
+            SearchConfig.from_partial(base, {"rrf_k": 0})
+        with pytest.raises(
+            ValueError, match="retrieval_pool_multiplier must be positive"
+        ):
+            SearchConfig.from_partial(base, {"retrieval_pool_multiplier": -1})
 
 
 class TestRedactionConfigFromPartial:

@@ -143,19 +143,40 @@ class SearchConfig:
         topk: Default number of results to return
         rerank: Whether to enable cross-encoder reranking
         filters: Default filters to apply (key=value pairs)
+        rrf_k: Reciprocal Rank Fusion constant (default 60). Higher values
+               reduce influence of top-ranked items in fusion scoring.
+        retrieval_pool_multiplier: Multiplier for retrieval pool size vs topk
+               (default 5). Higher values = better fusion quality, slower retrieval.
+        min_retrieval_pool: Minimum retrieval pool size (default 100).
+               Ensures enough candidates for fusion even with small topk.
 
     Raises:
-        ValueError: If topk is not positive.
+        ValueError: If topk, rrf_k, retrieval_pool_multiplier, or
+                   min_retrieval_pool is not positive.
     """
 
     topk: int = 20
     rerank: bool = False
     filters: list[str] = field(default_factory=list)
+    rrf_k: int = 60
+    retrieval_pool_multiplier: int = 5
+    min_retrieval_pool: int = 100
 
     def __post_init__(self) -> None:
         """Validate search config after initialization."""
         if self.topk <= 0:
             raise ValueError(f"topk must be positive, got {self.topk}")
+        if self.rrf_k <= 0:
+            raise ValueError(f"rrf_k must be positive, got {self.rrf_k}")
+        if self.retrieval_pool_multiplier <= 0:
+            raise ValueError(
+                f"retrieval_pool_multiplier must be positive, "
+                f"got {self.retrieval_pool_multiplier}"
+            )
+        if self.min_retrieval_pool <= 0:
+            raise ValueError(
+                f"min_retrieval_pool must be positive, got {self.min_retrieval_pool}"
+            )
 
     @staticmethod
     def from_partial(base: "SearchConfig", partial: dict) -> "SearchConfig":
@@ -172,6 +193,13 @@ class SearchConfig:
             topk=partial.get("topk", base.topk),
             rerank=partial.get("rerank", base.rerank),
             filters=partial.get("filters", base.filters),
+            rrf_k=partial.get("rrf_k", base.rrf_k),
+            retrieval_pool_multiplier=partial.get(
+                "retrieval_pool_multiplier", base.retrieval_pool_multiplier
+            ),
+            min_retrieval_pool=partial.get(
+                "min_retrieval_pool", base.min_retrieval_pool
+            ),
         )
 
 
