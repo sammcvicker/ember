@@ -76,6 +76,12 @@ class IndexConfig:
 
     def __post_init__(self) -> None:
         """Validate index config after initialization."""
+        self._validate_numeric_params()
+        self._validate_glob_patterns(self.include, "include")
+        self._validate_glob_patterns(self.ignore, "ignore")
+
+    def _validate_numeric_params(self) -> None:
+        """Validate numeric parameters for chunking configuration."""
         if self.line_window <= 0:
             raise ValueError(f"line_window must be positive, got {self.line_window}")
         if self.line_stride <= 0:
@@ -97,18 +103,21 @@ class IndexConfig:
         if self.batch_size <= 0:
             raise ValueError(f"batch_size must be positive, got {self.batch_size}")
 
-        # Validate glob patterns early to fail fast
-        for pattern in self.include:
-            try:
-                PathFilter(pattern)
-            except ValueError as e:
-                raise ValueError(f"Invalid glob in include: {e}") from e
+    def _validate_glob_patterns(self, patterns: list[str], field_name: str) -> None:
+        """Validate glob patterns in a list.
 
-        for pattern in self.ignore:
+        Args:
+            patterns: List of glob patterns to validate
+            field_name: Name of the field (for error messages)
+
+        Raises:
+            ValueError: If any pattern is invalid
+        """
+        for pattern in patterns:
             try:
                 PathFilter(pattern)
             except ValueError as e:
-                raise ValueError(f"Invalid glob in ignore: {e}") from e
+                raise ValueError(f"Invalid glob in {field_name}: {e}") from e
 
     @staticmethod
     def from_partial(

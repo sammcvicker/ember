@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Reduced IndexConfig.__post_init__ cyclomatic complexity from 11 to 1** (#390)
+  - Extracted numeric parameter validation into `_validate_numeric_params()` method (CC=7)
+  - Extracted glob pattern validation into reusable `_validate_glob_patterns()` method (CC=3)
+  - Validation logic is now independently testable and easier to maintain
+
 - **Created unified language registry to eliminate duplication** (#389)
   - Language/extension mappings were previously defined in three separate locations with overlapping but inconsistent data
   - Created `ember/core/languages.py` as single source of truth for all language mappings
