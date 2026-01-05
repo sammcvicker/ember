@@ -9,10 +9,10 @@ from unittest.mock import Mock
 import pytest
 
 from ember.core.indexing.file_preprocessor import (
-    EXTENSION_TO_LANGUAGE,
     FilePreprocessor,
     PreprocessedFile,
 )
+from ember.core.languages import LANGUAGE_REGISTRY
 
 
 @pytest.fixture
@@ -179,7 +179,7 @@ class TestFilePreprocessorLanguageDetection:
     """Tests for language detection from file extensions."""
 
     def test_extension_mapping_covers_common_languages(self) -> None:
-        """EXTENSION_TO_LANGUAGE should cover all common code extensions."""
+        """LANGUAGE_REGISTRY should cover all common code extensions."""
         expected_extensions = {
             ".py", ".pyi",  # Python
             ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",  # JavaScript/TypeScript
@@ -194,7 +194,7 @@ class TestFilePreprocessorLanguageDetection:
             ".sh", ".bash", ".zsh",  # Shell
         }
         for ext in expected_extensions:
-            assert ext in EXTENSION_TO_LANGUAGE, f"Missing extension: {ext}"
+            assert ext in LANGUAGE_REGISTRY, f"Missing extension: {ext}"
 
     def test_detect_language_is_case_insensitive(
         self, preprocessor: FilePreprocessor, mock_fs: Mock

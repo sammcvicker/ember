@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from ember.core.indexing.file_filter import CODE_FILE_EXTENSIONS, FileFilterService
+from ember.core.indexing.file_filter import FileFilterService
+from ember.core.languages import get_code_file_extensions
 
 
 @pytest.fixture
@@ -193,13 +194,15 @@ class TestApplyPathFilters:
 
 
 class TestCodeFileExtensions:
-    """Tests for the CODE_FILE_EXTENSIONS constant."""
+    """Tests for code file extensions via language registry."""
 
     def test_contains_common_languages(self) -> None:
-        """Constant contains extensions for common languages."""
+        """Registry contains extensions for common languages."""
         common = {".py", ".js", ".ts", ".go", ".rs", ".java", ".c", ".cpp", ".rb"}
-        assert common.issubset(CODE_FILE_EXTENSIONS)
+        code_extensions = get_code_file_extensions()
+        assert common.issubset(code_extensions)
 
     def test_is_frozenset(self) -> None:
-        """Constant is a frozenset for immutability and fast lookups."""
-        assert isinstance(CODE_FILE_EXTENSIONS, frozenset)
+        """Code extensions are returned as frozenset for immutability and fast lookups."""
+        code_extensions = get_code_file_extensions()
+        assert isinstance(code_extensions, frozenset)

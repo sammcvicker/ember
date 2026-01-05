@@ -9,46 +9,8 @@ from pathlib import Path
 
 import blake3
 
+from ember.core.languages import get_semantic_language
 from ember.ports.fs import FileSystem
-
-# Language extension mapping
-EXTENSION_TO_LANGUAGE: dict[str, str] = {
-    ".py": "py",
-    ".pyi": "py",
-    ".ts": "ts",
-    ".tsx": "ts",
-    ".js": "js",
-    ".jsx": "js",
-    ".mjs": "js",
-    ".cjs": "js",
-    ".go": "go",
-    ".rs": "rs",
-    ".java": "java",
-    ".kt": "java",
-    ".scala": "java",
-    ".c": "c",
-    ".h": "c",
-    ".cpp": "cpp",
-    ".cc": "cpp",
-    ".cxx": "cpp",
-    ".hpp": "cpp",
-    ".hh": "cpp",
-    ".hxx": "cpp",
-    ".cs": "cs",
-    ".rb": "rb",
-    ".php": "php",
-    ".swift": "swift",
-    ".sh": "sh",
-    ".bash": "sh",
-    ".zsh": "sh",
-    ".vue": "vue",
-    ".svelte": "svelte",
-    ".sql": "sql",
-    ".proto": "proto",
-    ".graphql": "graphql",
-    ".md": "txt",
-    ".txt": "txt",
-}
 
 
 @dataclass(frozen=True)
@@ -157,5 +119,4 @@ class FilePreprocessor:
         Returns:
             Language code (py, ts, go, rs, txt, etc.).
         """
-        suffix = file_path.suffix.lower()
-        return EXTENSION_TO_LANGUAGE.get(suffix, "txt")
+        return get_semantic_language(file_path.suffix)

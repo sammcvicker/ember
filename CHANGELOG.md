@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Created unified language registry to eliminate duplication** (#389)
+  - Language/extension mappings were previously defined in three separate locations with overlapping but inconsistent data
+  - Created `ember/core/languages.py` as single source of truth for all language mappings
+  - Refactored `file_preprocessor.py`, `colors.py`, and `file_filter.py` to use the new registry
+  - Adding new language support now requires changes to only one file
+  - Added 28 new tests for registry consistency and helper functions
+
 - **Made search retrieval parameters configurable** (#388)
   - Extracted magic numbers (5x multiplier, 100 min pool, k=60) to documented module constants in `search_usecase.py`
   - Added `rrf_k`, `retrieval_pool_multiplier`, and `min_retrieval_pool` to `SearchConfig` for advanced tuning
