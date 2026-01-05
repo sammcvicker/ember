@@ -12,7 +12,7 @@ from ember.domain.entities import (
     SearchResultSet,
     SyncMode,
 )
-from ember.domain.value_objects import SUPPORTED_LANGUAGES
+from ember.domain.value_objects import SUPPORTED_LANGUAGES, LanguageFilter, PathFilter
 
 
 def test_chunk_compute_content_hash():
@@ -95,6 +95,131 @@ class TestQueryValidation:
 
         query = Query(text="search", topk=100)
         assert query.topk == 100
+
+
+class TestQueryImmutability:
+    """Tests for Query immutability (frozen dataclass)."""
+
+    def test_query_is_frozen(self):
+        """Test that Query instances cannot be modified after creation."""
+        query = Query(text="search term", topk=10)
+        with pytest.raises(AttributeError):
+            query.text = "new text"
+        with pytest.raises(AttributeError):
+            query.topk = 20
+        with pytest.raises(AttributeError):
+            query.path_filter = PathFilter("*.py")
+
+    def test_query_hashable(self):
+        """Test that frozen Query is hashable."""
+        query1 = Query(text="search term", topk=10)
+        query2 = Query(text="search term", topk=10)
+        # Frozen dataclasses are hashable
+        assert hash(query1) == hash(query2)
+        # Can be used in sets
+        query_set = {query1, query2}
+        assert len(query_set) == 1
+
+
+class TestQueryFromStrings:
+    """Tests for Query.from_strings factory method."""
+
+    def test_from_strings_basic(self):
+        """Test creating Query from basic string inputs."""
+        query = Query.from_strings(text="search term", topk=10)
+        assert query.text == "search term"
+        assert query.topk == 10
+        assert query.path_filter is None
+        assert query.lang_filter is None
+        assert query.json_output is False
+
+    def test_from_strings_with_path_filter(self):
+        """Test creating Query with path filter string."""
+        query = Query.from_strings(text="search", path_filter="*.py")
+        assert isinstance(query.path_filter, PathFilter)
+        assert str(query.path_filter) == "*.py"
+
+    def test_from_strings_with_lang_filter(self):
+        """Test creating Query with language filter string."""
+        query = Query.from_strings(text="search", lang_filter="py")
+        assert isinstance(query.lang_filter, LanguageFilter)
+        assert str(query.lang_filter) == "py"
+
+    def test_from_strings_with_both_filters(self):
+        """Test creating Query with both filter strings."""
+        query = Query.from_strings(
+            text="search",
+            topk=5,
+            path_filter="src/**/*.py",
+            lang_filter="py",
+            json_output=True,
+        )
+        assert query.text == "search"
+        assert query.topk == 5
+        assert isinstance(query.path_filter, PathFilter)
+        assert isinstance(query.lang_filter, LanguageFilter)
+        assert query.json_output is True
+
+    def test_from_strings_with_none_filters(self):
+        """Test creating Query with explicit None filters."""
+        query = Query.from_strings(text="search", path_filter=None, lang_filter=None)
+        assert query.path_filter is None
+        assert query.lang_filter is None
+
+    def test_from_strings_validates_text(self):
+        """Test that from_strings validates text."""
+        with pytest.raises(ValueError, match="Query text cannot be empty"):
+            Query.from_strings(text="")
+        with pytest.raises(ValueError, match="Query text cannot be empty"):
+            Query.from_strings(text="   ")
+
+    def test_from_strings_validates_topk(self):
+        """Test that from_strings validates topk."""
+        with pytest.raises(ValueError, match="topk must be positive"):
+            Query.from_strings(text="search", topk=0)
+        with pytest.raises(ValueError, match="topk must be positive"):
+            Query.from_strings(text="search", topk=-1)
+
+    def test_from_strings_empty_path_filter_becomes_none(self):
+        """Test that empty string path_filter becomes None."""
+        # Empty string is treated as "no filter" (same as None)
+        query = Query.from_strings(text="search", path_filter="")
+        assert query.path_filter is None
+
+    def test_from_strings_validates_path_filter(self):
+        """Test that from_strings validates invalid path filter patterns."""
+        # PathFilter rejects patterns with empty segments
+        with pytest.raises(ValueError, match="contains empty path segment"):
+            Query.from_strings(text="search", path_filter="foo//bar")
+
+    def test_from_strings_validates_lang_filter(self):
+        """Test that from_strings validates language filter."""
+        with pytest.raises(ValueError, match="Unknown language"):
+            Query.from_strings(text="search", lang_filter="unsupported_lang")
+
+
+class TestQueryDirectConstruction:
+    """Tests for direct Query construction with value objects."""
+
+    def test_direct_construction_with_value_objects(self):
+        """Test creating Query directly with PathFilter and LanguageFilter."""
+        path_filter = PathFilter("*.py")
+        lang_filter = LanguageFilter("py")
+        query = Query(
+            text="search",
+            topk=10,
+            path_filter=path_filter,
+            lang_filter=lang_filter,
+        )
+        assert query.path_filter is path_filter
+        assert query.lang_filter is lang_filter
+
+    def test_direct_construction_validates(self):
+        """Test that direct construction still validates text and topk."""
+        with pytest.raises(ValueError, match="Query text cannot be empty"):
+            Query(text="", topk=10)
+        with pytest.raises(ValueError, match="topk must be positive"):
+            Query(text="search", topk=0)
 
 
 # =============================================================================
@@ -997,26 +1122,5 @@ class TestQueryValidatorsInIsolation:
         with pytest.raises(ValueError, match="topk must be positive"):
             Query._validate_topk(-5)
 
-    def test_normalize_path_filter_none(self):
-        """Test _normalize_path_filter returns None for None input."""
-        result = Query._normalize_path_filter(None)
-        assert result is None
-
-    def test_normalize_path_filter_string(self):
-        """Test _normalize_path_filter converts string to PathFilter."""
-        from ember.domain.value_objects import PathFilter
-
-        result = Query._normalize_path_filter("*.py")
-        assert isinstance(result, PathFilter)
-
-    def test_normalize_lang_filter_none(self):
-        """Test _normalize_lang_filter returns None for None input."""
-        result = Query._normalize_lang_filter(None)
-        assert result is None
-
-    def test_normalize_lang_filter_string(self):
-        """Test _normalize_lang_filter converts string to LanguageFilter."""
-        from ember.domain.value_objects import LanguageFilter
-
-        result = Query._normalize_lang_filter("py")
-        assert isinstance(result, LanguageFilter)
+    # Note: _normalize_path_filter and _normalize_lang_filter methods were removed
+    # in favor of the from_strings() factory method. See TestQueryFromStrings.

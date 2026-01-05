@@ -299,7 +299,7 @@ class InteractiveSearchUI:
                 start_time = time.time()
 
                 # Create query object
-                query = Query(
+                query = Query.from_strings(
                     text=self.session.query_text,
                     topk=self.topk,
                     path_filter=self.path_filter,

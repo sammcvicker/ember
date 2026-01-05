@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Made Query dataclass immutable with frozen=True** (#391)
+  - Query is now a frozen dataclass, preventing modification after creation
+  - Added `Query.from_strings()` factory method for creating queries from CLI inputs
+  - Direct construction with value objects (PathFilter, LanguageFilter) still works
+  - Query instances are now hashable and can be used in sets/dicts
+
 - **Reduced IndexConfig.__post_init__ cyclomatic complexity from 11 to 1** (#390)
   - Extracted numeric parameter validation into `_validate_numeric_params()` method (CC=7)
   - Extracted glob pattern validation into reusable `_validate_glob_patterns()` method (CC=3)
