@@ -967,7 +967,7 @@ def find(
     from ember.domain.entities import Query
 
     # Create query object
-    query_obj = Query(
+    query_obj = Query.from_strings(
         text=query,
         topk=deps.topk,
         path_filter=path_filter,

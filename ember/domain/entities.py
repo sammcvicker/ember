@@ -308,35 +308,34 @@ class SearchExplanation:
         }
 
 
-@dataclass
+@dataclass(frozen=True)
 class Query:
-    """Search query with parameters.
+    """Search query with parameters (immutable).
+
+    This is a frozen dataclass - instances cannot be modified after creation.
+    Use Query.from_strings() factory method to create instances from string inputs.
 
     Attributes:
         text: Query text.
         topk: Maximum number of results to return.
-        path_filter: Optional glob pattern to filter by file path.
-            Accepts either a string (validated and converted to PathFilter)
-            or a PathFilter instance.
-        lang_filter: Optional language code to filter by.
-            Accepts either a string (validated and converted to LanguageFilter)
-            or a LanguageFilter instance.
+        path_filter: Optional PathFilter to filter by file path.
+        lang_filter: Optional LanguageFilter to filter by language.
         json_output: Whether to output JSON instead of human-readable text.
 
     Domain Invariants:
         - text must be non-empty (not just whitespace)
         - topk must be positive
-        - path_filter (if provided) must be a valid glob pattern
-        - lang_filter (if provided) must be a supported language code
+        - path_filter (if provided) must be a PathFilter instance
+        - lang_filter (if provided) must be a LanguageFilter instance
 
     Raises:
-        ValueError: If text is empty, topk is not positive, or filters are invalid.
+        ValueError: If text is empty or topk is not positive.
     """
 
     text: str
     topk: int = 20
-    path_filter: PathFilter | str | None = None
-    lang_filter: LanguageFilter | str | None = None
+    path_filter: PathFilter | None = None
+    lang_filter: LanguageFilter | None = None
     json_output: bool = False
 
     @staticmethod
@@ -351,28 +350,45 @@ class Query:
         if topk <= 0:
             raise ValueError(f"topk must be positive, got {topk}")
 
-    @staticmethod
-    def _normalize_path_filter(path_filter: PathFilter | str | None) -> PathFilter | None:
-        """Normalize path_filter to PathFilter or None."""
-        if path_filter is None or isinstance(path_filter, PathFilter):
-            return path_filter
-        return PathFilter(path_filter)
-
-    @staticmethod
-    def _normalize_lang_filter(
-        lang_filter: LanguageFilter | str | None,
-    ) -> LanguageFilter | None:
-        """Normalize lang_filter to LanguageFilter or None."""
-        if lang_filter is None or isinstance(lang_filter, LanguageFilter):
-            return lang_filter
-        return LanguageFilter(lang_filter)
-
     def __post_init__(self) -> None:
-        """Validate and normalize query data after initialization."""
+        """Validate query data after initialization."""
         self._validate_text(self.text)
         self._validate_topk(self.topk)
-        self.path_filter = self._normalize_path_filter(self.path_filter)
-        self.lang_filter = self._normalize_lang_filter(self.lang_filter)
+
+    @classmethod
+    def from_strings(
+        cls,
+        text: str,
+        topk: int = 20,
+        path_filter: str | None = None,
+        lang_filter: str | None = None,
+        json_output: bool = False,
+    ) -> Query:
+        """Create a Query from string inputs.
+
+        Factory method that converts string filter values to their respective
+        value objects (PathFilter, LanguageFilter).
+
+        Args:
+            text: Query text (must be non-empty).
+            topk: Maximum number of results to return (must be positive).
+            path_filter: Optional glob pattern string for path filtering.
+            lang_filter: Optional language code string for language filtering.
+            json_output: Whether to output JSON format.
+
+        Returns:
+            A new Query instance with validated and converted fields.
+
+        Raises:
+            ValueError: If text is empty, topk is not positive, or filters are invalid.
+        """
+        return cls(
+            text=text,
+            topk=topk,
+            path_filter=PathFilter(path_filter) if path_filter else None,
+            lang_filter=LanguageFilter(lang_filter) if lang_filter else None,
+            json_output=json_output,
+        )
 
     @property
     def path_filter_str(self) -> str | None:
