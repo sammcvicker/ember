@@ -1,64 +1,13 @@
 """File filtering service for selecting indexable code files.
 
 Filters files based on:
-- Code file extensions (whitelist approach)
+- Code file extensions (whitelist approach via language registry)
 - Glob pattern matching for path filters
 """
 
 from pathlib import Path
 
-# Code file extensions to index (whitelist approach)
-# Only source code files are indexed - data, config, docs, and binary files are skipped
-CODE_FILE_EXTENSIONS = frozenset(
-    {
-        # Python
-        ".py",
-        ".pyi",
-        # JavaScript/TypeScript
-        ".js",
-        ".jsx",
-        ".ts",
-        ".tsx",
-        ".mjs",
-        ".cjs",
-        # Go
-        ".go",
-        # Rust
-        ".rs",
-        # Java/JVM
-        ".java",
-        ".kt",
-        ".scala",
-        # C/C++
-        ".c",
-        ".cpp",
-        ".cc",
-        ".cxx",
-        ".h",
-        ".hpp",
-        ".hh",
-        ".hxx",
-        # C#
-        ".cs",
-        # Ruby
-        ".rb",
-        # PHP
-        ".php",
-        # Swift
-        ".swift",
-        # Shell
-        ".sh",
-        ".bash",
-        ".zsh",
-        # Web frameworks
-        ".vue",
-        ".svelte",
-        # Other
-        ".sql",
-        ".proto",
-        ".graphql",
-    }
-)
+from ember.core.languages import is_code_file as _is_code_file_by_suffix
 
 
 class FileFilterService:
@@ -78,8 +27,7 @@ class FileFilterService:
         Returns:
             True if file should be indexed, False otherwise.
         """
-        suffix = file_path.suffix.lower()
-        return suffix in CODE_FILE_EXTENSIONS
+        return _is_code_file_by_suffix(file_path.suffix)
 
     def filter_code_files(self, files: list[Path]) -> list[Path]:
         """Filter list to only include code files.

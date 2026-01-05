@@ -7,6 +7,8 @@ and all output modes. Supports both click-style colors and prompt_toolkit styles
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
+from ember.core.languages import get_lexer_name
+
 if TYPE_CHECKING:
     from pygments.lexer import Lexer
     from pygments.token import _TokenType
@@ -34,31 +36,6 @@ class AnsiCodes:
     CYAN = "\x1b[96m"
     WHITE = "\x1b[97m"
 
-
-# File extension to Pygments lexer name mapping
-EXTENSION_TO_LEXER: dict[str, str] = {
-    ".py": "python",
-    ".js": "javascript",
-    ".ts": "typescript",
-    ".tsx": "typescript",
-    ".jsx": "javascript",
-    ".go": "go",
-    ".rs": "rust",
-    ".java": "java",
-    ".c": "c",
-    ".cpp": "cpp",
-    ".cc": "cpp",
-    ".cxx": "cpp",
-    ".cs": "csharp",
-    ".rb": "ruby",
-    ".sh": "bash",
-    ".yaml": "yaml",
-    ".yml": "yaml",
-    ".json": "json",
-    ".toml": "toml",
-    ".md": "markdown",
-    ".sql": "sql",
-}
 
 
 class EmberColors:
@@ -296,7 +273,7 @@ def _get_lexer(language: str | None, file_path: Path | None) -> "Lexer":
 
     lexer_name = language
     if not lexer_name and file_path:
-        lexer_name = EXTENSION_TO_LEXER.get(file_path.suffix, "text")
+        lexer_name = get_lexer_name(file_path.suffix)
 
     try:
         return get_lexer_by_name(lexer_name or "text")
