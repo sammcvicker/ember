@@ -20,6 +20,31 @@ from ember.ports.search import TextSearch, VectorSearch
 
 logger = logging.getLogger(__name__)
 
+# =============================================================================
+# Retrieval Parameters
+# =============================================================================
+# These parameters control the hybrid search retrieval behavior.
+# They can be configured via SearchConfig for advanced tuning.
+
+# Multiplier for retrieval pool size relative to topk.
+# Larger pool = better fusion quality but slower retrieval.
+# Set to 5x to ensure enough candidates for effective RRF fusion across
+# both BM25 and vector results. Lower values may miss relevant results
+# that rank highly in only one retrieval method.
+RETRIEVAL_POOL_MULTIPLIER: int = 5
+
+# Minimum retrieval pool size regardless of topk.
+# Ensures enough candidates for fusion even with small topk values.
+# 100 provides a reasonable baseline for most use cases.
+MIN_RETRIEVAL_POOL: int = 100
+
+# Reciprocal Rank Fusion constant (k parameter).
+# Higher values reduce the influence of top-ranked items.
+# Standard value of 60 balances top-rank importance with tail distribution.
+# See: Cormack et al. "Reciprocal Rank Fusion outperforms Condorcet and
+# individual Rank Learning Methods" (SIGIR 2009)
+DEFAULT_RRF_K: int = 60
+
 
 @dataclass
 class _RetrievalResult:
@@ -46,7 +71,9 @@ class SearchUseCase:
         vector_search: VectorSearch,
         chunk_repo: ChunkRepository,
         embedder: Embedder,
-        rrf_k: int = 60,
+        rrf_k: int = DEFAULT_RRF_K,
+        retrieval_pool_multiplier: int = RETRIEVAL_POOL_MULTIPLIER,
+        min_retrieval_pool: int = MIN_RETRIEVAL_POOL,
     ) -> None:
         """Initialize search use case.
 
@@ -56,12 +83,16 @@ class SearchUseCase:
             chunk_repo: Repository for retrieving chunk metadata.
             embedder: Embedder for query vectorization.
             rrf_k: RRF constant (default 60, higher = less weight to top ranks).
+            retrieval_pool_multiplier: Multiplier for pool size vs topk (default 5).
+            min_retrieval_pool: Minimum retrieval pool size (default 100).
         """
         self.text_search = text_search
         self.vector_search = vector_search
         self.chunk_repo = chunk_repo
         self.embedder = embedder
         self.rrf_k = rrf_k
+        self.retrieval_pool_multiplier = retrieval_pool_multiplier
+        self.min_retrieval_pool = min_retrieval_pool
 
     def search(self, query: Query) -> SearchResultSet:
         """Execute hybrid search and return ranked results.
@@ -76,9 +107,12 @@ class SearchUseCase:
         query_embedding = self.embedder.embed_texts([query.text])[0]
 
         # 2. Get BM25 results from full-text search
-        # Use a larger retrieval pool for fusion (e.g., 100)
+        # Use a larger retrieval pool for fusion to ensure quality ranking
         # Pass path_filter to filter during SQL query (not after)
-        retrieval_pool = max(query.topk * 5, 100)
+        retrieval_pool = max(
+            query.topk * self.retrieval_pool_multiplier,
+            self.min_retrieval_pool,
+        )
         fts_results = self.text_search.query(
             query.text, topk=retrieval_pool, path_filter=query.path_filter_str
         )

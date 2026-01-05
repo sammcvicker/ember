@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Made search retrieval parameters configurable** (#388)
+  - Extracted magic numbers (5x multiplier, 100 min pool, k=60) to documented module constants in `search_usecase.py`
+  - Added `rrf_k`, `retrieval_pool_multiplier`, and `min_retrieval_pool` to `SearchConfig` for advanced tuning
+  - These parameters control hybrid search quality vs speed tradeoff
+  - Documented rationale for each default value (RRF k=60 per SIGIR 2009 paper)
+
 - **Refactored IndexingUseCase to improve maintainability** (#387)
   - Extracted file detection logic into `FileDetectionService` (git-based change detection)
   - Extracted file filtering logic into `FileFilterService` (code file extension and glob pattern filtering)
