@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **SearchUseCase now follows standard use case API pattern** (#422)
+  - Added `execute(SearchRequest) -> SearchResponse` method with error handling
+  - Created `SearchRequest` and `SearchResponse` DTOs matching other use cases
+  - Proper try-catch pattern with KeyboardInterrupt/SystemExit re-raise
+  - Old `search(Query)` method retained for backward compatibility
+  - Errors now return `SearchResponse.create_error()` instead of propagating exceptions
+
+- **ChunkFileUseCase now has proper error handling** (#422)
+  - Added try-catch pattern matching other use cases
+  - Chunker exceptions now return `ChunkFileResponse.create_error()` instead of crashing
+  - KeyboardInterrupt/SystemExit are properly re-raised
+
 ### Fixed
 - **Daemon startup timeout no longer has race condition** (#398)
   - Fixed race between stderr reading and process termination during startup failure
