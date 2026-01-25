@@ -452,7 +452,11 @@ class TestFindCommand:
     def test_find_path_and_in_filter_mutually_exclusive(
         self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
     ) -> None:
-        """Test that PATH argument and --in filter are mutually exclusive."""
+        """Test that PATH argument and --in filter are mutually exclusive.
+
+        The error should be raised during argument parsing (UsageError with
+        exit code 2), not during execution, and should include usage examples.
+        """
         monkeypatch.chdir(git_repo_isolated)
         # Init
         runner.invoke(cli, ["init"], catch_exceptions=False)
@@ -464,11 +468,15 @@ class TestFindCommand:
             catch_exceptions=False
         )
 
-        # Should fail with error about mutually exclusive options
-        assert_command_failed(result, context="PATH and --in together")
+        # Should fail with Click UsageError (exit code 2), not domain error (exit code 1)
+        assert_command_failed(result, expected_code=2, context="PATH and --in together")
+        # Should show helpful error message
         assert_output_matches(
-            result, r"mutually exclusive|cannot use both", flags=__import__("re").IGNORECASE
+            result, r"cannot use both", flags=__import__("re").IGNORECASE
         )
+        # Should include usage examples (Issue #397)
+        assert_output_contains(result, "ember find")
+        assert_output_matches(result, r"--in|PATH")
 
 
 class TestSearchCommand:
@@ -477,7 +485,11 @@ class TestSearchCommand:
     def test_search_path_and_in_filter_mutually_exclusive(
         self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
     ) -> None:
-        """Test that PATH argument and --in flag are mutually exclusive."""
+        """Test that PATH argument and --in flag are mutually exclusive.
+
+        The error should be raised during argument parsing (UsageError with
+        exit code 2), not during execution, and should include usage examples.
+        """
         monkeypatch.chdir(git_repo_isolated)
         # Init
         runner.invoke(cli, ["init"], catch_exceptions=False)
@@ -489,11 +501,15 @@ class TestSearchCommand:
             catch_exceptions=False
         )
 
-        # Should fail with error about mutually exclusive options
-        assert_command_failed(result, context="search PATH and --in together")
+        # Should fail with Click UsageError (exit code 2), not domain error (exit code 1)
+        assert_command_failed(result, expected_code=2, context="search PATH and --in together")
+        # Should show helpful error message
         assert_output_matches(
-            result, r"mutually exclusive|cannot use both", flags=__import__("re").IGNORECASE
+            result, r"cannot use both", flags=__import__("re").IGNORECASE
         )
+        # Should include usage examples (Issue #397)
+        assert_output_contains(result, "ember search")
+        assert_output_matches(result, r"--in|PATH")
 
     def test_search_accepts_path_argument(
         self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
