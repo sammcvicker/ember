@@ -36,6 +36,7 @@ class StatusResponse:
         is_stale: Whether index is out of sync with working tree.
         model_fingerprint: Model fingerprint string (or None).
         config: Current configuration.
+        last_sync_time: Unix timestamp of last sync (or None if never synced).
         success: Whether status check succeeded.
         error: Error message if status check failed.
     """
@@ -48,6 +49,7 @@ class StatusResponse:
     is_stale: bool = False
     model_fingerprint: str | None = None
     config: EmberConfig | None = None
+    last_sync_time: float | None = None
     success: bool = True
     error: str | None = None
 
@@ -65,6 +67,17 @@ class StatusResponse:
             return None
         return self.model_fingerprint.split(":")[0]
 
+    @property
+    def last_sync_time_ago(self) -> str | None:
+        """Get the last sync time as a human-friendly relative string.
+
+        Returns:
+            Human-friendly string like "5 min ago" or None if never synced.
+        """
+        from ember.core.status.time_format import format_time_ago
+
+        return format_time_ago(self.last_sync_time)
+
     @classmethod
     def create_success(
         cls,
@@ -76,6 +89,7 @@ class StatusResponse:
         is_stale: bool,
         model_fingerprint: str | None,
         config: EmberConfig,
+        last_sync_time: float | None = None,
     ) -> "StatusResponse":
         """Create a success response with status information.
 
@@ -87,6 +101,7 @@ class StatusResponse:
             is_stale: Whether index is out of sync with working tree.
             model_fingerprint: Model fingerprint string (or None).
             config: Current configuration.
+            last_sync_time: Unix timestamp of last sync (or None if never synced).
 
         Returns:
             StatusResponse with success=True and all status information.
@@ -100,6 +115,7 @@ class StatusResponse:
             is_stale=is_stale,
             model_fingerprint=model_fingerprint,
             config=config,
+            last_sync_time=last_sync_time,
             success=True,
             error=None,
         )
@@ -177,6 +193,10 @@ class StatusUseCase:
             # Get model fingerprint
             model_fingerprint = self.meta_repo.get("model_fingerprint")
 
+            # Get last sync time (stored as string timestamp)
+            last_sync_time_str = self.meta_repo.get("last_sync_time")
+            last_sync_time = float(last_sync_time_str) if last_sync_time_str else None
+
             return StatusResponse.create_success(
                 repo_root=request.repo_root,
                 indexed_files=indexed_files,
@@ -185,6 +205,7 @@ class StatusUseCase:
                 is_stale=is_stale,
                 model_fingerprint=model_fingerprint,
                 config=self.config,
+                last_sync_time=last_sync_time,
             )
         except (KeyboardInterrupt, SystemExit):
             raise

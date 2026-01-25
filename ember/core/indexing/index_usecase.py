@@ -185,9 +185,12 @@ class IndexingUseCase:
 
     def _update_metadata(self, tree_sha: str, sync_mode: str) -> None:
         """Update metadata after successful indexing."""
+        import time
+
         self.meta_repo.set("last_tree_sha", tree_sha)
         self.meta_repo.set("last_sync_mode", sync_mode)
         self.meta_repo.set("model_fingerprint", self.embedder.fingerprint())
+        self.meta_repo.set("last_sync_time", str(time.time()))
 
     def _create_success_response(
         self,

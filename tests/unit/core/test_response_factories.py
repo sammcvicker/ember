@@ -146,6 +146,67 @@ class TestStatusResponseFactories:
         assert response.model_fingerprint is None
         assert response.model_name is None
 
+    def test_last_sync_time_included_in_success_response(self) -> None:
+        """Success factory should include last_sync_time when provided."""
+        from datetime import UTC, datetime
+
+        config = EmberConfig()
+        now = datetime.now(UTC).timestamp()
+        response = StatusResponse.create_success(
+            repo_root=Path("/test/repo"),
+            indexed_files=100,
+            total_chunks=500,
+            last_tree_sha="abc123",
+            is_stale=False,
+            model_fingerprint="model-v1",
+            config=config,
+            last_sync_time=now,
+        )
+
+        assert response.last_sync_time == now
+
+    def test_last_sync_time_defaults_to_none(self) -> None:
+        """Success factory should default last_sync_time to None."""
+        config = EmberConfig()
+        response = StatusResponse.create_success(
+            repo_root=Path("/test/repo"),
+            indexed_files=100,
+            total_chunks=500,
+            last_tree_sha="abc123",
+            is_stale=False,
+            model_fingerprint="model-v1",
+            config=config,
+        )
+
+        assert response.last_sync_time is None
+
+    def test_last_sync_time_ago_returns_formatted_time(self) -> None:
+        """last_sync_time_ago property should return human-friendly time string."""
+        from datetime import UTC, datetime
+
+        config = EmberConfig()
+        # 5 minutes ago
+        timestamp = datetime.now(UTC).timestamp() - 300
+        response = StatusResponse.create_success(
+            repo_root=Path("/test/repo"),
+            indexed_files=100,
+            total_chunks=500,
+            last_tree_sha="abc123",
+            is_stale=False,
+            model_fingerprint="model-v1",
+            config=config,
+            last_sync_time=timestamp,
+        )
+
+        assert response.last_sync_time_ago == "5 min ago"
+
+    def test_last_sync_time_ago_returns_none_when_no_timestamp(self) -> None:
+        """last_sync_time_ago should return None when no timestamp."""
+        response = StatusResponse(initialized=True)
+
+        assert response.last_sync_time is None
+        assert response.last_sync_time_ago is None
+
 
 class TestInitResponseFactories:
     """Tests for InitResponse factory methods."""

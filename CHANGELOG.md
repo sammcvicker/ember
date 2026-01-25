@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Simplified `ember status` output with `--detailed` flag** (#392)
+  - Default output now shows only essential info: sync status, file/chunk counts, and model name
+  - Added human-friendly time display (e.g., "synced 2 min ago" instead of raw timestamps)
+  - Technical configuration details (topk, chunking strategy, line window, etc.) now require `--detailed` flag
+  - Clear actionable hints shown when index is out of date
+
 - **Made Query dataclass immutable with frozen=True** (#391)
   - Query is now a frozen dataclass, preventing modification after creation
   - Added `Query.from_strings()` factory method for creating queries from CLI inputs
