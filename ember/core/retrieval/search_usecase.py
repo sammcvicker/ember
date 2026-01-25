@@ -7,6 +7,7 @@ with Reciprocal Rank Fusion for optimal retrieval quality.
 import logging
 from dataclasses import dataclass
 
+from ember.core.use_case_errors import format_error_message, log_use_case_error
 from ember.domain.entities import (
     Chunk,
     Query,
@@ -54,6 +55,85 @@ class _RetrievalResult:
     missing_count: int
 
 
+@dataclass
+class SearchRequest:
+    """Request to search the code index.
+
+    Follows the standard use case Request DTO pattern with simple types.
+
+    Attributes:
+        query_text: The search query string.
+        topk: Maximum number of results to return. Default 20.
+        path_filter: Optional glob pattern to filter by file path (e.g., "*.py").
+        lang_filter: Optional language filter (e.g., "python").
+    """
+
+    query_text: str
+    topk: int = 20
+    path_filter: str | None = None
+    lang_filter: str | None = None
+
+
+@dataclass
+class SearchResponse:
+    """Response from search operation.
+
+    Follows the standard use case Response DTO pattern with success/error fields.
+
+    Attributes:
+        result_set: The SearchResultSet containing results (None on error).
+        success: Whether the search succeeded.
+        error: Error message if search failed.
+    """
+
+    result_set: SearchResultSet | None = None
+    success: bool = True
+    error: str | None = None
+
+    @property
+    def results(self) -> list[SearchResult]:
+        """Get the list of search results.
+
+        Returns:
+            List of SearchResult objects, or empty list if no results or error.
+        """
+        if self.result_set is None:
+            return []
+        return self.result_set.results
+
+    @classmethod
+    def create_success(cls, *, result_set: SearchResultSet) -> "SearchResponse":
+        """Create a success response with results.
+
+        Args:
+            result_set: The SearchResultSet containing results.
+
+        Returns:
+            SearchResponse with success=True.
+        """
+        return cls(
+            result_set=result_set,
+            success=True,
+            error=None,
+        )
+
+    @classmethod
+    def create_error(cls, message: str) -> "SearchResponse":
+        """Create an error response.
+
+        Args:
+            message: Error message describing what went wrong.
+
+        Returns:
+            SearchResponse with success=False.
+        """
+        return cls(
+            result_set=None,
+            success=False,
+            error=message,
+        )
+
+
 class SearchUseCase:
     """Orchestrates hybrid search combining BM25 and vector retrieval.
 
@@ -93,6 +173,47 @@ class SearchUseCase:
         self.rrf_k = rrf_k
         self.retrieval_pool_multiplier = retrieval_pool_multiplier
         self.min_retrieval_pool = min_retrieval_pool
+
+    def execute(self, request: SearchRequest) -> SearchResponse:
+        """Execute hybrid search and return ranked results.
+
+        Follows the standard use case API pattern with Request/Response DTOs
+        and proper error handling.
+
+        Error handling contract:
+            - KeyboardInterrupt/SystemExit are re-raised (user wants to exit)
+            - All other exceptions are caught and converted to error responses
+            - See ember.core.use_case_errors for the error handling pattern
+
+        Args:
+            request: SearchRequest with query parameters.
+
+        Returns:
+            SearchResponse with results or error information.
+        """
+        # Validate query text
+        query_text = request.query_text.strip()
+        if not query_text:
+            return SearchResponse.create_error("Query text cannot be empty")
+
+        try:
+            # Convert request to domain Query entity
+            query = Query.from_strings(
+                text=query_text,
+                topk=request.topk,
+                path_filter=request.path_filter,
+                lang_filter=request.lang_filter,
+            )
+
+            # Delegate to internal search implementation
+            result_set = self.search(query)
+            return SearchResponse.create_success(result_set=result_set)
+
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception as e:
+            log_use_case_error(e, "search")
+            return SearchResponse.create_error(format_error_message(e, "search"))
 
     def search(self, query: Query) -> SearchResultSet:
         """Execute hybrid search and return ranked results.

@@ -7,6 +7,7 @@ when available, falling back to line-based chunking for unsupported languages.
 from dataclasses import dataclass
 from pathlib import Path
 
+from ember.core.use_case_errors import format_error_message, log_use_case_error
 from ember.ports.chunkers import ChunkData, Chunker
 
 
@@ -104,37 +105,49 @@ class ChunkFileUseCase:
     def execute(self, request: ChunkFileRequest) -> ChunkFileResponse:
         """Execute chunking on a file with automatic fallback.
 
+        Error handling contract:
+            - KeyboardInterrupt/SystemExit are re-raised (user wants to exit)
+            - All other exceptions are caught and converted to error responses
+            - See ember.core.use_case_errors for the error handling pattern
+
         Args:
             request: Chunking request with file content and metadata.
 
         Returns:
             Response with chunks and strategy used.
         """
-        # Validate input
-        if not request.content.strip():
-            return ChunkFileResponse.create_success(chunks=[], strategy="none")
+        try:
+            # Validate input
+            if not request.content.strip():
+                return ChunkFileResponse.create_success(chunks=[], strategy="none")
 
-        # Try tree-sitter first for supported languages
-        if request.lang in self.tree_sitter.supported_languages:
-            chunks = self.tree_sitter.chunk_file(
+            # Try tree-sitter first for supported languages
+            if request.lang in self.tree_sitter.supported_languages:
+                chunks = self.tree_sitter.chunk_file(
+                    content=request.content,
+                    path=request.path,
+                    lang=request.lang,
+                )
+
+                # If tree-sitter succeeded and returned chunks, use them
+                if chunks:
+                    return ChunkFileResponse.create_success(
+                        chunks=chunks, strategy="tree-sitter"
+                    )
+
+                # Tree-sitter failed or returned no chunks, fall back to line-based
+
+            # Fall back to line-based chunking
+            chunks = self.line_chunker.chunk_file(
                 content=request.content,
                 path=request.path,
                 lang=request.lang,
             )
 
-            # If tree-sitter succeeded and returned chunks, use them
-            if chunks:
-                return ChunkFileResponse.create_success(
-                    chunks=chunks, strategy="tree-sitter"
-                )
+            return ChunkFileResponse.create_success(chunks=chunks, strategy="line-based")
 
-            # Tree-sitter failed or returned no chunks, fall back to line-based
-
-        # Fall back to line-based chunking
-        chunks = self.line_chunker.chunk_file(
-            content=request.content,
-            path=request.path,
-            lang=request.lang,
-        )
-
-        return ChunkFileResponse.create_success(chunks=chunks, strategy="line-based")
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception as e:
+            log_use_case_error(e, "chunking")
+            return ChunkFileResponse.create_error(format_error_message(e, "chunking"))

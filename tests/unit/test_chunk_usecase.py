@@ -1,6 +1,9 @@
 """Tests for chunking use case."""
 
 from pathlib import Path
+from unittest.mock import MagicMock
+
+import pytest
 
 from ember.adapters.parsers.line_chunker import LineChunker
 from ember.adapters.parsers.tree_sitter_chunker import TreeSitterChunker
@@ -266,3 +269,83 @@ def test_chunk_usecase_preserves_metadata():
     # Check metadata is preserved
     for chunk in response.chunks:
         assert chunk.lang == "rs"
+
+
+class TestChunkFileUseCaseErrorHandling:
+    """Tests for ChunkFileUseCase error handling."""
+
+    def test_execute_catches_tree_sitter_exception(self):
+        """Test that execute() catches tree-sitter exceptions."""
+        mock_tree_sitter = MagicMock()
+        mock_tree_sitter.supported_languages = {"py"}
+        mock_tree_sitter.chunk_file.side_effect = RuntimeError("Parse error")
+
+        mock_line_chunker = MagicMock()
+
+        use_case = ChunkFileUseCase(mock_tree_sitter, mock_line_chunker)
+        request = ChunkFileRequest(
+            content="def foo(): pass",
+            path=Path("test.py"),
+            lang="py",
+        )
+
+        response = use_case.execute(request)
+
+        assert response.success is False
+        assert response.error is not None
+
+    def test_execute_catches_line_chunker_exception(self):
+        """Test that execute() catches line chunker exceptions."""
+        mock_tree_sitter = MagicMock()
+        mock_tree_sitter.supported_languages = set()  # No supported languages
+
+        mock_line_chunker = MagicMock()
+        mock_line_chunker.chunk_file.side_effect = OSError("File error")
+
+        use_case = ChunkFileUseCase(mock_tree_sitter, mock_line_chunker)
+        request = ChunkFileRequest(
+            content="some content",
+            path=Path("test.txt"),
+            lang="txt",
+        )
+
+        response = use_case.execute(request)
+
+        assert response.success is False
+        assert response.error is not None
+
+    def test_execute_reraises_keyboard_interrupt(self):
+        """Test that execute() re-raises KeyboardInterrupt."""
+        mock_tree_sitter = MagicMock()
+        mock_tree_sitter.supported_languages = {"py"}
+        mock_tree_sitter.chunk_file.side_effect = KeyboardInterrupt()
+
+        mock_line_chunker = MagicMock()
+
+        use_case = ChunkFileUseCase(mock_tree_sitter, mock_line_chunker)
+        request = ChunkFileRequest(
+            content="def foo(): pass",
+            path=Path("test.py"),
+            lang="py",
+        )
+
+        with pytest.raises(KeyboardInterrupt):
+            use_case.execute(request)
+
+    def test_execute_reraises_system_exit(self):
+        """Test that execute() re-raises SystemExit."""
+        mock_tree_sitter = MagicMock()
+        mock_tree_sitter.supported_languages = {"py"}
+        mock_tree_sitter.chunk_file.side_effect = SystemExit()
+
+        mock_line_chunker = MagicMock()
+
+        use_case = ChunkFileUseCase(mock_tree_sitter, mock_line_chunker)
+        request = ChunkFileRequest(
+            content="def foo(): pass",
+            path=Path("test.py"),
+            lang="py",
+        )
+
+        with pytest.raises(SystemExit):
+            use_case.execute(request)
