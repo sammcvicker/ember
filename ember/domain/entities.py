@@ -405,14 +405,14 @@ class Query:
         return str(self.lang_filter)
 
 
-@dataclass
+@dataclass(frozen=True)
 class SearchResult:
     """A single search result.
 
     Attributes:
         chunk: The matching chunk.
-        score: Relevance score (higher is better).
-        rank: Result rank (1-indexed).
+        score: Relevance score (normalized 0.0-1.0, higher is better).
+        rank: Result rank (1-indexed, positive integer).
         preview: Short preview of matching content.
         explanation: Explanation of scoring breakdown.
     """
@@ -424,6 +424,37 @@ class SearchResult:
     explanation: SearchExplanation = field(
         default_factory=lambda: SearchExplanation(fused_score=0.0)
     )
+
+    def __post_init__(self) -> None:
+        """Validate search result bounds."""
+        self._validate_score(self.score)
+        self._validate_rank(self.rank)
+
+    @staticmethod
+    def _validate_score(score: float) -> None:
+        """Validate score is in range 0.0-1.0.
+
+        Args:
+            score: The score to validate.
+
+        Raises:
+            ValueError: If score is outside valid range.
+        """
+        if not 0.0 <= score <= 1.0:
+            raise ValueError(f"score must be 0.0-1.0, got {score}")
+
+    @staticmethod
+    def _validate_rank(rank: int) -> None:
+        """Validate rank is a positive integer.
+
+        Args:
+            rank: The rank to validate.
+
+        Raises:
+            ValueError: If rank is not positive.
+        """
+        if rank <= 0:
+            raise ValueError(f"rank must be positive, got {rank}")
 
     def format_preview(self, max_lines: int = 3) -> str:
         """Generate preview text from chunk content.

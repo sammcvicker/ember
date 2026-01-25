@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Made SearchResult dataclass immutable with score and rank validation** (#399)
+  - SearchResult is now a frozen dataclass, preventing modification after creation
+  - Score is validated to be in 0.0-1.0 range (normalized relevance score)
+  - Rank is validated to be a positive integer (1-indexed)
+  - Clear error messages when validation fails (e.g., "score must be 0.0-1.0, got -5.0")
+  - SearchResult instances are now hashable and can be used in sets/dicts
+
 ### Improved
 - **Model download errors now provide specific, actionable guidance** (#393)
   - Network errors now display "Network error. Check internet connection and retry" instead of generic failure message
