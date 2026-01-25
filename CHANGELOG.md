@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Daemon startup timeout no longer has race condition** (#398)
+  - Fixed race between stderr reading and process termination during startup failure
+  - stderr is now fully read before sending termination signals (SIGTERM/SIGKILL)
+  - Zombie processes are now properly reaped via `process.wait()`
+  - Startup failure error messages now include any captured stderr output
+  - No more socket errors from reading closed pipes during daemon startup failures
+
 - **`is_model_cached()` no longer loads the entire model to check cache** (#395)
   - Previously, the fallback path loaded the full model (~1.6GB for Jina) just to verify caching
   - Now uses direct HuggingFace cache directory inspection as fallback instead

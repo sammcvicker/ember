@@ -383,3 +383,248 @@ class TestDynamicStartupTimeout:
 
                 # Should NOT call _get_startup_timeout when explicit timeout given
                 mock_get_timeout.assert_not_called()
+
+
+class TestHandleStartupTimeoutRaceCondition:
+    """Tests for _handle_startup_timeout race condition fix (#398).
+
+    The fix addresses:
+    - stderr may be closed while process is still writing
+    - Process may be killed while read operations are pending
+    - Zombie processes may not be reaped properly
+    """
+
+    @pytest.fixture
+    def lifecycle(self, tmp_path: Path) -> DaemonLifecycle:
+        """Create a DaemonLifecycle instance for testing."""
+        return DaemonLifecycle(
+            socket_path=tmp_path / "test.sock",
+            pid_file=tmp_path / "test.pid",
+            log_file=tmp_path / "test.log",
+        )
+
+    def test_handle_startup_timeout_reads_stderr_before_termination(
+        self, lifecycle: DaemonLifecycle
+    ) -> None:
+        """Test _handle_startup_timeout reads stderr before killing process."""
+        mock_process = MagicMock()
+        mock_process.pid = 12345
+        mock_process.stderr = MagicMock()
+        mock_process.stderr.read.return_value = b"some error output"
+        mock_process.poll.return_value = None  # Process still running
+
+        with (
+            patch.object(lifecycle, "is_process_alive") as mock_alive,
+            patch.object(lifecycle, "_cleanup_failed_startup"),
+            patch("os.kill"),
+            patch("time.sleep"),
+            patch.object(mock_process, "wait"),
+        ):
+            # Process alive initially, then dies after SIGTERM
+            mock_alive.side_effect = [True, False]
+
+            with pytest.raises(RuntimeError):
+                lifecycle._handle_startup_timeout(mock_process, 30.0)
+
+            # Verify stderr was read before termination
+            mock_process.stderr.read.assert_called_once()
+
+    def test_handle_startup_timeout_closes_stderr_before_signals(
+        self, lifecycle: DaemonLifecycle
+    ) -> None:
+        """Test _handle_startup_timeout closes stderr before sending signals."""
+        mock_process = MagicMock()
+        mock_process.pid = 12345
+        mock_process.stderr = MagicMock()
+        mock_process.stderr.read.return_value = b""
+        mock_process.poll.return_value = None
+
+        call_order = []
+
+        def track_close():
+            call_order.append("stderr_close")
+
+        def track_kill(pid, sig):
+            call_order.append(f"kill_{sig.name}")
+
+        mock_process.stderr.close = track_close
+
+        with (
+            patch.object(lifecycle, "is_process_alive") as mock_alive,
+            patch.object(lifecycle, "_cleanup_failed_startup"),
+            patch("os.kill", side_effect=track_kill),
+            patch("time.sleep"),
+            patch.object(mock_process, "wait"),
+        ):
+            mock_alive.side_effect = [True, False]
+
+            with pytest.raises(RuntimeError):
+                lifecycle._handle_startup_timeout(mock_process, 30.0)
+
+            # Verify stderr close happens before SIGTERM
+            assert "stderr_close" in call_order
+            assert "kill_SIGTERM" in call_order
+            assert call_order.index("stderr_close") < call_order.index("kill_SIGTERM")
+
+    def test_handle_startup_timeout_waits_for_process_termination(
+        self, lifecycle: DaemonLifecycle
+    ) -> None:
+        """Test _handle_startup_timeout calls process.wait() to reap zombie."""
+        mock_process = MagicMock()
+        mock_process.pid = 12345
+        mock_process.stderr = MagicMock()
+        mock_process.stderr.read.return_value = b""
+        mock_process.poll.return_value = None
+
+        with (
+            patch.object(lifecycle, "is_process_alive") as mock_alive,
+            patch.object(lifecycle, "_cleanup_failed_startup"),
+            patch("os.kill"),
+            patch("time.sleep"),
+        ):
+            mock_alive.side_effect = [True, False]
+
+            with pytest.raises(RuntimeError):
+                lifecycle._handle_startup_timeout(mock_process, 30.0)
+
+            # Verify process.wait() is called to reap zombie
+            mock_process.wait.assert_called_once_with(timeout=5)
+
+    def test_handle_startup_timeout_handles_wait_timeout(
+        self, lifecycle: DaemonLifecycle
+    ) -> None:
+        """Test _handle_startup_timeout handles TimeoutExpired from process.wait()."""
+        import subprocess
+
+        mock_process = MagicMock()
+        mock_process.pid = 12345
+        mock_process.stderr = MagicMock()
+        mock_process.stderr.read.return_value = b""
+        mock_process.poll.return_value = None
+        mock_process.wait.side_effect = subprocess.TimeoutExpired(
+            cmd=["test"], timeout=5
+        )
+
+        with (
+            patch.object(lifecycle, "is_process_alive") as mock_alive,
+            patch.object(lifecycle, "_cleanup_failed_startup"),
+            patch("os.kill"),
+            patch("time.sleep"),
+        ):
+            mock_alive.side_effect = [True, False]
+
+            # Should not raise due to TimeoutExpired from wait()
+            with pytest.raises(RuntimeError) as exc_info:
+                lifecycle._handle_startup_timeout(mock_process, 30.0)
+
+            # Should still raise the expected RuntimeError about timeout
+            assert "not responding to health checks" in str(exc_info.value)
+
+    def test_handle_startup_timeout_handles_none_stderr(
+        self, lifecycle: DaemonLifecycle
+    ) -> None:
+        """Test _handle_startup_timeout handles process with no stderr pipe."""
+        mock_process = MagicMock()
+        mock_process.pid = 12345
+        mock_process.stderr = None  # No stderr pipe
+        mock_process.poll.return_value = None
+
+        with (
+            patch.object(lifecycle, "is_process_alive") as mock_alive,
+            patch.object(lifecycle, "_cleanup_failed_startup"),
+            patch("os.kill"),
+            patch("time.sleep"),
+            patch.object(mock_process, "wait"),
+        ):
+            mock_alive.side_effect = [True, False]
+
+            with pytest.raises(RuntimeError):
+                lifecycle._handle_startup_timeout(mock_process, 30.0)
+
+            # Should complete without error
+
+    def test_handle_startup_timeout_handles_stderr_read_error(
+        self, lifecycle: DaemonLifecycle
+    ) -> None:
+        """Test _handle_startup_timeout handles OSError when reading stderr."""
+        mock_process = MagicMock()
+        mock_process.pid = 12345
+        mock_process.stderr = MagicMock()
+        mock_process.stderr.read.side_effect = OSError("Pipe closed")
+        mock_process.poll.return_value = None
+
+        with (
+            patch.object(lifecycle, "is_process_alive") as mock_alive,
+            patch.object(lifecycle, "_cleanup_failed_startup"),
+            patch("os.kill"),
+            patch("time.sleep"),
+            patch.object(mock_process, "wait"),
+        ):
+            mock_alive.side_effect = [True, False]
+
+            # Should not propagate OSError from stderr read
+            with pytest.raises(RuntimeError) as exc_info:
+                lifecycle._handle_startup_timeout(mock_process, 30.0)
+
+            assert "not responding to health checks" in str(exc_info.value)
+
+    def test_handle_startup_timeout_includes_stderr_in_dead_process_message(
+        self, lifecycle: DaemonLifecycle
+    ) -> None:
+        """Test error message includes stderr when process died during startup."""
+        mock_process = MagicMock()
+        mock_process.pid = 12345
+        mock_process.stderr = MagicMock()
+        mock_process.stderr.read.return_value = b"ImportError: No module named foo"
+        mock_process.poll.return_value = None
+
+        with (
+            patch.object(lifecycle, "is_process_alive") as mock_alive,
+            patch.object(lifecycle, "_cleanup_failed_startup"),
+            patch("os.kill"),
+            patch("time.sleep"),
+            patch.object(mock_process, "wait"),
+        ):
+            # Process is already dead
+            mock_alive.return_value = False
+
+            with pytest.raises(RuntimeError) as exc_info:
+                lifecycle._handle_startup_timeout(mock_process, 30.0)
+
+            # Should include stderr output in the error message
+            assert "exited unexpectedly" in str(exc_info.value)
+            assert "ImportError" in str(exc_info.value)
+
+    def test_handle_startup_timeout_sigkill_fallback_when_sigterm_fails(
+        self, lifecycle: DaemonLifecycle
+    ) -> None:
+        """Test _handle_startup_timeout falls back to SIGKILL when SIGTERM fails."""
+        mock_process = MagicMock()
+        mock_process.pid = 12345
+        mock_process.stderr = MagicMock()
+        mock_process.stderr.read.return_value = b""
+        mock_process.poll.side_effect = [None, None]  # Still running after SIGTERM
+
+        kill_calls = []
+
+        def track_kill(pid, sig):
+            kill_calls.append(sig)
+
+        with (
+            patch.object(lifecycle, "is_process_alive") as mock_alive,
+            patch.object(lifecycle, "_cleanup_failed_startup"),
+            patch("os.kill", side_effect=track_kill),
+            patch("time.sleep"),
+            patch.object(mock_process, "wait"),
+        ):
+            # First call: check if process is alive (True)
+            # Next 10 calls: loop checking if process died after SIGTERM (all True)
+            # This triggers the else clause which sends SIGKILL
+            mock_alive.return_value = True
+
+            with pytest.raises(RuntimeError):
+                lifecycle._handle_startup_timeout(mock_process, 30.0)
+
+            # Verify both SIGTERM and SIGKILL were sent
+            assert signal.SIGTERM in kill_calls
+            assert signal.SIGKILL in kill_calls

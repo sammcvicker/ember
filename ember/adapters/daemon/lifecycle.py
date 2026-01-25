@@ -314,16 +314,89 @@ class DaemonLifecycle:
             self._cleanup_failed_startup()
             stderr_output = self._read_stderr_output(process)
 
+            # Close stderr after reading (#398)
+            if process.stderr:
+                with contextlib.suppress(OSError):
+                    process.stderr.close()
+
             error_msg = f"Daemon failed to start (exit code: {exit_code})"
             if stderr_output:
                 error_msg += f"\nStderr: {stderr_output}"
             error_msg += f"\nCheck daemon logs at: {self.log_file}"
             raise RuntimeError(error_msg)
 
+    def _read_and_close_stderr(self, process: subprocess.Popen) -> str:
+        """Read remaining stderr output and close the pipe.
+
+        This must be called before sending signals to avoid race conditions
+        where stderr is read while process is being terminated (#398).
+
+        Args:
+            process: The spawned process
+
+        Returns:
+            Decoded stderr output, or empty string if unavailable
+        """
+        if not process.stderr:
+            return ""
+
+        stderr_output = ""
+        try:
+            stderr_bytes = process.stderr.read()
+            if stderr_bytes:
+                stderr_output = stderr_bytes.decode("utf-8", errors="replace").strip()
+                if stderr_output:
+                    logger.debug(f"Stderr before timeout: {stderr_output}")
+        except OSError:
+            # Pipe may already be closed or broken
+            logger.debug("Failed to read stderr from process")
+
+        # Close stderr before sending signals
+        with contextlib.suppress(OSError):
+            process.stderr.close()
+
+        return stderr_output
+
+    def _terminate_unresponsive_process(self, process: subprocess.Popen) -> None:
+        """Terminate an unresponsive process with SIGTERM, falling back to SIGKILL.
+
+        Args:
+            process: The spawned process to terminate
+        """
+        try:
+            os.kill(process.pid, signal.SIGTERM)
+            # Give process brief time to exit gracefully
+            for _ in range(DaemonTimeouts.STARTUP_FAILURE_LOOP_COUNT):
+                time.sleep(DaemonTimeouts.STARTUP_FAILURE_LOOP_WAIT)
+                if not self.is_process_alive(process.pid):
+                    break
+            else:
+                # Force kill if still alive
+                os.kill(process.pid, signal.SIGKILL)
+        except OSError:
+            pass  # Process already dead
+
+    def _wait_for_process_exit(self, process: subprocess.Popen) -> None:
+        """Wait for process to exit and reap zombie.
+
+        Args:
+            process: The spawned process to wait for
+        """
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            logger.debug(f"Process {process.pid} did not exit within wait timeout")
+
     def _handle_startup_timeout(
         self, process: subprocess.Popen, timeout_used: float | None = None
     ) -> None:
         """Handle the case where daemon didn't become ready in time.
+
+        This method properly coordinates stderr reading with process lifecycle
+        to avoid race conditions (#398):
+        1. Read any remaining stderr before terminating
+        2. Close stderr before sending signals
+        3. Wait for process termination to reap zombie
 
         Args:
             process: The spawned process
@@ -336,6 +409,10 @@ class DaemonLifecycle:
         if timeout_used is None:
             timeout_used = DaemonTimeouts.READY_WAIT_DEFAULT
 
+        # Read and close stderr before any termination attempts (#398)
+        # This prevents race conditions between stderr reading and process death
+        stderr_output = self._read_and_close_stderr(process)
+
         if self.is_process_alive(process.pid):
             # Process is alive but not responding - terminate it to avoid orphan
             # This prevents the race condition where:
@@ -346,18 +423,11 @@ class DaemonLifecycle:
                 f"Daemon process {process.pid} not responding after "
                 f"{timeout_used}s, terminating..."
             )
-            try:
-                os.kill(process.pid, signal.SIGTERM)
-                # Give process brief time to exit gracefully
-                for _ in range(DaemonTimeouts.STARTUP_FAILURE_LOOP_COUNT):
-                    time.sleep(DaemonTimeouts.STARTUP_FAILURE_LOOP_WAIT)
-                    if not self.is_process_alive(process.pid):
-                        break
-                else:
-                    # Force kill if still alive
-                    os.kill(process.pid, signal.SIGKILL)
-            except OSError:
-                pass  # Process already dead
+
+            self._terminate_unresponsive_process(process)
+
+            # Reap zombie process (#398)
+            self._wait_for_process_exit(process)
 
             self._cleanup_failed_startup()
             raise RuntimeError(
@@ -367,11 +437,17 @@ class DaemonLifecycle:
                 f"Check daemon logs at: {self.log_file}"
             )
         else:
+            # Reap zombie process (#398)
+            self._wait_for_process_exit(process)
+
             self._cleanup_failed_startup()
-            raise RuntimeError(
-                f"Daemon process {process.pid} exited unexpectedly during startup. "
-                f"Check daemon logs at: {self.log_file}"
+            error_msg = (
+                f"Daemon process {process.pid} exited unexpectedly during startup."
             )
+            if stderr_output:
+                error_msg += f"\nStderr: {stderr_output}"
+            error_msg += f"\nCheck daemon logs at: {self.log_file}"
+            raise RuntimeError(error_msg)
 
     def start(self, foreground: bool = False) -> bool:
         """Start the daemon.
@@ -416,18 +492,19 @@ class DaemonLifecycle:
             process = self._spawn_background_process(cmd)
             self._write_pid_file(process)
 
-            try:
-                self._check_instant_failure(process)
-            finally:
-                if process.stderr:
-                    process.stderr.close()
+            # Check for instant failure - reads stderr if process died immediately
+            self._check_instant_failure(process)
 
             # Determine timeout based on whether model is cached
             startup_timeout = self._get_startup_timeout()
 
             if self._wait_for_daemon_ready(startup_timeout):
+                # Success - close stderr since daemon is ready
+                if process.stderr:
+                    process.stderr.close()
                 return True
 
+            # Timeout - _handle_startup_timeout will read/close stderr (#398)
             self._handle_startup_timeout(process, startup_timeout)
 
         except RuntimeError:
