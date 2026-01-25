@@ -1261,16 +1261,22 @@ cli.add_command(open_result, name="open")
 
 
 @cli.command()
+@click.option(
+    "--detailed",
+    is_flag=True,
+    help="Show full technical details including configuration parameters.",
+)
 @click.pass_context
 @handle_cli_errors("status")
-def status(ctx: click.Context) -> None:
-    """Show ember index status and configuration.
+def status(ctx: click.Context, detailed: bool) -> None:
+    """Show ember index status.
 
-    Displays information about the current index state, including:
-    - Number of indexed files and chunks
-    - Last sync time
+    By default, shows essential information:
     - Whether index is up to date
-    - Current configuration
+    - Number of indexed files and chunks
+    - When last synced
+
+    Use --detailed for full technical output including configuration parameters.
     """
     from ember.adapters.factory import RepositoryFactory
     from ember.core.status.status_usecase import StatusRequest, StatusUseCase
@@ -1303,33 +1309,48 @@ def status(ctx: click.Context) -> None:
             hint="Try 'ember sync' to refresh the index",
         )
 
-    # Display status
-    click.echo(f"✓ Ember initialized at {repo_root}\n")
+    # Build sync time display
+    sync_time_display = ""
+    if response.last_sync_time_ago:
+        sync_time_display = f" (synced {response.last_sync_time_ago})"
 
-    click.echo("Index Status:")
-    click.echo(f"  Indexed files: {response.indexed_files}")
-    click.echo(f"  Total chunks: {response.total_chunks}")
-
+    # Display simplified status (default)
     if response.last_tree_sha:
         if response.is_stale:
-            click.echo(f"  Status: {click.style('⚠ Out of date', fg='yellow')}")
-            click.echo("    Run 'ember sync' to update index")
+            click.echo(
+                click.style("Index is out of date", fg="yellow") + sync_time_display
+            )
+            click.echo(f"  {response.indexed_files} files indexed ({response.total_chunks:,} chunks)")
+            if response.model_name:
+                click.echo(f"  Using model: {response.model_name}")
+            click.echo("")
+            click.echo(click.style("Run 'ember sync' to update", fg="yellow"))
         else:
-            click.echo(f"  Status: {click.style('✓ Up to date', fg='green')}")
+            click.echo(
+                click.style("Index is current", fg="green") + sync_time_display
+            )
+            click.echo(f"  {response.indexed_files} files indexed ({response.total_chunks:,} chunks)")
+            if response.model_name:
+                click.echo(f"  Using model: {response.model_name}")
     else:
-        click.echo(f"  Status: {click.style('⚠ Never synced', fg='yellow')}")
-        click.echo("    Run 'ember sync' to index your repository")
+        click.echo(click.style("Index has never been synced", fg="yellow"))
+        click.echo(f"  {response.indexed_files} files indexed ({response.total_chunks:,} chunks)")
+        click.echo("")
+        click.echo(click.style("Run 'ember sync' to index your repository", fg="yellow"))
 
-    # Show configuration
-    if response.config:
+    # Show detailed configuration if requested
+    if detailed and response.config:
         click.echo("\nConfiguration:")
         click.echo(f"  Search results (topk): {response.config.search.topk}")
         click.echo(f"  Chunking strategy: {response.config.index.chunk}")
         if response.config.index.chunk == "lines":
             click.echo(f"  Line window: {response.config.index.line_window} lines")
             click.echo(f"  Overlap: {response.config.index.overlap_lines} lines")
-        if response.model_name:
-            click.echo(f"  Model: {response.model_name}")
+        if response.model_fingerprint:
+            click.echo(f"  Model fingerprint: {response.model_fingerprint}")
+        if response.last_tree_sha:
+            click.echo(f"  Tree SHA: {response.last_tree_sha}")
+        click.echo("\nView full config: ember config show")
 
 
 # Configuration management commands
