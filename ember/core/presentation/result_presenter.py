@@ -15,6 +15,7 @@ import click
 from ember.core.presentation.colors import EmberColors
 from ember.core.presentation.compact_renderer import CompactPreviewRenderer
 from ember.core.presentation.context_renderer import ContextRenderer
+from ember.core.presentation.context_utils import get_context_for_result
 from ember.core.presentation.json_formatter import JsonResultFormatter
 from ember.ports.fs import FileSystem
 
@@ -221,7 +222,7 @@ class ResultPresenter:
     ) -> dict[str, Any] | None:
         """Get context lines for a search result.
 
-        Delegates to JsonResultFormatter.
+        Uses shared context_utils for extraction.
 
         Args:
             result: SearchResult object.
@@ -231,4 +232,14 @@ class ResultPresenter:
         Returns:
             Dictionary with context information, or None if file not readable.
         """
-        return self._json_formatter._get_context(result, context, repo_root)
+        context_data = get_context_for_result(
+            result=result,
+            context_lines=context,
+            repo_root=repo_root,
+            fs=self._fs,
+        )
+
+        if context_data is None:
+            return None
+
+        return context_data.to_dict()

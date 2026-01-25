@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Extracted duplicate `_get_context` implementations into shared utility** (#394)
+  - Created `context_utils.py` with `ContextData`, `ContextLine`, and `get_context_for_result()`
+  - `JsonResultFormatter` and `ResultPresenter` now use the shared utility
+  - Added 16 unit tests for the new context extraction utility
+  - No changes to output format - existing behavior preserved
+
 ### Improved
 - **Sync errors now provide targeted, actionable hints** (#400)
   - Database corruption errors now suggest `ember sync --reindex` to rebuild the index
