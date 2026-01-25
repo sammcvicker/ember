@@ -56,6 +56,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added comprehensive unit tests for extracted services (40+ new tests)
 
 ### Fixed
+- **PATH and --in conflict now caught during argument parsing with helpful examples** (#397)
+  - Previously, using both PATH and --in options in `find` or `search` raised a domain error at runtime
+  - Now raises Click UsageError (exit code 2) immediately during argument parsing
+  - Error message includes examples of correct usage:
+    ```
+    Cannot use both PATH and --in. Choose one:
+      ember find 'query' src/
+      ember find 'query' --in '*.py'
+    ```
+  - Help text updated to say "Mutually exclusive with PATH" instead of "Cannot be used with PATH argument"
+
 - **Global config preserved when local config has parse error** (#396)
   - Previously, when local `.ember/config.toml` failed to parse, global config was discarded
   - Now preserves global config settings and warns with accurate message "Using global configuration"

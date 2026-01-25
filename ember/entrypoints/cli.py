@@ -45,6 +45,58 @@ from ember.domain.exceptions import EmberDomainError
 from ember.version import __version__
 
 
+def _make_path_in_exclusive_callback(command_name: str, in_param_name: str = "path_filter"):
+    """Create a callback that validates PATH and --in are mutually exclusive.
+
+    This validates the constraint early during argument parsing, providing a
+    Click UsageError with helpful examples instead of a domain error at runtime.
+
+    Args:
+        command_name: Name of the command (e.g., "find", "search") for error message.
+        in_param_name: The parameter name for the --in option in ctx.params.
+
+    Returns:
+        A Click callback function for the path argument.
+    """
+    def callback(ctx: click.Context, param: click.Parameter, value: str | None) -> str | None:
+        # Check if --in filter was already provided
+        in_filter = ctx.params.get(in_param_name)
+        if value is not None and in_filter is not None:
+            raise click.UsageError(
+                f"Cannot use both PATH and --in. Choose one:\n"
+                f"  ember {command_name} 'query' {value}\n"
+                f"  ember {command_name} 'query' --in '{in_filter}'"
+            )
+        return value
+    return callback
+
+
+def _make_in_filter_exclusive_callback(command_name: str, path_param_name: str = "path"):
+    """Create a callback that validates --in and PATH are mutually exclusive.
+
+    This validates the constraint early during argument parsing, providing a
+    Click UsageError with helpful examples instead of a domain error at runtime.
+
+    Args:
+        command_name: Name of the command (e.g., "find", "search") for error message.
+        path_param_name: The parameter name for the PATH argument in ctx.params.
+
+    Returns:
+        A Click callback function for the --in option.
+    """
+    def callback(ctx: click.Context, param: click.Parameter, value: str | None) -> str | None:
+        # Check if PATH argument was already provided
+        path_value = ctx.params.get(path_param_name)
+        if value is not None and path_value is not None:
+            raise click.UsageError(
+                f"Cannot use both PATH and --in. Choose one:\n"
+                f"  ember {command_name} 'query' {path_value}\n"
+                f"  ember {command_name} 'query' --in '{value}'"
+            )
+        return value
+    return callback
+
+
 def handle_cli_errors(command_name: str):
     """Decorator to handle common CLI errors.
 
@@ -930,7 +982,13 @@ def sync(
 
 @cli.command()
 @click.argument("query", type=str)
-@click.argument("path", type=str, required=False, default=None)
+@click.argument(
+    "path",
+    type=str,
+    required=False,
+    default=None,
+    callback=_make_path_in_exclusive_callback("find"),
+)
 @click.option(
     "--topk",
     "-k",
@@ -948,7 +1006,9 @@ def sync(
     "--in",
     "path_filter",
     type=str,
-    help="Filter results by path glob (e.g., '*.py'). Cannot be used with PATH argument.",
+    callback=_make_in_filter_exclusive_callback("find"),
+    is_eager=True,
+    help="Filter results by path glob (e.g., '*.py'). Mutually exclusive with PATH.",
 )
 @click.option(
     "--lang",
@@ -1053,12 +1113,20 @@ def find(
 
 
 @cli.command()
-@click.argument("path", type=str, required=False, default=None)
+@click.argument(
+    "path",
+    type=str,
+    required=False,
+    default=None,
+    callback=_make_path_in_exclusive_callback("search", in_param_name="file_pattern"),
+)
 @click.option(
     "--in",
     "file_pattern",
     type=str,
-    help="Filter by glob pattern (e.g., '*.py'). Cannot be used with PATH argument.",
+    callback=_make_in_filter_exclusive_callback("search"),
+    is_eager=True,
+    help="Filter by glob pattern (e.g., '*.py'). Mutually exclusive with PATH.",
 )
 @click.option(
     "--lang",
