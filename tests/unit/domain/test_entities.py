@@ -1124,3 +1124,182 @@ class TestQueryValidatorsInIsolation:
 
     # Note: _normalize_path_filter and _normalize_lang_filter methods were removed
     # in favor of the from_strings() factory method. See TestQueryFromStrings.
+
+
+# =============================================================================
+# SearchResult validation tests (#399)
+# =============================================================================
+
+
+class TestSearchResultValidation:
+    """Tests for SearchResult entity validation."""
+
+    # Valid hash constants for tests
+    VALID_CONTENT_HASH = "a" * 64
+    VALID_FILE_HASH = "b" * 64
+    VALID_TREE_SHA = "c" * 40
+
+    def _make_chunk(self) -> Chunk:
+        """Helper to create a valid chunk for testing."""
+        return Chunk(
+            id="test_id",
+            project_id="proj",
+            path=Path("file.py"),
+            lang="py",
+            symbol="func",
+            start_line=1,
+            end_line=10,
+            content="def foo(): pass",
+            content_hash=self.VALID_CONTENT_HASH,
+            file_hash=self.VALID_FILE_HASH,
+            tree_sha=self.VALID_TREE_SHA,
+            rev="HEAD",
+        )
+
+    def test_valid_search_result(self):
+        """Test creating a valid SearchResult."""
+        chunk = self._make_chunk()
+        result = SearchResult(
+            chunk=chunk,
+            score=0.95,
+            rank=1,
+        )
+        assert result.score == 0.95
+        assert result.rank == 1
+
+    def test_score_at_boundaries(self):
+        """Test that scores at 0.0 and 1.0 boundaries are valid."""
+        chunk = self._make_chunk()
+
+        result_zero = SearchResult(chunk=chunk, score=0.0, rank=1)
+        assert result_zero.score == 0.0
+
+        result_one = SearchResult(chunk=chunk, score=1.0, rank=1)
+        assert result_one.score == 1.0
+
+    def test_negative_score_raises_error(self):
+        """Test that negative score raises ValueError."""
+        chunk = self._make_chunk()
+        with pytest.raises(ValueError, match="score must be 0.0-1.0"):
+            SearchResult(chunk=chunk, score=-0.1, rank=1)
+
+    def test_score_above_one_raises_error(self):
+        """Test that score > 1.0 raises ValueError."""
+        chunk = self._make_chunk()
+        with pytest.raises(ValueError, match="score must be 0.0-1.0"):
+            SearchResult(chunk=chunk, score=1.5, rank=1)
+
+    def test_rank_positive_valid(self):
+        """Test that positive rank values are valid."""
+        chunk = self._make_chunk()
+        result = SearchResult(chunk=chunk, score=0.5, rank=1)
+        assert result.rank == 1
+
+        result = SearchResult(chunk=chunk, score=0.5, rank=100)
+        assert result.rank == 100
+
+    def test_rank_zero_raises_error(self):
+        """Test that rank=0 raises ValueError (1-indexed)."""
+        chunk = self._make_chunk()
+        with pytest.raises(ValueError, match="rank must be positive"):
+            SearchResult(chunk=chunk, score=0.5, rank=0)
+
+    def test_rank_negative_raises_error(self):
+        """Test that negative rank raises ValueError."""
+        chunk = self._make_chunk()
+        with pytest.raises(ValueError, match="rank must be positive"):
+            SearchResult(chunk=chunk, score=0.5, rank=-1)
+
+    def test_multiple_invalid_values(self):
+        """Test error with both invalid score and rank."""
+        chunk = self._make_chunk()
+        # Score is validated first, so we get score error
+        with pytest.raises(ValueError, match="score must be 0.0-1.0"):
+            SearchResult(chunk=chunk, score=-5.0, rank=-1)
+
+
+class TestSearchResultImmutability:
+    """Tests for SearchResult immutability (frozen dataclass)."""
+
+    VALID_CONTENT_HASH = "a" * 64
+    VALID_FILE_HASH = "b" * 64
+    VALID_TREE_SHA = "c" * 40
+
+    def _make_chunk(self) -> Chunk:
+        """Helper to create a valid chunk for testing."""
+        return Chunk(
+            id="test_id",
+            project_id="proj",
+            path=Path("file.py"),
+            lang="py",
+            symbol="func",
+            start_line=1,
+            end_line=10,
+            content="def foo(): pass",
+            content_hash=self.VALID_CONTENT_HASH,
+            file_hash=self.VALID_FILE_HASH,
+            tree_sha=self.VALID_TREE_SHA,
+            rev="HEAD",
+        )
+
+    def test_search_result_is_frozen(self):
+        """Test that SearchResult instances cannot be modified after creation."""
+        chunk = self._make_chunk()
+        result = SearchResult(chunk=chunk, score=0.5, rank=1)
+        with pytest.raises(AttributeError):
+            result.score = 0.9
+        with pytest.raises(AttributeError):
+            result.rank = 2
+        with pytest.raises(AttributeError):
+            result.preview = "new preview"
+
+    def test_search_result_hashable(self):
+        """Test that frozen SearchResult is hashable."""
+        chunk = self._make_chunk()
+        result1 = SearchResult(chunk=chunk, score=0.5, rank=1)
+        result2 = SearchResult(chunk=chunk, score=0.5, rank=1)
+        # Frozen dataclasses are hashable
+        assert hash(result1) == hash(result2)
+        # Can be used in sets
+        result_set = {result1, result2}
+        assert len(result_set) == 1
+
+
+class TestSearchResultValidatorsInIsolation:
+    """Tests for SearchResult validators called independently of __post_init__.
+
+    These tests verify that validation logic is testable in isolation.
+    """
+
+    def test_validate_score_valid(self):
+        """Test _validate_score accepts valid values."""
+        # Should not raise
+        SearchResult._validate_score(0.0)
+        SearchResult._validate_score(0.5)
+        SearchResult._validate_score(1.0)
+
+    def test_validate_score_negative(self):
+        """Test _validate_score rejects negative values."""
+        with pytest.raises(ValueError, match="score must be 0.0-1.0"):
+            SearchResult._validate_score(-0.1)
+
+    def test_validate_score_above_one(self):
+        """Test _validate_score rejects values > 1.0."""
+        with pytest.raises(ValueError, match="score must be 0.0-1.0"):
+            SearchResult._validate_score(1.01)
+
+    def test_validate_rank_valid(self):
+        """Test _validate_rank accepts positive values."""
+        # Should not raise
+        SearchResult._validate_rank(1)
+        SearchResult._validate_rank(100)
+
+    def test_validate_rank_zero(self):
+        """Test _validate_rank rejects zero."""
+        with pytest.raises(ValueError, match="rank must be positive"):
+            SearchResult._validate_rank(0)
+
+    def test_validate_rank_negative(self):
+        """Test _validate_rank rejects negative values."""
+        with pytest.raises(ValueError, match="rank must be positive"):
+            SearchResult._validate_rank(-5)
