@@ -134,6 +134,33 @@ def handle_cli_errors(command_name: str):
                     str(e),
                     hint="The embedding model in your config differs from the one used to build the index.",
                 ) from e
+            except PermissionError as e:
+                # Permission denied - provide targeted hint with filename if available
+                filename = getattr(e, "filename", None)
+                if filename:
+                    raise EmberCliError(
+                        f"Permission denied: {filename}",
+                        hint=f"Check file permissions: ls -la {filename}",
+                    ) from e
+                else:
+                    raise EmberCliError(
+                        "Permission denied",
+                        hint="Check file and directory permissions in .ember/",
+                    ) from e
+            except OSError as e:
+                # Check for disk full condition
+                error_msg = str(e)
+                if "No space left" in error_msg or "ENOSPC" in error_msg:
+                    raise EmberCliError(
+                        "Disk full: No space left on device",
+                        hint="Free up disk space and retry",
+                    ) from e
+                else:
+                    # Generic OS error - suggest checking logs
+                    raise EmberCliError(
+                        f"OS error: {e}",
+                        hint="Run with --verbose for more details",
+                    ) from e
             except RuntimeError as e:
                 # Convert RuntimeError to EmberCliError with generic hint
                 raise EmberCliError(
@@ -882,6 +909,51 @@ def _quick_check_unchanged(
         return False
 
 
+def _get_targeted_sync_hint(error_message: str) -> str:
+    """Get a targeted hint based on the sync error message.
+
+    Analyzes the error message to provide specific, actionable guidance
+    rather than generic hints.
+
+    Args:
+        error_message: The error message from the failed sync operation.
+
+    Returns:
+        An actionable hint string specific to the error type.
+    """
+    error_lower = error_message.lower()
+
+    # Database corruption - suggest reindex
+    if any(
+        term in error_lower
+        for term in ["malformed", "corrupt", "database disk image", "not a database"]
+    ):
+        return "Run 'ember sync --reindex' to rebuild the index"
+
+    # Model mismatch or dimension mismatch - suggest init --force
+    if "model" in error_lower and ("changed" in error_lower or "mismatch" in error_lower):
+        return "Run 'ember init --force' to reinitialize with the new model"
+
+    # Vector dimension mismatch (model changed but message doesn't say "model")
+    if "dimension" in error_lower and "mismatch" in error_lower:
+        return "Run 'ember init --force' to reinitialize with the new model"
+
+    # Permission issues
+    if "permission" in error_lower or "access denied" in error_lower:
+        return "Check file permissions in .ember/ directory"
+
+    # Disk space issues
+    if "no space left" in error_lower or "disk full" in error_lower:
+        return "Free up disk space and retry"
+
+    # Lock/busy database
+    if "locked" in error_lower or "busy" in error_lower:
+        return "Another process may be using the database. Wait and retry."
+
+    # Generic fallback - suggest verbose mode
+    return "Run 'ember sync --verbose' for more details"
+
+
 def _format_sync_results(response) -> None:
     """Print formatted sync results.
 
@@ -972,9 +1044,10 @@ def sync(
             response = indexing_usecase.execute(request)
 
     if not response.success:
+        hint = _get_targeted_sync_hint(response.error or "")
         raise EmberCliError(
             f"Indexing failed: {response.error}",
-            hint="Run 'ember sync --reindex' to force a fresh index",
+            hint=hint,
         )
 
     _format_sync_results(response)
