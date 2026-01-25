@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`is_model_cached()` no longer loads the entire model to check cache** (#395)
+  - Previously, the fallback path loaded the full model (~1.6GB for Jina) just to verify caching
+  - Now uses direct HuggingFace cache directory inspection as fallback instead
+  - Cache checks complete in <100ms instead of 5-10+ seconds
+  - Prevents OOM errors on systems with limited GPU memory (<8GB)
+  - Respects `HF_HOME` and `HUGGINGFACE_HUB_CACHE` environment variables
+
 ### Changed
 - **Extracted duplicate `_get_context` implementations into shared utility** (#394)
   - Created `context_utils.py` with `ContextData`, `ContextLine`, and `get_context_for_result()`
