@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Improved
+- **Model download errors now provide specific, actionable guidance** (#393)
+  - Network errors now display "Network error. Check internet connection and retry" instead of generic failure message
+  - Disk space errors now display "Disk full. Free up ~2GB and retry"
+  - Permission errors now display "Permission denied. Check ~/.cache/huggingface/ permissions"
+  - Connection timeouts are now identified as timeout-specific issues
+  - All download failures suggest using a smaller model as fallback (bge-small, ~130MB)
+  - Critical errors are no longer silently suppressed in quiet mode
+
 ### Changed
 - **Simplified `ember status` output with `--detailed` flag** (#392)
   - Default output now shows only essential info: sync status, file/chunk counts, and model name
