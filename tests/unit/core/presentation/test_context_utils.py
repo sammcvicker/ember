@@ -5,9 +5,6 @@ Tests the shared utility functions for extracting context lines around search re
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
-
-import pytest
 
 from ember.core.presentation.context_utils import (
     ContextData,

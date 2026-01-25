@@ -131,7 +131,7 @@ class TestApplyPathFilters:
 
         result = file_filter.apply_path_filters(files, ["src/*.py"], repo_root)
 
-        assert set(f.name for f in result) == {"app.py", "utils.py"}
+        assert {f.name for f in result} == {"app.py", "utils.py"}
 
     def test_multiple_patterns_use_or_logic(
         self, file_filter: FileFilterService
@@ -148,7 +148,7 @@ class TestApplyPathFilters:
             files, ["src/*.py", "tests/*.py"], repo_root
         )
 
-        assert set(f.name for f in result) == {"app.py", "test_app.py"}
+        assert {f.name for f in result} == {"app.py", "test_app.py"}
 
     def test_glob_star_star_matches_any_depth(
         self, file_filter: FileFilterService
