@@ -631,7 +631,7 @@ def _ensure_model_downloaded(model_name: str, quiet: bool) -> bool:
 
     Args:
         model_name: The model preset or HuggingFace ID to download.
-        quiet: If True, suppress progress output.
+        quiet: If True, suppress progress output (but still show critical errors).
 
     Returns:
         True if model was downloaded or already cached, False on error.
@@ -654,11 +654,61 @@ def _ensure_model_downloaded(model_name: str, quiet: bool) -> bool:
             click.echo("  ✓ Model downloaded successfully")
         return True
     except Exception as e:
-        # Model download failed, but don't block init - daemon will retry
-        if not quiet:
-            click.echo(f"  ⚠ Model download failed: {e}")
-            click.echo("    (model will be downloaded when sync runs)")
+        # Handle all errors with categorized messages
+        _handle_download_error(e, model_name, quiet)
         return False
+
+
+def _handle_download_error(error: Exception, model_name: str, quiet: bool) -> None:
+    """Handle download errors with categorized messages and actionable hints.
+
+    Args:
+        error: The exception that occurred during download.
+        model_name: The model that was being downloaded.
+        quiet: If True, show minimal output (but still show error).
+    """
+    from urllib.error import URLError
+
+    import requests
+
+    error_str = str(error)
+
+    # Check for network-related errors first (before OSError check)
+    # requests.exceptions.ConnectionError is a subclass of OSError
+    is_network_error = isinstance(
+        error,
+        (requests.exceptions.ConnectionError, URLError),
+    )
+    is_timeout = isinstance(error, requests.exceptions.Timeout)
+
+    if is_network_error:
+        click.echo("  ✗ Network error. Check internet connection and retry.")
+        if not quiet:
+            click.echo("    Hint: ember init --model bge-small uses a smaller model (~130MB)")
+    elif is_timeout:
+        click.echo("  ✗ Connection timed out. Try again or use a smaller model.")
+        if not quiet:
+            click.echo("    Hint: ember init --model bge-small uses a smaller model (~130MB)")
+    elif isinstance(error, OSError):
+        # Handle file system errors with specific guidance
+        if "No space left" in error_str:
+            click.echo("  ✗ Disk full. Free up ~2GB and retry.")
+            if not quiet:
+                click.echo("    Hint: ember init --model bge-small uses a smaller model (~130MB)")
+        elif "Permission denied" in error_str:
+            click.echo("  ✗ Permission denied. Check ~/.cache/huggingface/ permissions.")
+            if not quiet:
+                click.echo("    Hint: Run 'chmod -R u+rw ~/.cache/huggingface' to fix")
+        else:
+            click.echo(f"  ✗ File system error: {error}")
+            if not quiet:
+                click.echo("    (model will be downloaded when sync runs)")
+    else:
+        # Generic fallback for unexpected errors
+        click.echo(f"  ✗ Model download failed: {error}")
+        if not quiet:
+            click.echo("    For help: ember init --verbose")
+            click.echo("    (model will be downloaded when sync runs)")
 
 
 @cli.command()
