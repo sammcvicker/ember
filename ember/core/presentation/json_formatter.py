@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from ember.core.presentation.context_utils import get_context_for_result
 from ember.ports.fs import FileSystem
 
 
@@ -109,37 +110,14 @@ class JsonResultFormatter:
         Returns:
             Dictionary with context information, or None if file not readable.
         """
-        file_path = repo_root / result.chunk.path
-        file_lines = self._fs.read_text_lines(file_path)
+        context_data = get_context_for_result(
+            result=result,
+            context_lines=context,
+            repo_root=repo_root,
+            fs=self._fs,
+        )
 
-        if file_lines is None:
+        if context_data is None:
             return None
 
-        start_line = result.chunk.start_line
-        end_line = result.chunk.end_line
-
-        # Calculate context range (1-based line numbers)
-        context_start = max(1, start_line - context)
-        context_end = min(len(file_lines), end_line + context)
-
-        # Collect context lines
-        before_lines = []
-        chunk_lines = []
-        after_lines = []
-
-        for line_num in range(context_start, context_end + 1):
-            line_content = file_lines[line_num - 1]  # Convert to 0-based
-            if line_num < start_line:
-                before_lines.append({"line": line_num, "content": line_content})
-            elif line_num > end_line:
-                after_lines.append({"line": line_num, "content": line_content})
-            else:
-                chunk_lines.append({"line": line_num, "content": line_content})
-
-        return {
-            "before": before_lines,
-            "chunk": chunk_lines,
-            "after": after_lines,
-            "start_line": context_start,
-            "end_line": context_end,
-        }
+        return context_data.to_dict()
