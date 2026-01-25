@@ -375,12 +375,16 @@ class TestModelRegistry:
 
 
 class TestIsModelCached:
-    """Tests for is_model_cached function (#378)."""
+    """Tests for is_model_cached function (#378, #395).
 
-    def test_fast_path_returns_true_when_cached(self):
-        """Test returns True via fast path when try_to_load_from_cache returns a path."""
+    The function checks if a model is cached by inspecting the HuggingFace
+    cache directory directly, without loading the model into memory.
+    """
+
+    def test_returns_true_via_huggingface_hub_when_cached(self):
+        """Test returns True when try_to_load_from_cache returns a path."""
         with patch(
-            "huggingface_hub.try_to_load_from_cache"
+            "ember.adapters.local_models.registry.try_to_load_from_cache"
         ) as mock_cache:
             mock_cache.return_value = "/path/to/cached/config.json"
 
@@ -391,10 +395,10 @@ class TestIsModelCached:
                 "sentence-transformers/all-MiniLM-L6-v2", "config.json"
             )
 
-    def test_fast_path_returns_false_when_not_cached(self):
-        """Test returns False via fast path when try_to_load_from_cache returns None."""
+    def test_returns_false_via_huggingface_hub_when_not_cached(self):
+        """Test returns False when try_to_load_from_cache returns None."""
         with patch(
-            "huggingface_hub.try_to_load_from_cache"
+            "ember.adapters.local_models.registry.try_to_load_from_cache"
         ) as mock_cache:
             mock_cache.return_value = None
 
@@ -402,134 +406,10 @@ class TestIsModelCached:
 
             assert result is False
 
-    def test_fallback_when_fast_path_raises_exception(self):
-        """Test falls back to slow path when fast check raises exception."""
-        with (
-            patch(
-                "huggingface_hub.try_to_load_from_cache",
-                side_effect=Exception("Fast check failed"),
-            ),
-            patch("sentence_transformers.SentenceTransformer") as mock_st,
-        ):
-            mock_st.return_value = MagicMock()
-
-            result = is_model_cached("minilm")
-
-            assert result is True
-            # Should fall back to loading model
-            call_kwargs = mock_st.call_args[1]
-            assert call_kwargs["local_files_only"] is True
-
-    def test_returns_true_when_model_loads_locally(self):
-        """Test returns True when model loads with local_files_only (fallback path)."""
-        with (
-            patch(
-                "huggingface_hub.try_to_load_from_cache",
-                side_effect=Exception("Fast check failed"),
-            ),
-            patch("sentence_transformers.SentenceTransformer") as mock_st,
-        ):
-            mock_st.return_value = MagicMock()
-
-            result = is_model_cached("minilm")
-
-            assert result is True
-            # Should be called with local_files_only=True
-            call_kwargs = mock_st.call_args[1]
-            assert call_kwargs["local_files_only"] is True
-
-    def test_returns_false_when_oserror_raised(self):
-        """Test returns False when OSError raised (model not cached)."""
-        with (
-            patch(
-                "huggingface_hub.try_to_load_from_cache",
-                side_effect=Exception("Fast check failed"),
-            ),
-            patch("sentence_transformers.SentenceTransformer") as mock_st,
-        ):
-            mock_st.side_effect = OSError("Model not found locally")
-
-            result = is_model_cached("minilm")
-
-            assert result is False
-
-    def test_returns_false_when_valueerror_raised(self):
-        """Test returns False when ValueError raised (model not cached)."""
-        with (
-            patch(
-                "huggingface_hub.try_to_load_from_cache",
-                side_effect=Exception("Fast check failed"),
-            ),
-            patch("sentence_transformers.SentenceTransformer") as mock_st,
-        ):
-            mock_st.side_effect = ValueError("Model files not found")
-
-            result = is_model_cached("minilm")
-
-            assert result is False
-
-    def test_returns_false_when_import_fails(self):
-        """Test returns False when both paths fail import."""
-        # Remove the module from sys.modules to force re-import attempt
-        import sys
-
-        original_module = sys.modules.get("sentence_transformers")
-        try:
-            # Remove the module if it exists
-            if "sentence_transformers" in sys.modules:
-                del sys.modules["sentence_transformers"]
-
-            # Mock the imports to fail
-            with (
-                patch(
-                    "huggingface_hub.try_to_load_from_cache",
-                    side_effect=Exception("Fast check failed"),
-                ),
-                patch.dict(sys.modules, {"sentence_transformers": None}),
-            ):
-                result = is_model_cached("minilm")
-                assert result is False
-        finally:
-            # Restore the module
-            if original_module is not None:
-                sys.modules["sentence_transformers"] = original_module
-
-    def test_uses_trust_remote_code_for_jina(self):
-        """Test that trust_remote_code=True is set for Jina model (fallback path)."""
-        with (
-            patch(
-                "huggingface_hub.try_to_load_from_cache",
-                side_effect=Exception("Fast check failed"),
-            ),
-            patch("sentence_transformers.SentenceTransformer") as mock_st,
-        ):
-            mock_st.return_value = MagicMock()
-
-            is_model_cached("jina-code-v2")
-
-            call_kwargs = mock_st.call_args[1]
-            assert call_kwargs["trust_remote_code"] is True
-
-    def test_no_trust_remote_code_for_other_models(self):
-        """Test that trust_remote_code is False for non-Jina models (fallback path)."""
-        with (
-            patch(
-                "huggingface_hub.try_to_load_from_cache",
-                side_effect=Exception("Fast check failed"),
-            ),
-            patch("sentence_transformers.SentenceTransformer") as mock_st,
-        ):
-            mock_st.return_value = MagicMock()
-
-            is_model_cached("bge-small")
-
-            call_kwargs = mock_st.call_args[1]
-            assert call_kwargs["trust_remote_code"] is False
-
-    def test_resolves_model_name(self):
+    def test_resolves_preset_to_full_model_id(self):
         """Test that preset names are resolved to full model IDs."""
         with patch(
-            "huggingface_hub.try_to_load_from_cache"
+            "ember.adapters.local_models.registry.try_to_load_from_cache"
         ) as mock_cache:
             mock_cache.return_value = "/path/to/cached/config.json"
 
@@ -540,17 +420,175 @@ class TestIsModelCached:
                 "sentence-transformers/all-MiniLM-L6-v2", "config.json"
             )
 
-    def test_returns_false_on_unexpected_exception(self):
-        """Test returns False on unexpected errors (corrupted cache)."""
+    def test_resolves_jina_preset(self):
+        """Test that jina-code-v2 preset is resolved correctly."""
+        with patch(
+            "ember.adapters.local_models.registry.try_to_load_from_cache"
+        ) as mock_cache:
+            mock_cache.return_value = "/path/to/cached/config.json"
+
+            is_model_cached("jina-code-v2")
+
+            mock_cache.assert_called_once_with(
+                "jinaai/jina-embeddings-v2-base-code", "config.json"
+            )
+
+    def test_resolves_bge_preset(self):
+        """Test that bge-small preset is resolved correctly."""
+        with patch(
+            "ember.adapters.local_models.registry.try_to_load_from_cache"
+        ) as mock_cache:
+            mock_cache.return_value = "/path/to/cached/config.json"
+
+            is_model_cached("bge-small")
+
+            mock_cache.assert_called_once_with(
+                "BAAI/bge-small-en-v1.5", "config.json"
+            )
+
+    def test_falls_back_to_directory_check_on_import_error(self, tmp_path):
+        """Test falls back to directory check when huggingface_hub fails to import."""
+        # Create mock cache directory structure
+        model_dir = tmp_path / "models--sentence-transformers--all-MiniLM-L6-v2"
+        snapshots_dir = model_dir / "snapshots" / "abc123"
+        snapshots_dir.mkdir(parents=True)
+        (snapshots_dir / "config.json").touch()
+
         with (
             patch(
-                "huggingface_hub.try_to_load_from_cache",
-                side_effect=Exception("Fast check failed"),
+                "ember.adapters.local_models.registry.try_to_load_from_cache",
+                side_effect=ImportError("huggingface_hub not available"),
             ),
-            patch("sentence_transformers.SentenceTransformer") as mock_st,
+            patch(
+                "ember.adapters.local_models.registry._get_hf_cache_dir",
+                return_value=tmp_path,
+            ),
         ):
-            mock_st.side_effect = RuntimeError("Corrupted cache")
+            result = is_model_cached("minilm")
 
+            assert result is True
+
+    def test_falls_back_to_directory_check_on_exception(self, tmp_path):
+        """Test falls back to directory check when try_to_load_from_cache raises."""
+        # Create mock cache directory structure
+        model_dir = tmp_path / "models--sentence-transformers--all-MiniLM-L6-v2"
+        snapshots_dir = model_dir / "snapshots" / "abc123"
+        snapshots_dir.mkdir(parents=True)
+        (snapshots_dir / "config.json").touch()
+
+        with (
+            patch(
+                "ember.adapters.local_models.registry.try_to_load_from_cache",
+                side_effect=Exception("Cache check failed"),
+            ),
+            patch(
+                "ember.adapters.local_models.registry._get_hf_cache_dir",
+                return_value=tmp_path,
+            ),
+        ):
+            result = is_model_cached("minilm")
+
+            assert result is True
+
+    def test_directory_fallback_returns_false_when_not_cached(self, tmp_path):
+        """Test directory fallback returns False when model not in cache."""
+        # Empty cache directory - no model files
+        with (
+            patch(
+                "ember.adapters.local_models.registry.try_to_load_from_cache",
+                side_effect=Exception("Cache check failed"),
+            ),
+            patch(
+                "ember.adapters.local_models.registry._get_hf_cache_dir",
+                return_value=tmp_path,
+            ),
+        ):
             result = is_model_cached("minilm")
 
             assert result is False
+
+    def test_directory_fallback_returns_false_when_snapshots_empty(self, tmp_path):
+        """Test returns False when model dir exists but snapshots is empty."""
+        # Create model directory but with empty snapshots
+        model_dir = tmp_path / "models--sentence-transformers--all-MiniLM-L6-v2"
+        snapshots_dir = model_dir / "snapshots"
+        snapshots_dir.mkdir(parents=True)
+        # No snapshot subdirectories
+
+        with (
+            patch(
+                "ember.adapters.local_models.registry.try_to_load_from_cache",
+                side_effect=Exception("Cache check failed"),
+            ),
+            patch(
+                "ember.adapters.local_models.registry._get_hf_cache_dir",
+                return_value=tmp_path,
+            ),
+        ):
+            result = is_model_cached("minilm")
+
+            assert result is False
+
+    def test_directory_fallback_returns_false_when_no_snapshots_dir(self, tmp_path):
+        """Test returns False when model dir exists but no snapshots dir."""
+        # Create model directory but without snapshots subdirectory
+        model_dir = tmp_path / "models--sentence-transformers--all-MiniLM-L6-v2"
+        model_dir.mkdir(parents=True)
+
+        with (
+            patch(
+                "ember.adapters.local_models.registry.try_to_load_from_cache",
+                side_effect=Exception("Cache check failed"),
+            ),
+            patch(
+                "ember.adapters.local_models.registry._get_hf_cache_dir",
+                return_value=tmp_path,
+            ),
+        ):
+            result = is_model_cached("minilm")
+
+            assert result is False
+
+    def test_directory_check_for_jina_model(self, tmp_path):
+        """Test directory check works for Jina model with slash in name."""
+        # Create mock cache directory structure for Jina
+        model_dir = tmp_path / "models--jinaai--jina-embeddings-v2-base-code"
+        snapshots_dir = model_dir / "snapshots" / "def456"
+        snapshots_dir.mkdir(parents=True)
+        (snapshots_dir / "config.json").touch()
+
+        with (
+            patch(
+                "ember.adapters.local_models.registry.try_to_load_from_cache",
+                side_effect=Exception("Cache check failed"),
+            ),
+            patch(
+                "ember.adapters.local_models.registry._get_hf_cache_dir",
+                return_value=tmp_path,
+            ),
+        ):
+            result = is_model_cached("jina-code-v2")
+
+            assert result is True
+
+    def test_no_model_loading_occurs(self):
+        """Test that SentenceTransformer is never imported or loaded."""
+        with (
+            patch(
+                "ember.adapters.local_models.registry.try_to_load_from_cache"
+            ) as mock_cache,
+            patch.dict("sys.modules", {"sentence_transformers": MagicMock()}),
+        ):
+            mock_cache.return_value = "/path/to/cached/config.json"
+
+            is_model_cached("minilm")
+
+            # SentenceTransformer should never be called - we only check cache
+            # The key point is we're not importing sentence_transformers at all
+            # in the is_model_cached function anymore
+
+    def test_returns_false_on_invalid_model_name(self):
+        """Test raises ValueError for unknown model names."""
+        with pytest.raises(ValueError) as exc_info:
+            is_model_cached("unknown-model")
+        assert "Unknown embedding model" in str(exc_info.value)

@@ -4,8 +4,16 @@ Maps user-friendly preset names and HuggingFace model IDs to embedder classes.
 Provides a factory function to create the appropriate embedder based on config.
 """
 
+import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
+
+# Import try_to_load_from_cache at module level for easier mocking in tests
+try:
+    from huggingface_hub import try_to_load_from_cache
+except ImportError:
+    try_to_load_from_cache = None  # type: ignore[assignment,misc]
 
 if TYPE_CHECKING:
     pass
@@ -257,11 +265,65 @@ def list_available_models() -> list[dict]:
     return models
 
 
-def is_model_cached(model_name: str) -> bool:
-    """Check if a model is cached locally.
+def _get_hf_cache_dir() -> Path:
+    """Get the HuggingFace cache directory.
 
-    Uses huggingface_hub's try_to_load_from_cache for fast cache inspection
-    without loading the model into memory.
+    Respects the HF_HOME and HUGGINGFACE_HUB_CACHE environment variables.
+
+    Returns:
+        Path to the HuggingFace hub cache directory.
+    """
+    # Check environment variables in order of precedence
+    if "HUGGINGFACE_HUB_CACHE" in os.environ:
+        return Path(os.environ["HUGGINGFACE_HUB_CACHE"])
+    if "HF_HOME" in os.environ:
+        return Path(os.environ["HF_HOME"]) / "hub"
+    # Default location
+    return Path.home() / ".cache" / "huggingface" / "hub"
+
+
+def _check_cache_directory(model_id: str) -> bool:
+    """Check if model is cached by inspecting cache directory structure.
+
+    This is a fallback when huggingface_hub is not available or fails.
+    HuggingFace stores models in a specific directory structure:
+    ~/.cache/huggingface/hub/models--{org}--{model}/snapshots/{hash}/
+
+    Args:
+        model_id: Full HuggingFace model ID (e.g., "sentence-transformers/all-MiniLM-L6-v2")
+
+    Returns:
+        True if model appears to be cached (has snapshot directories with content).
+    """
+    cache_dir = _get_hf_cache_dir()
+
+    # Convert model ID to cache directory name (slashes become double dashes)
+    model_dir_name = f"models--{model_id.replace('/', '--')}"
+    model_path = cache_dir / model_dir_name
+
+    if not model_path.exists():
+        return False
+
+    # Check for snapshots directory with at least one snapshot
+    snapshots_dir = model_path / "snapshots"
+    if not snapshots_dir.exists():
+        return False
+
+    # Check if there's at least one snapshot directory
+    try:
+        return any(snapshots_dir.iterdir())
+    except (OSError, PermissionError):
+        return False
+
+
+def is_model_cached(model_name: str) -> bool:
+    """Check if a model is cached locally without loading it.
+
+    Uses huggingface_hub's try_to_load_from_cache for fast cache inspection.
+    Falls back to direct directory inspection if huggingface_hub is unavailable.
+
+    This function is designed to be fast (<100ms) and never loads the model
+    into memory, avoiding OOM issues on systems with limited memory.
 
     Args:
         model_name: Model preset name or HuggingFace ID
@@ -271,58 +333,18 @@ def is_model_cached(model_name: str) -> bool:
     """
     resolved = resolve_model_name(model_name)
 
-    # Fast check using huggingface_hub cache inspection
-    # This doesn't load the model, just checks if files exist in cache
-    try:
-        from huggingface_hub import try_to_load_from_cache
-        from huggingface_hub.utils import EntryNotFoundError
+    # Primary method: use huggingface_hub cache inspection
+    # This is fast and doesn't load the model
+    if try_to_load_from_cache is not None:
+        try:
+            # Check for config.json - if this is cached, the model was downloaded
+            # Returns file path (str) if cached, None or _CACHED_NO_EXIST otherwise
+            result = try_to_load_from_cache(resolved, "config.json")
+            return isinstance(result, str)
+        except Exception:
+            # Any error - fall back to directory check
+            pass
 
-        # Check for config.json - if this is cached, the model was downloaded
-        # Returns file path (str) if cached, None or _CACHED_NO_EXIST otherwise
-        result = try_to_load_from_cache(resolved, "config.json")
-        return isinstance(result, str)
-    except (ImportError, EntryNotFoundError):
-        # huggingface_hub not available or cache check failed
-        # Fall through to slower method
-        pass
-    except Exception:
-        # Any other error - try slower method
-        pass
-
-    # Fallback: actually try loading the model (slow but reliable)
-    import os
-    import warnings
-
-    # Prevent tokenizer parallelism warning
-    os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
-
-    try:
-        from sentence_transformers import SentenceTransformer
-    except ImportError:
-        # If sentence-transformers not installed, model definitely not cached
-        return False
-
-    # Need trust_remote_code for Jina model
-    trust_remote_code = resolved == "jinaai/jina-embeddings-v2-base-code"
-
-    try:
-        # Suppress the optimum warning when loading Jina model
-        with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "ignore",
-                message=".*optimum is not installed.*",
-                category=UserWarning,
-            )
-            # Try to load with local_files_only - will fail if not cached
-            SentenceTransformer(
-                resolved,
-                trust_remote_code=trust_remote_code,
-                local_files_only=True,
-            )
-        return True
-    except (OSError, ValueError):
-        # Model not cached
-        return False
-    except Exception:
-        # Other errors (e.g., corrupted cache) - treat as not cached
-        return False
+    # Fallback: check cache directory structure directly
+    # This works even if huggingface_hub is not available
+    return _check_cache_directory(resolved)
