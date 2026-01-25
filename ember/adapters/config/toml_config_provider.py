@@ -72,7 +72,8 @@ class TomlConfigProvider:
                 logger.debug("Loaded local config from %s", local_path)
             except (FileNotFoundError, ValueError) as e:
                 logger.warning(
-                    "Failed to parse config.toml: %s. Using global/default configuration.",
+                    "Failed to parse config.toml at %s: %s. Using global configuration.",
+                    local_path,
                     e,
                 )
 
