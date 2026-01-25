@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Improved
+- **Sync errors now provide targeted, actionable hints** (#400)
+  - Database corruption errors now suggest `ember sync --reindex` to rebuild the index
+  - Model mismatch/dimension errors now suggest `ember init --force` to reinitialize
+  - Permission denied errors now suggest checking file permissions with specific paths
+  - Disk full errors now suggest freeing up disk space
+  - Database locked/busy errors now suggest waiting and retrying
+  - Generic errors now suggest running with `--verbose` for more details
+  - Added specific handling for PermissionError and OSError in CLI error decorator
+
 ### Changed
 - **Made SearchResult dataclass immutable with score and rank validation** (#399)
   - SearchResult is now a frozen dataclass, preventing modification after creation
