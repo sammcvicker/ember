@@ -56,6 +56,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added comprehensive unit tests for extracted services (40+ new tests)
 
 ### Fixed
+- **Global config preserved when local config has parse error** (#396)
+  - Previously, when local `.ember/config.toml` failed to parse, global config was discarded
+  - Now preserves global config settings and warns with accurate message "Using global configuration"
+  - TOML parse errors already include line and column numbers for easier debugging
+
 - **Daemon startup timeout (20s) despite cached model on Apple Silicon** (#385)
   - Model loading on Apple Silicon can take 15-25s for the Jina model (1.6GB), leaving no margin for the previous 20-second timeout
   - Implemented model-aware timeouts: Jina gets 45s, smaller models (MiniLM, BGE-small) get 20s

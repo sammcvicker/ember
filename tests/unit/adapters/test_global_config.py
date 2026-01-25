@@ -257,3 +257,52 @@ ignore = [".git/", "target/"]
         assert result.index.include == ["**/*.py"]
         # Global ignore should be used (not in local)
         assert result.index.ignore == [".git/", "target/"]
+
+    def test_invalid_local_config_preserves_global_config(
+        self, provider: TomlConfigProvider, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Test that invalid local config preserves valid global config.
+
+        When local config.toml has a parse error, the already-loaded global
+        config should be preserved rather than falling back to defaults.
+        This is the fix for issue #396.
+        """
+        # Setup: valid global config with custom settings
+        global_config_dir = tmp_path / "global_config" / "ember"
+        global_config_dir.mkdir(parents=True)
+        global_config = global_config_dir / "config.toml"
+        global_config.write_text(
+            """
+[search]
+topk = 77
+
+[display]
+theme = "github-dark"
+syntax_highlighting = false
+"""
+        )
+
+        # Setup: invalid local config with syntax error
+        ember_dir = tmp_path / ".ember"
+        ember_dir.mkdir()
+        local_config = ember_dir / "config.toml"
+        local_config.write_text("[invalid toml")
+
+        with patch(
+            "ember.adapters.config.toml_config_provider.get_global_config_path",
+            return_value=global_config,
+        ):
+            result = provider.load(ember_dir)
+
+        # Global config settings should be preserved
+        assert result.search.topk == 77
+        assert result.display.theme == "github-dark"
+        assert result.display.syntax_highlighting is False
+        # Should NOT be equal to defaults
+        default = EmberConfig.default()
+        assert result.search.topk != default.search.topk
+        # Should log warning about local config failure with accurate message
+        assert "Failed to parse config.toml" in caplog.text
+        # The message should say "Using global configuration" (not "global/default")
+        # since we have a valid global config loaded
+        assert "Using global configuration" in caplog.text
