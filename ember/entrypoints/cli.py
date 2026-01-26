@@ -1420,51 +1420,7 @@ def open_result(ctx: click.Context, index: int) -> None:
     open_file_in_editor(file_path, line_num)
 
 
-@cli.command()
-@click.argument("output_path", type=click.Path())
-@click.option(
-    "--no-preview",
-    is_flag=True,
-    help="Strip content from export (embeddings only).",
-)
-@click.pass_context
-@handle_cli_errors("export")
-def export(ctx: click.Context, output_path: str, no_preview: bool) -> None:
-    """Export index to a bundle.
-
-    Creates a portable bundle for sharing or backup.
-    """
-    click.echo("export command - not yet implemented")
-    click.echo(f"Would export to: {output_path}")
-
-
-@cli.command()
-@click.argument("bundle_path", type=click.Path(exists=True))
-@click.pass_context
-@handle_cli_errors("import")
-def import_bundle(ctx: click.Context, bundle_path: str) -> None:
-    """Import index from a bundle.
-
-    Loads a previously exported index bundle.
-    """
-    click.echo("import command - not yet implemented")
-    click.echo(f"Would import from: {bundle_path}")
-
-
-@cli.command()
-@click.pass_context
-@handle_cli_errors("audit")
-def audit(ctx: click.Context) -> None:
-    """Audit indexed content for potential secrets.
-
-    Scans for API keys, tokens, and other sensitive data.
-    """
-    click.echo("audit command - not yet implemented")
-    click.echo("Would scan for secrets in indexed content")
-
-
-# Register import and open commands with proper names
-cli.add_command(import_bundle, name="import")
+# Register the open command with proper name
 cli.add_command(open_result, name="open")
 
 
