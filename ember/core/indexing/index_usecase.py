@@ -10,6 +10,7 @@ This use case orchestrates the complete indexing pipeline:
 import logging
 import time
 from pathlib import Path
+from typing import Self
 
 from ember.core.chunking.chunk_usecase import ChunkFileRequest, ChunkFileUseCase
 from ember.core.indexing.chunk_storage import ChunkStorageService
@@ -100,6 +101,34 @@ class IndexingUseCase:
         )
         self.file_detection = file_detection or FileDetectionService(vcs, meta_repo)
         self.file_filter = file_filter or FileFilterService()
+
+    def close(self) -> None:
+        """Close all repository connections.
+
+        This method ensures deterministic cleanup of database connections.
+        It's safe to call multiple times - each call will attempt to close
+        the underlying connections.
+
+        Dependencies without a close() method are silently skipped.
+        """
+        for dep_name in ("chunk_repo", "vector_repo", "file_repo", "meta_repo"):
+            dep = getattr(self, dep_name, None)
+            if dep is not None and hasattr(dep, "close"):
+                dep.close()
+
+    def __enter__(self) -> Self:
+        """Enter context manager."""
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: object,
+    ) -> bool:
+        """Exit context manager, closing all repository connections."""
+        self.close()
+        return False
 
     def _create_error_response(self, error: str) -> IndexResponse:
         """Create a standardized error response with zero counts."""
