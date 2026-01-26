@@ -11,8 +11,8 @@ This module serves as a facade re-exporting utilities from focused modules:
 For new code, prefer importing directly from the focused modules.
 """
 
-# Re-export editor integration
-from ember.core.editor import (
+# Re-export editor integration (from app layer - contains CLI-specific error handling)
+from ember.app.editor import (
     EDITOR_PATTERNS,
     get_editor,
     get_editor_command,

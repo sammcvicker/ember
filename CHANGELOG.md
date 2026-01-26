@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Architecture violation: core/editor.py no longer imports from adapters** (#415)
+  - Moved CLI-specific editor facade from `core/editor.py` to `app/editor.py`
+  - `core/` now correctly depends only on `ports/`, not `adapters/`
+  - The facade that converts domain exceptions to `click.ClickException` is now in the app layer where CLI-specific error handling belongs
+  - No user-facing changes - existing imports via `core/cli_utils` continue to work
+
 ### Changed
 - **SearchUseCase now follows standard use case API pattern** (#422)
   - Added `execute(SearchRequest) -> SearchResponse` method with error handling
