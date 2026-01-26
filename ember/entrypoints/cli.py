@@ -444,8 +444,7 @@ def _execute_sync(
         force_reindex=False,
     )
 
-    quiet_mode = not show_progress
-    with progress_context(quiet_mode=quiet_mode) as progress:
+    with progress_context(show_progress=show_progress) as progress:
         if progress:
             response = indexing_usecase.execute(request, progress=progress)
         else:
@@ -558,39 +557,6 @@ def ensure_synced(
         if verbose:
             _show_sync_error_message(e, error_type)
         return SyncResult(synced=False, files_indexed=0, error=str(e), error_type=error_type)
-
-
-def check_and_auto_sync(
-    repo_root: Path,
-    db_path: Path,
-    config,
-    quiet_mode: bool = False,
-    verbose: bool = False,
-) -> None:
-    """Check if index is stale and auto-sync if needed.
-
-    .. deprecated::
-        Use :func:`ensure_synced` instead. This function is kept for backward
-        compatibility and will be removed in a future version.
-
-    Args:
-        repo_root: Repository root path.
-        db_path: Path to SQLite database.
-        config: Configuration object.
-        quiet_mode: If True, suppress progress and messages.
-        verbose: If True, show warnings on errors.
-
-    Note:
-        If staleness check fails, continues silently to allow search to proceed.
-    """
-    # Delegate to ensure_synced with appropriate parameters
-    ensure_synced(
-        repo_root=repo_root,
-        db_path=db_path,
-        config=config,
-        show_progress=not quiet_mode,
-        verbose=verbose,
-    )
 
 
 @click.group()
@@ -1089,7 +1055,7 @@ def sync(
         force_reindex=reindex,
     )
 
-    with progress_context(quiet_mode=ctx.obj.get("quiet", False)) as progress:
+    with progress_context(show_progress=not ctx.obj.get("quiet", False)) as progress:
         if progress:
             response = indexing_usecase.execute(request, progress=progress)
         else:
