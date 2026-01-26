@@ -7,7 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- **Removed deprecated `check_and_auto_sync()` function** (#418)
+  - Function was defined but never called anywhere in the codebase
+  - Use `ensure_synced()` instead, which provides the same functionality with a cleaner API
+
 ### Changed
+- **Standardized sync flag naming to use `show_progress` (positive form)** (#418)
+  - `progress_context()` parameter renamed from `quiet_mode` to `show_progress`
+  - Internal CLI code now uses `show_progress` consistently instead of inverting `quiet_mode`
+  - No user-facing changes - this is an internal API cleanup
+
 - **Progress bar improvements and message consistency** (#417)
   - Model download during `init` now shows a Rich progress spinner instead of plain text messages
   - Interactive sync message (`Syncing index...`) now respects `--quiet` mode flag

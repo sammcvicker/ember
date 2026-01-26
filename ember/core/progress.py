@@ -62,24 +62,24 @@ class RichProgressCallback:
 
 @contextmanager
 def progress_context(
-    quiet_mode: bool = False,
+    show_progress: bool = True,
 ) -> Generator[RichProgressCallback | None, None, None]:
     """Context manager for creating progress bars.
 
     Args:
-        quiet_mode: If True, returns None (no progress reporting).
+        show_progress: If True, shows progress bar. If False, returns None.
 
     Yields:
-        RichProgressCallback if not quiet, None otherwise.
+        RichProgressCallback if show_progress is True, None otherwise.
 
     Example:
-        with progress_context(quiet=False) as progress:
+        with progress_context(show_progress=True) as progress:
             if progress:
                 usecase.execute(request, progress=progress)
             else:
                 usecase.execute(request)
     """
-    if quiet_mode:
+    if not show_progress:
         yield None
     else:
         with Progress(

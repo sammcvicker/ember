@@ -64,8 +64,8 @@ class TestEnsureSynced:
                 show_progress=True,
             )
 
-            # Should use progress context with quiet_mode=False
-            mock_progress_ctx.assert_called_once_with(quiet_mode=False)
+            # Should use progress context with show_progress=True
+            mock_progress_ctx.assert_called_once_with(show_progress=True)
 
     def test_no_progress_when_syncing_and_show_progress_false(self) -> None:
         """Progress bar is NOT shown when show_progress=False."""
@@ -98,8 +98,8 @@ class TestEnsureSynced:
                 show_progress=False,
             )
 
-            # Should use progress context with quiet_mode=True
-            mock_progress_ctx.assert_called_once_with(quiet_mode=True)
+            # Should use progress context with show_progress=False
+            mock_progress_ctx.assert_called_once_with(show_progress=False)
 
     def test_shows_syncing_message_when_interactive_mode(self) -> None:
         """A brief 'Syncing...' message is shown in interactive_mode even without progress bar."""
