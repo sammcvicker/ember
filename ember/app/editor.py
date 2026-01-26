@@ -1,11 +1,11 @@
 """Editor integration for opening files at specific lines.
 
 This module is a facade that re-exports editor utilities from the adapter layer.
-It handles conversion of domain exceptions to CLI exceptions for backward
-compatibility with existing code.
+It handles conversion of domain exceptions to CLI exceptions for the
+presentation layer.
 
-For new code, prefer using the adapter directly when domain exceptions
-are more appropriate.
+This lives in app/ (not core/) because it contains CLI-specific error handling
+that converts domain exceptions to click.ClickException.
 """
 
 from pathlib import Path
