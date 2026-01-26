@@ -6,6 +6,7 @@ with Reciprocal Rank Fusion for optimal retrieval quality.
 
 import logging
 from dataclasses import dataclass
+from typing import Self
 
 from ember.core.use_case_errors import format_error_message, log_use_case_error
 from ember.domain.entities import (
@@ -173,6 +174,34 @@ class SearchUseCase:
         self.rrf_k = rrf_k
         self.retrieval_pool_multiplier = retrieval_pool_multiplier
         self.min_retrieval_pool = min_retrieval_pool
+
+    def close(self) -> None:
+        """Close all repository connections.
+
+        This method ensures deterministic cleanup of database connections.
+        It's safe to call multiple times - each call will attempt to close
+        the underlying connections.
+
+        Dependencies without a close() method are silently skipped.
+        """
+        for dep_name in ("text_search", "vector_search", "chunk_repo"):
+            dep = getattr(self, dep_name, None)
+            if dep is not None and hasattr(dep, "close"):
+                dep.close()
+
+    def __enter__(self) -> Self:
+        """Enter context manager."""
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: object,
+    ) -> bool:
+        """Exit context manager, closing all repository connections."""
+        self.close()
+        return False
 
     def execute(self, request: SearchRequest) -> SearchResponse:
         """Execute hybrid search and return ranked results.

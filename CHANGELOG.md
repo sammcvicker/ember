@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Use cases now support context manager protocol for deterministic resource cleanup** (#416)
+  - `SearchUseCase` and `IndexingUseCase` now implement `__enter__`/`__exit__`
+  - Both use cases have a `close()` method to explicitly close repository connections
+  - Allows using use cases as context managers: `with search_usecase: ...`
+  - Connections are now closed deterministically rather than relying on garbage collection
+  - `SimpleVectorSearch` now inherits from `SQLiteBaseRepository` for consistent connection management
+
 ### Fixed
 - **Architecture violation: core/editor.py no longer imports from adapters** (#415)
   - Moved CLI-specific editor facade from `core/editor.py` to `app/editor.py`

@@ -4,12 +4,13 @@ This is an MVP implementation that loads all vectors and computes similarity in 
 For production, consider migrating to FAISS or sqlite-vss for better performance.
 """
 
-import sqlite3
 import struct
 from pathlib import Path
 
+from ember.adapters.sqlite.base_repository import SQLiteBaseRepository
 
-class SimpleVectorSearch:
+
+class SimpleVectorSearch(SQLiteBaseRepository):
     """Simple brute-force vector search using cosine similarity.
 
     This adapter loads all vectors from the database and computes cosine
@@ -19,6 +20,11 @@ class SimpleVectorSearch:
     - FAISS (Facebook AI Similarity Search)
     - sqlite-vss (SQLite vector search extension)
     - Approximate Nearest Neighbor (ANN) indexes
+
+    Inherits from SQLiteBaseRepository to get:
+    - Thread-safe connection initialization
+    - Context manager protocol (__enter__/__exit__)
+    - Connection reuse across queries
     """
 
     def __init__(self, db_path: Path) -> None:
@@ -27,15 +33,7 @@ class SimpleVectorSearch:
         Args:
             db_path: Path to SQLite database file.
         """
-        self.db_path = db_path
-
-    def _get_connection(self) -> sqlite3.Connection:
-        """Get a database connection.
-
-        Returns:
-            SQLite connection object.
-        """
-        return sqlite3.connect(self.db_path)
+        super().__init__(db_path)
 
     def _decode_vector(self, blob: bytes, dim: int) -> list[float]:
         """Decode a vector from binary BLOB.
@@ -95,41 +93,37 @@ class SimpleVectorSearch:
             Similarity is cosine similarity in range [-1, 1].
         """
         conn = self._get_connection()
-        try:
-            cursor = conn.cursor()
+        cursor = conn.cursor()
 
-            # Load all vectors with their stored chunk_id
-            cursor.execute(
-                """
-                SELECT
-                    c.chunk_id,
-                    v.embedding,
-                    v.dim
-                FROM vectors v
-                JOIN chunks c ON v.chunk_id = c.id
-                """
-            )
+        # Load all vectors with their stored chunk_id
+        cursor.execute(
+            """
+            SELECT
+                c.chunk_id,
+                v.embedding,
+                v.dim
+            FROM vectors v
+            JOIN chunks c ON v.chunk_id = c.id
+            """
+        )
 
-            rows = cursor.fetchall()
-            results = []
+        rows = cursor.fetchall()
+        results = []
 
-            for row in rows:
-                # Use the stored chunk_id from database instead of computing it
-                chunk_id = row[0]
-                embedding_blob = row[1]
-                dim = row[2]
+        for row in rows:
+            # Use the stored chunk_id from database instead of computing it
+            chunk_id = row[0]
+            embedding_blob = row[1]
+            dim = row[2]
 
-                # Decode vector
-                chunk_vector = self._decode_vector(embedding_blob, dim)
+            # Decode vector
+            chunk_vector = self._decode_vector(embedding_blob, dim)
 
-                # Compute cosine similarity
-                similarity = self._cosine_similarity(vector, chunk_vector)
+            # Compute cosine similarity
+            similarity = self._cosine_similarity(vector, chunk_vector)
 
-                results.append((chunk_id, similarity))
+            results.append((chunk_id, similarity))
 
-            # Sort by similarity (descending) and return top-k
-            results.sort(key=lambda x: x[1], reverse=True)
-            return results[:topk]
-
-        finally:
-            conn.close()
+        # Sort by similarity (descending) and return top-k
+        results.sort(key=lambda x: x[1], reverse=True)
+        return results[:topk]
