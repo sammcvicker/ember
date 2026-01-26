@@ -315,6 +315,7 @@ def _setup_search_command(
         SearchCommandDependencies with all initialized components
     """
     db_path = ember_dir / "index.db"
+    quiet = ctx.obj.get("quiet", False)
 
     config = _load_config(ember_dir)
 
@@ -329,6 +330,7 @@ def _setup_search_command(
             show_progress=show_progress,
             interactive_mode=interactive_mode,
             verbose=ctx.obj.get("verbose", False),
+            quiet=quiet,
         )
 
     embedder = _create_embedder(config, show_progress=show_progress)
@@ -481,14 +483,19 @@ def _show_sync_error_message(error: Exception, error_type: SyncErrorType) -> Non
         click.echo(f"Warning: Could not check index staleness: {error}", err=True)
 
 
-def _show_interactive_sync_message(interactive_mode: bool, show_progress: bool) -> None:
+def _show_interactive_sync_message(
+    interactive_mode: bool,
+    show_progress: bool,
+    quiet: bool = False,
+) -> None:
     """Show 'Syncing...' message for interactive mode without progress bar.
 
     Args:
         interactive_mode: Whether command is in interactive mode.
         show_progress: Whether progress bar is being shown.
+        quiet: If True, suppress the message entirely.
     """
-    if interactive_mode and not show_progress:
+    if interactive_mode and not show_progress and not quiet:
         click.echo("Syncing index...", err=True)
 
 
@@ -499,6 +506,7 @@ def ensure_synced(
     show_progress: bool = True,
     interactive_mode: bool = False,
     verbose: bool = False,
+    quiet: bool = False,
 ) -> SyncResult:
     """Ensure the index is synced before running a command.
 
@@ -513,6 +521,7 @@ def ensure_synced(
         interactive_mode: If True, show brief status message even without progress bar.
             Use this for TUI commands where progress bar would corrupt display.
         verbose: If True, show warnings on errors.
+        quiet: If True, suppress all status messages (errors still shown via verbose).
 
     Returns:
         SyncResult with information about whether sync was performed.
@@ -527,16 +536,19 @@ def ensure_synced(
 
         # In JSON output mode (completely silent):
         result = ensure_synced(repo_root, db_path, config, show_progress=False)
+
+        # In quiet mode (suppress all status messages):
+        result = ensure_synced(repo_root, db_path, config, quiet=True)
     """
     try:
         is_stale = _check_index_staleness(repo_root, db_path)
         if not is_stale:
             return SyncResult(synced=False, files_indexed=0)
 
-        _show_interactive_sync_message(interactive_mode, show_progress)
+        _show_interactive_sync_message(interactive_mode, show_progress, quiet)
         success, files_indexed = _execute_sync(repo_root, db_path, config, show_progress)
 
-        if show_progress:
+        if show_progress and not quiet:
             _show_sync_completion_message(success, files_indexed)
 
         return SyncResult(synced=True, files_indexed=files_indexed)
@@ -743,22 +755,34 @@ def _ensure_model_downloaded(model_name: str, quiet: bool) -> bool:
     Returns:
         True if model was downloaded or already cached, False on error.
     """
+    from rich.progress import Progress, SpinnerColumn, TextColumn
+
     from ember.adapters.local_models import create_embedder, is_model_cached
 
     if is_model_cached(model_name):
         return True
 
-    if not quiet:
-        click.echo(f"Downloading embedding model: {model_name}")
-        click.echo("  (this may take a minute on first run)")
-
     try:
         # Create embedder and call ensure_loaded() to trigger download
         embedder = create_embedder(model_name)
-        embedder.ensure_loaded()
 
-        if not quiet:
-            click.echo("  ✓ Model downloaded successfully")
+        if quiet:
+            # In quiet mode, just download without progress
+            embedder.ensure_loaded()
+        else:
+            # Show Rich progress spinner during download
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                transient=True,
+            ) as progress:
+                progress.add_task(
+                    f"Downloading model: {model_name} (this may take a minute)...",
+                    total=None,
+                )
+                embedder.ensure_loaded()
+            click.echo(f"  Downloaded model: {model_name}")
+
         return True
     except Exception as e:
         # Handle all errors with categorized messages

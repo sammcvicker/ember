@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Progress bar improvements and message consistency** (#417)
+  - Model download during `init` now shows a Rich progress spinner instead of plain text messages
+  - Interactive sync message (`Syncing index...`) now respects `--quiet` mode flag
+  - Added `quiet` parameter to `ensure_synced()` function for consistent quiet mode support
+  - Progress output is suppressed in quiet mode while errors are still shown
+
 - **Standardized user-facing terminology for sync completion messages** (#420)
   - Manual sync now shows "Synced X files" instead of "Indexed X files" to match `ember sync` command name
   - Status command now shows "Index is up to date" instead of "Index is current" for consistency with auto-sync messages
