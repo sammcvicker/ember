@@ -117,6 +117,18 @@ class TestClassifySyncError:
         result = classify_sync_error(error)
         assert result == SyncErrorType.GIT_ERROR
 
+    def test_classifies_timeout_error_as_git_error(self) -> None:
+        """TimeoutError is classified as GIT_ERROR (operations that timeout are typically git-related)."""
+        error = TimeoutError("Operation timed out")
+        result = classify_sync_error(error)
+        assert result == SyncErrorType.GIT_ERROR
+
+    def test_classifies_connection_error_as_git_error(self) -> None:
+        """ConnectionError during sync is classified as GIT_ERROR."""
+        error = ConnectionError("Network unreachable")
+        result = classify_sync_error(error)
+        assert result == SyncErrorType.GIT_ERROR
+
 
 class TestSyncService:
     """Tests for the SyncService class."""

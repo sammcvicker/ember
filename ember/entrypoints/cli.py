@@ -110,6 +110,10 @@ def handle_cli_errors(command_name: str):
     Returns:
         Decorated function with error handling.
     """
+    import sqlite3
+    from urllib.error import URLError
+
+    import requests.exceptions
 
     def decorator(func):
         @functools.wraps(func)
@@ -133,6 +137,30 @@ def handle_cli_errors(command_name: str):
                 raise EmberCliError(
                     str(e),
                     hint="The embedding model in your config differs from the one used to build the index.",
+                ) from e
+            except sqlite3.Error as e:
+                # Database error - suggest reindex to rebuild
+                raise EmberCliError(
+                    f"Database error: {e}",
+                    hint="Run 'ember sync --reindex' to rebuild the index.",
+                ) from e
+            except requests.exceptions.Timeout as e:
+                # Network timeout - suggest retry
+                raise EmberCliError(
+                    f"Network timeout: {e}",
+                    hint="Request timed out. Check your network connection and retry.",
+                ) from e
+            except (requests.exceptions.ConnectionError, URLError) as e:
+                # Network connection error - suggest checking connection
+                raise EmberCliError(
+                    f"Network error: {e}",
+                    hint="Check your internet connection and retry.",
+                ) from e
+            except TimeoutError as e:
+                # Built-in timeout (e.g., from subprocess or socket operations)
+                raise EmberCliError(
+                    f"Operation timed out: {e}",
+                    hint="The operation timed out. Try again or check system resources.",
                 ) from e
             except PermissionError as e:
                 # Permission denied - provide targeted hint with filename if available
@@ -1173,9 +1201,8 @@ def find(
         cache_data = ResultPresenter.serialize_for_cache(query, result_set.results)
         cache_path.write_text(json.dumps(cache_data, indent=2))
     except Exception as e:
-        # Log cache errors but don't fail the command
-        if ctx.obj.get("verbose", False):
-            click.echo(f"Warning: Could not cache results: {e}", err=True)
+        # Always show cache errors to stderr (Issue #421 - don't silently swallow)
+        click.echo(f"Warning: Could not cache results: {e}", err=True)
 
     # Display results
     presenter = ResultPresenter(LocalFileSystem())
@@ -1568,14 +1595,20 @@ def _display_path_status(path: Path, label: str) -> None:
 
 def _load_and_display_config(
     title: str, loader: Callable[[], EmberConfig]  # noqa: F821
-) -> None:
-    """Load config using the provided loader and display it with a title."""
+) -> bool:
+    """Load config using the provided loader and display it with a title.
+
+    Returns:
+        True if config was loaded and displayed successfully, False on error.
+    """
     click.echo(f"\n{title}:")
     try:
         config = loader()
         _display_config_summary(config)
+        return True
     except Exception as e:
-        click.echo(f"  Error loading config: {e}")
+        click.echo(f"  Error loading config: {e}", err=True)
+        return False
 
 
 def _get_local_config_path() -> Path | None:
