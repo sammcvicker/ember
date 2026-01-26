@@ -32,6 +32,12 @@ def classify_sync_error(exception: Exception) -> SyncErrorType:
     if isinstance(exception, PermissionError):
         return SyncErrorType.PERMISSION_ERROR
 
+    # Check for timeout and connection errors BEFORE generic OSError
+    # (TimeoutError and ConnectionError are subclasses of OSError in Python 3)
+    # These typically occur from network operations during sync
+    if isinstance(exception, (TimeoutError, ConnectionError)):
+        return SyncErrorType.GIT_ERROR
+
     # Check for OSError with permission-related errno
     if isinstance(exception, OSError):
         if exception.errno in (errno.EACCES, errno.EPERM):

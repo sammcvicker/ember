@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Improved error handling with targeted hints for database and network errors** (#421)
+  - `handle_cli_errors` decorator now catches `sqlite3.Error` with hint: "Run 'ember sync --reindex' to rebuild."
+  - Network errors (`requests.exceptions.ConnectionError`, `URLError`) now provide: "Check your internet connection and retry."
+  - Timeout errors (`requests.exceptions.Timeout`, `TimeoutError`) now provide: "The operation timed out. Try again or check system resources."
+  - `classify_sync_error()` now classifies `TimeoutError` and `ConnectionError` as `GIT_ERROR`
+  - `_load_and_display_config()` now returns a boolean indicating success/failure
+  - Search result cache warnings are now always shown (not just in verbose mode)
+
 ### Added
 - **Use cases now support context manager protocol for deterministic resource cleanup** (#416)
   - `SearchUseCase` and `IndexingUseCase` now implement `__enter__`/`__exit__`
