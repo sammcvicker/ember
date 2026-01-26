@@ -993,7 +993,7 @@ def _format_sync_results(response) -> None:
     if response.files_indexed == 0 and response.chunks_deleted == 0:
         click.echo(f"✓ No changes detected ({sync_type} scan completed)")
     else:
-        click.echo(f"✓ Indexed {response.files_indexed} files ({sync_type} sync)")
+        click.echo(f"✓ Synced {response.files_indexed} files ({sync_type} sync)")
 
     if response.chunks_created > 0:
         click.echo(f"  • {response.chunks_created} chunks created")
@@ -1545,7 +1545,7 @@ def status(ctx: click.Context, detailed: bool) -> None:
             click.echo(click.style("Run 'ember sync' to update", fg="yellow"))
         else:
             click.echo(
-                click.style("Index is current", fg="green") + sync_time_display
+                click.style("Index is up to date", fg="green") + sync_time_display
             )
             click.echo(f"  {response.indexed_files} files indexed ({response.total_chunks:,} chunks)")
             if response.model_name:

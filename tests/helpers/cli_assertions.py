@@ -94,8 +94,8 @@ def assert_output_matches(
         The regex Match object for further inspection if needed.
 
     Example:
-        # Matches "Indexed 5 files" or "Indexed 10 files"
-        assert_output_matches(result, r"Indexed \\d+ files?")
+        # Matches "Synced 5 files" or "Synced 10 files"
+        assert_output_matches(result, r"Synced \\d+ files?")
 
         # Case-insensitive matching
         assert_output_matches(result, r"error", flags=re.IGNORECASE)

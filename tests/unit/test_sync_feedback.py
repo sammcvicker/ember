@@ -78,8 +78,8 @@ class TestFormatSyncResults:
         with patch("click.echo") as mock_echo:
             _format_sync_results(response)
             calls = [call.args[0] for call in mock_echo.call_args_list]
-            # Flexible pattern: indexed N files with full sync type
-            assert any(re.search(r"[Ii]ndexed 5 files.*full sync", call) for call in calls)
+            # Flexible pattern: synced N files with full sync type
+            assert any(re.search(r"[Ss]ynced 5 files.*full sync", call) for call in calls)
 
     def test_changes_detected_incremental_sync(self) -> None:
         """Incremental sync with changes shows correct sync type."""
@@ -96,8 +96,8 @@ class TestFormatSyncResults:
         with patch("click.echo") as mock_echo:
             _format_sync_results(response)
             calls = [call.args[0] for call in mock_echo.call_args_list]
-            # Flexible pattern: indexed N files with incremental sync type
-            assert any(re.search(r"[Ii]ndexed 3 files.*incremental sync", call) for call in calls)
+            # Flexible pattern: synced N files with incremental sync type
+            assert any(re.search(r"[Ss]ynced 3 files.*incremental sync", call) for call in calls)
 
     def test_chunks_deleted_shows_details(self) -> None:
         """Deleted chunks are shown in output."""

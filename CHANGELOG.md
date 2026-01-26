@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Standardized user-facing terminology for sync completion messages** (#420)
+  - Manual sync now shows "Synced X files" instead of "Indexed X files" to match `ember sync` command name
+  - Status command now shows "Index is up to date" instead of "Index is current" for consistency with auto-sync messages
+
 ### Fixed
 - **Improved error handling with targeted hints for database and network errors** (#421)
   - `handle_cli_errors` decorator now catches `sqlite3.Error` with hint: "Run 'ember sync --reindex' to rebuild."
