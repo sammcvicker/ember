@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Removed
+- **Removed stub commands and empty directories** (#419)
+  - Removed `export`, `import`, and `audit` CLI commands that only printed "not yet implemented"
+  - These commands confused users by appearing in `ember --help` but doing nothing
+  - Commands will be re-added when properly implemented
+  - Removed empty `/ember/core/git/` and `/ember/core/export/` directories (only contained empty `__init__.py` files)
+  - Removed deprecated `merge_config_data()` function from config_io.py (use `EmberConfig.from_partial()` instead)
+
 - **Removed deprecated `check_and_auto_sync()` function** (#418)
   - Function was defined but never called anywhere in the codebase
   - Use `ensure_synced()` instead, which provides the same functionality with a cleaner API

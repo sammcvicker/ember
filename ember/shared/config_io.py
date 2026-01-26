@@ -69,47 +69,6 @@ def load_config_data(path: Path) -> dict[str, Any]:
         raise ValueError(f"Invalid TOML in config file: {e}") from e
 
 
-def merge_config_data(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
-    """Merge two config dictionaries, with override values taking precedence.
-
-    .. deprecated::
-        Use EmberConfig.from_partial() for config merging. This function performs
-        merging at the dict level without domain validation. The domain method
-        ensures validation at each merge step.
-
-    Performs a shallow merge at the section level - if a section exists in override,
-    its values completely replace the base section's values.
-
-    Args:
-        base: Base configuration dictionary
-        override: Override configuration dictionary (takes precedence)
-
-    Returns:
-        Merged configuration dictionary
-    """
-    result: dict[str, Any] = {}
-
-    # Get all section names from both configs
-    all_sections = set(base.keys()) | set(override.keys())
-
-    for section in all_sections:
-        base_section = base.get(section, {})
-        override_section = override.get(section, {})
-
-        if isinstance(base_section, dict) and isinstance(override_section, dict):
-            # Merge section dictionaries - override values win
-            merged_section = {**base_section, **override_section}
-            result[section] = merged_section
-        elif section in override:
-            # Non-dict value from override wins
-            result[section] = override_section
-        else:
-            # Use base value
-            result[section] = base_section
-
-    return result
-
-
 def _validate_model_name(model_name: str) -> None:
     """Validate that the model name is recognized.
 
