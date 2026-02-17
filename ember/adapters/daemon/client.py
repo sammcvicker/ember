@@ -7,6 +7,7 @@ Falls back to direct mode if daemon is unavailable.
 import contextlib
 import logging
 import socket
+import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -113,7 +114,8 @@ class DaemonEmbedderClient:
         self.daemon_timeout = daemon_timeout
         self.model_name = model_name
 
-        # Lazy-loaded fallback embedder
+        # Lazy-loaded fallback embedder (protected by _fallback_lock)
+        self._fallback_lock = threading.Lock()
         self._fallback_embedder: Embedder | None = None
         self._using_fallback = False
         self._daemon_start_attempted = False
@@ -168,23 +170,32 @@ class DaemonEmbedderClient:
         return temp_embedder.fingerprint()
 
     def _get_fallback_embedder(self) -> "Embedder":
-        """Get or create fallback embedder.
+        """Get or create fallback embedder (thread-safe).
+
+        Uses double-checked locking to ensure only one fallback embedder
+        is created even when multiple threads trigger fallback simultaneously.
 
         Returns:
             Embedder instance for direct mode
         """
-        if self._fallback_embedder is None:
-            from ember.adapters.local_models.registry import create_embedder
+        # Fast path: embedder already created (no lock needed)
+        if self._fallback_embedder is not None:
+            return self._fallback_embedder
 
-            logger.info(
-                f"Creating fallback embedder (direct mode): "
-                f"{self.model_name or 'default'}"
-            )
-            self._fallback_embedder = create_embedder(
-                model_name=self.model_name,
-                max_seq_length=self.max_seq_length,
-                batch_size=self.batch_size,
-            )
+        with self._fallback_lock:
+            # Double-check after acquiring lock
+            if self._fallback_embedder is None:
+                from ember.adapters.local_models.registry import create_embedder
+
+                logger.info(
+                    f"Creating fallback embedder (direct mode): "
+                    f"{self.model_name or 'default'}"
+                )
+                self._fallback_embedder = create_embedder(
+                    model_name=self.model_name,
+                    max_seq_length=self.max_seq_length,
+                    batch_size=self.batch_size,
+                )
         return self._fallback_embedder
 
     def _ensure_daemon_running(self) -> bool:
@@ -273,6 +284,9 @@ class DaemonEmbedderClient:
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
         """Embed texts using daemon or fallback.
 
+        Thread-safe: the fallback transition is protected by a lock to ensure
+        only one fallback embedder is created even under concurrent access.
+
         Args:
             texts: List of text strings to embed
 
@@ -298,8 +312,28 @@ class DaemonEmbedderClient:
                 raise RuntimeError(f"Daemon failed and fallback disabled: {e}") from e
 
             logger.warning(f"Daemon failed, falling back to direct mode: {e}")
-            self._using_fallback = True
+            with self._fallback_lock:
+                self._using_fallback = True
             return self._get_fallback_embedder().embed_texts(texts)
+
+    def close(self) -> None:
+        """Release fallback embedder resources.
+
+        Cleans up the lazily-created fallback embedder, freeing GPU memory.
+        Resets fallback state so the client can potentially retry the daemon
+        if reused. Safe to call multiple times (idempotent).
+        """
+        with self._fallback_lock:
+            self._fallback_embedder = None
+            self._using_fallback = False
+
+    def __enter__(self) -> "DaemonEmbedderClient":
+        """Enter context manager."""
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Exit context manager, releasing fallback resources."""
+        self.close()
 
 
 def is_daemon_running(socket_path: Path | None = None) -> bool:

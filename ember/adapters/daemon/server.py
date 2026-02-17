@@ -11,6 +11,7 @@ import logging
 import signal
 import socket
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -58,8 +59,11 @@ class DaemonServer:
 
         self.embedder: Embedder | None = None
         self.server_socket: socket.socket | None = None
-        self.last_request_time = time.time()
         self.running = False
+
+        # Request stats (protected by _stats_lock)
+        self._stats_lock = threading.Lock()
+        self.last_request_time = time.time()
         self.requests_served = 0
 
     def setup_signal_handlers(self) -> None:
@@ -112,6 +116,16 @@ class DaemonServer:
         self.server_socket.settimeout(DaemonTimeouts.SERVER_ACCEPT)
 
         logger.info(f"Listening on {self.socket_path}")
+
+    def update_stats(self) -> None:
+        """Update request statistics (thread-safe).
+
+        Atomically updates both last_request_time and requests_served
+        under a single lock acquisition.
+        """
+        with self._stats_lock:
+            self.last_request_time = time.time()
+            self.requests_served += 1
 
     def handle_request(self, request: Request) -> Response:
         """Handle a single request.
@@ -205,9 +219,8 @@ class DaemonServer:
             request = receive_message(client_socket, Request)
             logger.debug(f"Received request: {request.method}")
 
-            # Update activity time
-            self.last_request_time = time.time()
-            self.requests_served += 1
+            # Update activity time (thread-safe)
+            self.update_stats()
 
             # Handle request
             response = self.handle_request(request)
