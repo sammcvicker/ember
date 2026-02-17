@@ -11,10 +11,20 @@ Schema follows PRD §4 requirements:
 - meta: System metadata (model, version, etc.)
 - tags: Custom metadata tags
 - files: File tracking for incremental sync
+
+Migration safety (issue #436):
+- Database is backed up before migration (shutil.copy)
+- Migration history is tracked in a migration_history table
+- All migrations are idempotent (safe to re-run after partial failure)
+- DML operations (UPDATE, INSERT) use transactions for rollback on failure
 """
 
+import logging
+import shutil
 import sqlite3
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 # Schema version for migrations
 SCHEMA_VERSION = 2
@@ -234,60 +244,190 @@ def check_schema_version(db_path: Path) -> int:
         conn.close()
 
 
+def _ensure_migration_history_table(conn: sqlite3.Connection) -> None:
+    """Create the migration_history table if it does not exist.
+
+    This table tracks which migrations have been applied, preventing
+    duplicate application and providing an audit trail.
+
+    Args:
+        conn: Open SQLite connection
+    """
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS migration_history (
+            version INTEGER PRIMARY KEY,
+            description TEXT NOT NULL,
+            applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """)
+
+
+def _is_migration_applied(conn: sqlite3.Connection, version: int) -> bool:
+    """Check if a specific migration version has been recorded as applied.
+
+    Args:
+        conn: Open SQLite connection
+        version: Migration version number to check
+
+    Returns:
+        True if the migration is recorded in migration_history
+    """
+    cursor = conn.execute(
+        "SELECT 1 FROM migration_history WHERE version = ?", (version,)
+    )
+    return cursor.fetchone() is not None
+
+
+def _record_migration(
+    conn: sqlite3.Connection, version: int, description: str
+) -> None:
+    """Record a successfully applied migration in the history table.
+
+    Args:
+        conn: Open SQLite connection
+        version: Migration version number
+        description: Human-readable description of the migration
+    """
+    conn.execute(
+        "INSERT OR IGNORE INTO migration_history (version, description) "
+        "VALUES (?, ?)",
+        (version, description),
+    )
+
+
+def _backup_database(db_path: Path, current_version: int) -> None:
+    """Create a backup of the database before migration.
+
+    The backup filename includes the current schema version so multiple
+    backups from different migration paths do not collide.
+
+    If a backup already exists (e.g., from a previous failed attempt),
+    it is preserved and not overwritten.
+
+    Args:
+        db_path: Path to the SQLite database file
+        current_version: Current schema version (used in backup filename)
+    """
+    backup_path = db_path.parent / f"{db_path.name}.backup_v{current_version}"
+    if not backup_path.exists():
+        shutil.copy2(db_path, backup_path)
+        logger.info("Database backed up to %s", backup_path)
+
+
+def _get_column_names(conn: sqlite3.Connection, table: str) -> set[str]:
+    """Get the set of column names for a table.
+
+    Args:
+        conn: Open SQLite connection
+        table: Table name to inspect
+
+    Returns:
+        Set of column name strings
+    """
+    cursor = conn.execute(f"PRAGMA table_info({table})")  # noqa: S608
+    return {row[1] for row in cursor.fetchall()}
+
+
+def _migrate_v1_to_v2(conn: sqlite3.Connection) -> None:
+    """Migrate from schema version 1 to 2: Add chunk_id column.
+
+    This migration is fully idempotent. Each step checks whether it has
+    already been applied before executing:
+
+    1. ALTER TABLE to add chunk_id column (skipped if column exists)
+    2. Backfill chunk_id for rows where it is NULL
+    3. Create unique index on chunk_id (uses IF NOT EXISTS)
+    4. Update schema version in meta table
+    5. Record migration in migration_history
+
+    SQLite note: ALTER TABLE implicitly commits any open transaction,
+    so we cannot wrap DDL + DML in a single transaction. Instead,
+    we make each step idempotent so the migration is safe to re-run
+    after a partial failure.
+
+    Args:
+        conn: Open SQLite connection
+    """
+    import blake3
+
+    cursor = conn.cursor()
+
+    # Step 1: Add chunk_id column if it does not exist
+    columns = _get_column_names(conn, "chunks")
+    if "chunk_id" not in columns:
+        cursor.execute("ALTER TABLE chunks ADD COLUMN chunk_id TEXT")
+        logger.info("Added chunk_id column to chunks table")
+
+    # Step 2: Backfill chunk_id for any rows that still have NULL
+    # This handles both fresh migration and recovery from partial failure
+    cursor.execute("""
+        SELECT id, project_id, path, start_line, end_line
+        FROM chunks
+        WHERE chunk_id IS NULL
+    """)
+    rows = cursor.fetchall()
+
+    if rows:
+        for row in rows:
+            db_id, project_id, path, start_line, end_line = row
+            key = f"{project_id}:{path}:{start_line}:{end_line}"
+            chunk_id = blake3.blake3(key.encode()).hexdigest()[:16]
+            cursor.execute(
+                "UPDATE chunks SET chunk_id = ? WHERE id = ?",
+                (chunk_id, db_id),
+            )
+        logger.info("Backfilled chunk_id for %d rows", len(rows))
+
+    # Step 3: Create unique index (IF NOT EXISTS makes this idempotent)
+    cursor.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_chunks_chunk_id "
+        "ON chunks(chunk_id)"
+    )
+
+    # Step 4: Update schema version
+    cursor.execute(
+        "UPDATE meta SET value = ? WHERE key = 'schema_version'",
+        (str(2),),
+    )
+
+    # Step 5: Record migration in history
+    _record_migration(conn, 2, "Add chunk_id column with blake3 hash backfill")
+
+    conn.commit()
+
+
 def migrate_database(db_path: Path) -> None:
     """Migrate database schema to the latest version.
 
+    Safety guarantees:
+    - A backup copy of the database is created before any changes
+    - A migration_history table tracks which migrations have been applied
+    - All migrations are idempotent (safe to re-run after partial failure)
+    - DML changes are committed atomically where possible
+
     Args:
         db_path: Path to the SQLite database
+
+    Raises:
+        sqlite3.Error: If a migration step fails. The database backup
+            can be used to restore the original state.
     """
     current_version = check_schema_version(db_path)
 
     if current_version >= SCHEMA_VERSION:
         return  # Already at latest version
 
+    # Back up the database before making any changes
+    _backup_database(db_path, current_version)
+
     conn = sqlite3.connect(db_path)
     try:
-        # Migration from version 1 to version 2: Add chunk_id column
-        if current_version < 2:
-            cursor = conn.cursor()
+        # Ensure migration tracking table exists
+        _ensure_migration_history_table(conn)
+        conn.commit()
 
-            # Check if column already exists (defensive)
-            cursor.execute("PRAGMA table_info(chunks)")
-            columns = [row[1] for row in cursor.fetchall()]
-
-            if 'chunk_id' not in columns:
-                # Add the chunk_id column
-                cursor.execute("ALTER TABLE chunks ADD COLUMN chunk_id TEXT")
-
-                # Backfill chunk_id for existing rows
-                # Compute chunk IDs using the same logic as Chunk.compute_id()
-                cursor.execute("""
-                    SELECT id, project_id, path, start_line, end_line
-                    FROM chunks
-                """)
-                rows = cursor.fetchall()
-
-                for row in rows:
-                    db_id, project_id, path, start_line, end_line = row
-                    # Compute chunk_id using blake3 hash of key components
-                    import blake3
-                    key = f"{project_id}:{path}:{start_line}:{end_line}"
-                    chunk_id = blake3.blake3(key.encode()).hexdigest()[:16]
-
-                    cursor.execute(
-                        "UPDATE chunks SET chunk_id = ? WHERE id = ?",
-                        (chunk_id, db_id)
-                    )
-
-                # Create unique index on chunk_id
-                cursor.execute("CREATE UNIQUE INDEX idx_chunks_chunk_id ON chunks(chunk_id)")
-
-            # Update schema version
-            cursor.execute(
-                "UPDATE meta SET value = ? WHERE key = 'schema_version'",
-                (str(2),)
-            )
-
-            conn.commit()
+        # Apply migrations in order
+        if current_version < 2 and not _is_migration_applied(conn, 2):
+            _migrate_v1_to_v2(conn)
     finally:
         conn.close()
