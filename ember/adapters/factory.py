@@ -12,28 +12,14 @@ The factories use lazy imports to avoid loading heavy dependencies
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING
+
+from ember.ports.embedders import Embedder
 
 if TYPE_CHECKING:
     from ember.core.indexing.index_usecase import IndexingUseCase
     from ember.core.retrieval.search_usecase import SearchUseCase
     from ember.domain.config import EmberConfig
-
-
-class Embedder(Protocol):
-    """Protocol for embedder implementations."""
-
-    @property
-    def name(self) -> str: ...
-
-    @property
-    def dim(self) -> int: ...
-
-    def fingerprint(self) -> str: ...
-
-    def embed_texts(self, texts: list[str]) -> list[list[float]]: ...
-
-    def ensure_loaded(self) -> None: ...
 
 
 class EmbedderFactory:

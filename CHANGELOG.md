@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Consolidated Embedder Protocol to single canonical definition** (#440)
+  - Removed duplicate `Embedder` Protocol classes from `adapters/factory.py` and `adapters/local_models/registry.py`
+  - Both files now import `Embedder` from `ember/ports/embedders.py`
+  - Added `ensure_loaded()` method to the canonical Protocol (was missing, causing `hasattr` guards)
+  - Cleaned up `hasattr` workaround in `index_usecase.py` since `ensure_loaded` is now part of the Protocol
+
 ### Removed
 - **Removed stub commands and empty directories** (#419)
   - Removed `export`, `import`, and `audit` CLI commands that only printed "not yet implemented"

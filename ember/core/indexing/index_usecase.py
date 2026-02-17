@@ -153,13 +153,12 @@ class IndexingUseCase:
 
     def _ensure_model_loaded(self, progress: ProgressCallback | None) -> None:
         """Eagerly load embedding model before indexing to prevent misleading progress."""
-        if hasattr(self.embedder, "ensure_loaded"):
-            logger.debug("Loading embedding model")
-            if progress:
-                progress.on_start(1, "Loading embedding model")
-            self.embedder.ensure_loaded()  # type: ignore[attr-defined]
-            if progress:
-                progress.on_complete()
+        logger.debug("Loading embedding model")
+        if progress:
+            progress.on_start(1, "Loading embedding model")
+        self.embedder.ensure_loaded()
+        if progress:
+            progress.on_complete()
 
     def _index_files_with_progress(
         self,

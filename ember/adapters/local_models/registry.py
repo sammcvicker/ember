@@ -7,32 +7,14 @@ Provides a factory function to create the appropriate embedder based on config.
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+
+from ember.ports.embedders import Embedder
 
 # Import try_to_load_from_cache at module level for easier mocking in tests
 try:
     from huggingface_hub import try_to_load_from_cache
 except ImportError:
     try_to_load_from_cache = None  # type: ignore[assignment,misc]
-
-if TYPE_CHECKING:
-    pass
-
-
-class Embedder(Protocol):
-    """Embedder protocol for type checking."""
-
-    @property
-    def name(self) -> str: ...
-
-    @property
-    def dim(self) -> int: ...
-
-    def fingerprint(self) -> str: ...
-
-    def embed_texts(self, texts: list[str]) -> list[list[float]]: ...
-
-    def ensure_loaded(self) -> None: ...
 
 
 @dataclass(frozen=True)
