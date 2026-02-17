@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **SimpleVectorSearch no longer loads all vectors into memory on every query** (#435)
+  - Replaced `fetchall()` with streaming `fetchmany()` batches and a bounded min-heap
+  - Memory usage is now O(topk + batch_size) regardless of corpus size
+  - Logs a warning when corpus exceeds 10,000 vectors, recommending sqlite-vec
+
 - **Daemon client and server thread safety improvements** (#439)
   - Fallback embedder creation is now thread-safe using double-checked locking; only one fallback embedder is created even under concurrent access
   - Server request stats (`requests_served`, `last_request_time`) are updated atomically via `threading.Lock`

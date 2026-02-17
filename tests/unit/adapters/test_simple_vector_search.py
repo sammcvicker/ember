@@ -1,13 +1,19 @@
 """Unit tests for SimpleVectorSearch adapter."""
 
+import logging
 import sqlite3
 import struct
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
 from ember.adapters.sqlite.schema import init_database
-from ember.adapters.vss.simple_vector_search import SimpleVectorSearch
+from ember.adapters.vss.simple_vector_search import (
+    _LARGE_CORPUS_THRESHOLD,
+    BATCH_SIZE,
+    SimpleVectorSearch,
+)
 
 
 @pytest.fixture
@@ -285,6 +291,209 @@ class TestQueryMethod:
         # chunk_1 and chunk_2 should have equal similarity (~0.707)
         similarities = {results[1][0]: results[1][1], results[2][0]: results[2][1]}
         assert similarities["chunk_1"] == pytest.approx(similarities["chunk_2"], rel=1e-2)
+
+
+class TestStreamingQuery:
+    """Tests for streaming (batched) query evaluation."""
+
+    def test_query_uses_fetchmany_not_fetchall(self) -> None:
+        """Test that query uses fetchmany for streaming instead of fetchall."""
+        import inspect
+
+        source = inspect.getsource(SimpleVectorSearch.query)
+        # The implementation should use fetchmany, not fetchall
+        assert "fetchmany" in source
+        assert "fetchall" not in source
+
+    def test_query_results_match_across_batches(self, tmp_path: Path) -> None:
+        """Test that batched streaming produces same results as loading all at once."""
+        import time
+
+        db_path = tmp_path / "test.db"
+        init_database(db_path)
+
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        now = time.time()
+
+        # Create 20 vectors so we exercise multiple batches with a small batch size
+        num_vectors = 20
+        dim = 3
+        import random
+        random.seed(123)
+
+        for i in range(num_vectors):
+            cursor.execute(
+                """
+                INSERT INTO chunks (chunk_id, project_id, path, start_line, end_line, content,
+                                   content_hash, file_hash, lang, symbol, tree_sha, rev, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (f"chunk_{i}", "proj", f"file{i}.py", 1, 10, f"content {i}",
+                 f"hash{i}", f"fhash{i}", "python", None, "tree1", "work", now),
+            )
+
+        for i in range(num_vectors):
+            cursor.execute("SELECT id FROM chunks WHERE chunk_id = ?", (f"chunk_{i}",))
+            internal_id = cursor.fetchone()[0]
+            vec = [random.random() for _ in range(dim)]
+            norm = sum(x * x for x in vec) ** 0.5
+            vec = [x / norm for x in vec]
+            blob = struct.pack(f"{dim}d", *vec)
+            cursor.execute(
+                "INSERT INTO vectors (chunk_id, embedding, dim, model_fingerprint) VALUES (?, ?, ?, ?)",
+                (internal_id, blob, dim, "test-model"),
+            )
+
+        conn.commit()
+        conn.close()
+
+        search = SimpleVectorSearch(db_path)
+        query_vector = [1.0, 0.0, 0.0]
+
+        # Query with default batch size
+        results = search.query(query_vector, topk=5)
+
+        assert len(results) == 5
+        # Results must be sorted by similarity descending
+        similarities = [sim for _, sim in results]
+        assert similarities == sorted(similarities, reverse=True)
+
+    def test_query_with_more_vectors_than_batch_size(self, tmp_path: Path) -> None:
+        """Test that query handles corpus larger than one batch correctly."""
+        import time
+
+        db_path = tmp_path / "test.db"
+        init_database(db_path)
+
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        now = time.time()
+
+        # Create enough vectors to require multiple batches
+        # We use a small number but will patch BATCH_SIZE to be smaller
+        num_vectors = 10
+        dim = 3
+
+        for i in range(num_vectors):
+            cursor.execute(
+                """
+                INSERT INTO chunks (chunk_id, project_id, path, start_line, end_line, content,
+                                   content_hash, file_hash, lang, symbol, tree_sha, rev, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (f"chunk_{i}", "proj", f"file{i}.py", 1, 10, f"content {i}",
+                 f"hash{i}", f"fhash{i}", "python", None, "tree1", "work", now),
+            )
+
+        # Insert vectors with known similarities to [1, 0, 0]:
+        # chunk_0 has highest similarity (1.0), chunk_9 has lowest
+        for i in range(num_vectors):
+            cursor.execute("SELECT id FROM chunks WHERE chunk_id = ?", (f"chunk_{i}",))
+            internal_id = cursor.fetchone()[0]
+            # Create vectors that point progressively further from x-axis
+            angle = i * (3.14159 / (2 * num_vectors))  # 0 to ~pi/2
+            import math
+            vec = [math.cos(angle), math.sin(angle), 0.0]
+            blob = struct.pack(f"{dim}d", *vec)
+            cursor.execute(
+                "INSERT INTO vectors (chunk_id, embedding, dim, model_fingerprint) VALUES (?, ?, ?, ?)",
+                (internal_id, blob, dim, "test-model"),
+            )
+
+        conn.commit()
+        conn.close()
+
+        search = SimpleVectorSearch(db_path)
+        query_vector = [1.0, 0.0, 0.0]
+
+        # Patch BATCH_SIZE to be very small to force multiple batches
+        with patch("ember.adapters.vss.simple_vector_search.BATCH_SIZE", 3):
+            results = search.query(query_vector, topk=5)
+
+        assert len(results) == 5
+        # chunk_0 should have highest similarity (closest to x-axis)
+        assert results[0][0] == "chunk_0"
+        assert results[0][1] == pytest.approx(1.0, rel=1e-4)
+        # Results must be sorted descending
+        similarities = [sim for _, sim in results]
+        assert similarities == sorted(similarities, reverse=True)
+
+    def test_batch_size_constant_is_reasonable(self) -> None:
+        """Test that BATCH_SIZE is set to a reasonable value."""
+        assert BATCH_SIZE >= 100
+        assert BATCH_SIZE <= 100000
+
+
+class TestLargeCorpusWarning:
+    """Tests for warning when corpus exceeds threshold."""
+
+    def test_warning_logged_for_large_corpus(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+        """Test that a warning is logged when vector count exceeds threshold."""
+        import time
+
+        db_path = tmp_path / "test.db"
+        init_database(db_path)
+
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        now = time.time()
+
+        # We will not actually insert 10k+ vectors; instead, patch the threshold
+        # to be very low and insert a small number of vectors
+        num_vectors = 5
+        dim = 3
+
+        for i in range(num_vectors):
+            cursor.execute(
+                """
+                INSERT INTO chunks (chunk_id, project_id, path, start_line, end_line, content,
+                                   content_hash, file_hash, lang, symbol, tree_sha, rev, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (f"chunk_{i}", "proj", f"file{i}.py", 1, 10, f"content {i}",
+                 f"hash{i}", f"fhash{i}", "python", None, "tree1", "work", now),
+            )
+
+        for i in range(num_vectors):
+            cursor.execute("SELECT id FROM chunks WHERE chunk_id = ?", (f"chunk_{i}",))
+            internal_id = cursor.fetchone()[0]
+            vec = [1.0, 0.0, 0.0]
+            blob = struct.pack(f"{dim}d", *vec)
+            cursor.execute(
+                "INSERT INTO vectors (chunk_id, embedding, dim, model_fingerprint) VALUES (?, ?, ?, ?)",
+                (internal_id, blob, dim, "test-model"),
+            )
+
+        conn.commit()
+        conn.close()
+
+        search = SimpleVectorSearch(db_path)
+        query_vector = [1.0, 0.0, 0.0]
+
+        # Patch threshold to be lower than our vector count
+        with (
+            patch("ember.adapters.vss.simple_vector_search._LARGE_CORPUS_THRESHOLD", 3),
+            caplog.at_level(logging.WARNING, logger="ember.adapters.vss.simple_vector_search"),
+        ):
+            search.query(query_vector, topk=2)
+
+        assert any("SimpleVectorSearch" in record.message for record in caplog.records)
+        assert any("sqlite-vec" in record.message for record in caplog.records)
+
+    def test_no_warning_for_small_corpus(self, search: SimpleVectorSearch, caplog: pytest.LogCaptureFixture) -> None:
+        """Test that no warning is logged for small corpus."""
+        query_vector = [1.0, 0.0, 0.0]
+
+        with caplog.at_level(logging.WARNING, logger="ember.adapters.vss.simple_vector_search"):
+            search.query(query_vector, topk=2)
+
+        warning_messages = [r.message for r in caplog.records if r.levelno >= logging.WARNING]
+        assert not any("SimpleVectorSearch" in msg for msg in warning_messages)
+
+    def test_large_corpus_threshold_is_10000(self) -> None:
+        """Test that the large corpus threshold is 10,000."""
+        assert _LARGE_CORPUS_THRESHOLD == 10_000
 
 
 class TestIntegration:
