@@ -1,25 +1,38 @@
 """Simple vector search adapter using brute-force cosine similarity.
 
-This is an MVP implementation that loads all vectors and computes similarity in memory.
-For production, consider migrating to FAISS or sqlite-vss for better performance.
+This is a fallback implementation that streams vectors in batches and uses a
+min-heap to keep only the top-K results in memory. For production workloads,
+prefer sqlite-vec which provides efficient approximate nearest neighbor search.
 """
 
+import heapq
+import logging
 import struct
 from pathlib import Path
 
 from ember.adapters.sqlite.base_repository import SQLiteBaseRepository
 
+logger = logging.getLogger(__name__)
+
+# Number of rows to fetch per batch from the database cursor.
+# This bounds peak memory usage: at most BATCH_SIZE vectors are held
+# in memory at any time (plus the top-K heap).
+BATCH_SIZE: int = 1000
+
+# Log a warning when the corpus exceeds this many vectors, recommending
+# that the user install sqlite-vec for better performance.
+_LARGE_CORPUS_THRESHOLD: int = 10_000
+
 
 class SimpleVectorSearch(SQLiteBaseRepository):
     """Simple brute-force vector search using cosine similarity.
 
-    This adapter loads all vectors from the database and computes cosine
-    similarity in memory. It's suitable for MVP with <100k chunks.
+    This adapter streams vectors from the database in batches and maintains
+    a bounded min-heap of size topk, so memory usage is O(topk + BATCH_SIZE)
+    regardless of corpus size.
 
-    For larger datasets, consider:
-    - FAISS (Facebook AI Similarity Search)
-    - sqlite-vss (SQLite vector search extension)
-    - Approximate Nearest Neighbor (ANN) indexes
+    For larger datasets, consider using sqlite-vec which provides efficient
+    approximate nearest neighbor search with O(1) memory per query.
 
     Inherits from SQLiteBaseRepository to get:
     - Thread-safe connection initialization
@@ -34,6 +47,7 @@ class SimpleVectorSearch(SQLiteBaseRepository):
             db_path: Path to SQLite database file.
         """
         super().__init__(db_path)
+        self._warned_large_corpus: bool = False
 
     def _decode_vector(self, blob: bytes, dim: int) -> list[float]:
         """Decode a vector from binary BLOB.
@@ -84,6 +98,10 @@ class SimpleVectorSearch(SQLiteBaseRepository):
     ) -> list[tuple[str, float]]:
         """Query for nearest neighbors using brute-force cosine similarity.
 
+        Streams vectors from the database in batches of BATCH_SIZE and
+        maintains a min-heap of size topk, so only the top-K best results
+        are kept in memory at any time.
+
         Args:
             vector: Query embedding vector.
             topk: Maximum number of results to return.
@@ -95,7 +113,7 @@ class SimpleVectorSearch(SQLiteBaseRepository):
         conn = self._get_connection()
         cursor = conn.cursor()
 
-        # Load all vectors with their stored chunk_id
+        # Execute query but do not fetch all rows
         cursor.execute(
             """
             SELECT
@@ -107,23 +125,43 @@ class SimpleVectorSearch(SQLiteBaseRepository):
             """
         )
 
-        rows = cursor.fetchall()
-        results = []
+        # Use a min-heap of size topk to keep only the best results.
+        # heapq is a min-heap, so we push (similarity, chunk_id) and the
+        # smallest similarity sits at the top. When the heap is full, we
+        # only push if the new similarity exceeds the current minimum.
+        heap: list[tuple[float, str]] = []
+        rows_processed = 0
 
-        for row in rows:
-            # Use the stored chunk_id from database instead of computing it
-            chunk_id = row[0]
-            embedding_blob = row[1]
-            dim = row[2]
+        while True:
+            batch = cursor.fetchmany(BATCH_SIZE)
+            if not batch:
+                break
 
-            # Decode vector
-            chunk_vector = self._decode_vector(embedding_blob, dim)
+            for row in batch:
+                chunk_id = row[0]
+                embedding_blob = row[1]
+                dim = row[2]
 
-            # Compute cosine similarity
-            similarity = self._cosine_similarity(vector, chunk_vector)
+                chunk_vector = self._decode_vector(embedding_blob, dim)
+                similarity = self._cosine_similarity(vector, chunk_vector)
 
-            results.append((chunk_id, similarity))
+                if len(heap) < topk:
+                    heapq.heappush(heap, (similarity, chunk_id))
+                elif similarity > heap[0][0]:
+                    heapq.heapreplace(heap, (similarity, chunk_id))
 
-        # Sort by similarity (descending) and return top-k
+                rows_processed += 1
+
+        # Warn once if the corpus is large and the user should consider sqlite-vec
+        if rows_processed > _LARGE_CORPUS_THRESHOLD and not self._warned_large_corpus:
+            self._warned_large_corpus = True
+            logger.warning(
+                "SimpleVectorSearch scanned %d vectors using brute-force search. "
+                "For better performance, install sqlite-vec: pip install sqlite-vec",
+                rows_processed,
+            )
+
+        # Extract results from the heap, sorted by similarity descending
+        results = [(chunk_id, sim) for sim, chunk_id in heap]
         results.sort(key=lambda x: x[1], reverse=True)
-        return results[:topk]
+        return results
