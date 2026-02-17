@@ -68,47 +68,43 @@ class TestQueryValidation:
         query = Query(text="search term")
         assert query.topk == 20
 
-    def test_query_empty_text_raises_error(self):
-        """Test that empty query text raises ValueError."""
-        with pytest.raises(ValueError, match="Query text cannot be empty"):
-            Query(text="")
+    @pytest.mark.parametrize(
+        "text, topk, error_match",
+        [
+            pytest.param("", 10, "Query text cannot be empty", id="empty-text"),
+            pytest.param("   ", 10, "Query text cannot be empty", id="whitespace-text"),
+            pytest.param("search", 0, "topk must be positive", id="topk-zero"),
+            pytest.param("search", -5, "topk must be positive", id="topk-negative"),
+        ],
+    )
+    def test_query_invalid_creation(self, text, topk, error_match):
+        """Test that invalid Query parameters raise ValueError."""
+        with pytest.raises(ValueError, match=error_match):
+            Query(text=text, topk=topk)
 
-    def test_query_whitespace_only_text_raises_error(self):
-        """Test that whitespace-only query text raises ValueError."""
-        with pytest.raises(ValueError, match="Query text cannot be empty"):
-            Query(text="   ")
-
-    def test_query_topk_zero_raises_error(self):
-        """Test that topk=0 raises ValueError."""
-        with pytest.raises(ValueError, match="topk must be positive"):
-            Query(text="search", topk=0)
-
-    def test_query_topk_negative_raises_error(self):
-        """Test that negative topk raises ValueError."""
-        with pytest.raises(ValueError, match="topk must be positive"):
-            Query(text="search", topk=-5)
-
-    def test_query_topk_positive_valid(self):
+    @pytest.mark.parametrize("topk", [1, 100])
+    def test_query_topk_positive_valid(self, topk):
         """Test that positive topk values are valid."""
-        query = Query(text="search", topk=1)
-        assert query.topk == 1
-
-        query = Query(text="search", topk=100)
-        assert query.topk == 100
+        query = Query(text="search", topk=topk)
+        assert query.topk == topk
 
 
 class TestQueryImmutability:
     """Tests for Query immutability (frozen dataclass)."""
 
-    def test_query_is_frozen(self):
+    @pytest.mark.parametrize(
+        "attr, value",
+        [
+            pytest.param("text", "new text", id="text"),
+            pytest.param("topk", 20, id="topk"),
+            pytest.param("path_filter", PathFilter("*.py"), id="path-filter"),
+        ],
+    )
+    def test_query_is_frozen(self, attr, value):
         """Test that Query instances cannot be modified after creation."""
         query = Query(text="search term", topk=10)
         with pytest.raises(AttributeError):
-            query.text = "new text"
-        with pytest.raises(AttributeError):
-            query.topk = 20
-        with pytest.raises(AttributeError):
-            query.path_filter = PathFilter("*.py")
+            setattr(query, attr, value)
 
     def test_query_hashable(self):
         """Test that frozen Query is hashable."""
@@ -254,71 +250,26 @@ class TestChunkValidation:
         assert chunk.start_line == 1
         assert chunk.end_line == 10
 
-    def test_chunk_start_line_zero_raises_error(self):
-        """Test that start_line=0 raises ValueError (1-indexed)."""
-        with pytest.raises(ValueError, match="Line numbers must be >= 1"):
+    @pytest.mark.parametrize(
+        "start, end, error_match",
+        [
+            pytest.param(0, 10, "Line numbers must be >= 1", id="start-zero"),
+            pytest.param(1, 0, "Line numbers must be >= 1", id="end-zero"),
+            pytest.param(-1, 10, "Line numbers must be >= 1", id="start-negative"),
+            pytest.param(20, 10, "start_line.*>.*end_line", id="start-gt-end"),
+        ],
+    )
+    def test_chunk_invalid_line_numbers(self, start, end, error_match):
+        """Test that invalid line number combinations raise ValueError."""
+        with pytest.raises(ValueError, match=error_match):
             Chunk(
                 id="test_id",
                 project_id="proj",
                 path=Path("file.py"),
                 lang="py",
                 symbol="func",
-                start_line=0,
-                end_line=10,
-                content="code",
-                content_hash=self.VALID_CONTENT_HASH,
-                file_hash=self.VALID_FILE_HASH,
-                tree_sha=self.VALID_TREE_SHA,
-                rev="HEAD",
-            )
-
-    def test_chunk_end_line_zero_raises_error(self):
-        """Test that end_line=0 raises ValueError (1-indexed)."""
-        with pytest.raises(ValueError, match="Line numbers must be >= 1"):
-            Chunk(
-                id="test_id",
-                project_id="proj",
-                path=Path("file.py"),
-                lang="py",
-                symbol="func",
-                start_line=1,
-                end_line=0,
-                content="code",
-                content_hash=self.VALID_CONTENT_HASH,
-                file_hash=self.VALID_FILE_HASH,
-                tree_sha=self.VALID_TREE_SHA,
-                rev="HEAD",
-            )
-
-    def test_chunk_negative_line_numbers_raises_error(self):
-        """Test that negative line numbers raise ValueError."""
-        with pytest.raises(ValueError, match="Line numbers must be >= 1"):
-            Chunk(
-                id="test_id",
-                project_id="proj",
-                path=Path("file.py"),
-                lang="py",
-                symbol="func",
-                start_line=-1,
-                end_line=10,
-                content="code",
-                content_hash=self.VALID_CONTENT_HASH,
-                file_hash=self.VALID_FILE_HASH,
-                tree_sha=self.VALID_TREE_SHA,
-                rev="HEAD",
-            )
-
-    def test_chunk_start_greater_than_end_raises_error(self):
-        """Test that start_line > end_line raises ValueError."""
-        with pytest.raises(ValueError, match="start_line.*>.*end_line"):
-            Chunk(
-                id="test_id",
-                project_id="proj",
-                path=Path("file.py"),
-                lang="py",
-                symbol="func",
-                start_line=20,
-                end_line=10,
+                start_line=start,
+                end_line=end,
                 content="code",
                 content_hash=self.VALID_CONTENT_HASH,
                 file_hash=self.VALID_FILE_HASH,
@@ -437,17 +388,18 @@ class TestSearchResultSet:
 class TestSyncMode:
     """Tests for SyncMode enum."""
 
-    def test_sync_mode_values(self):
-        """Test SyncMode enum has expected values."""
-        assert SyncMode.NONE == "none"
-        assert SyncMode.WORKTREE == "worktree"
-        assert SyncMode.STAGED == "staged"
-
-    def test_sync_mode_from_string(self):
-        """Test creating SyncMode from string value."""
-        assert SyncMode("none") == SyncMode.NONE
-        assert SyncMode("worktree") == SyncMode.WORKTREE
-        assert SyncMode("staged") == SyncMode.STAGED
+    @pytest.mark.parametrize(
+        "member, string_value",
+        [
+            pytest.param(SyncMode.NONE, "none", id="none"),
+            pytest.param(SyncMode.WORKTREE, "worktree", id="worktree"),
+            pytest.param(SyncMode.STAGED, "staged", id="staged"),
+        ],
+    )
+    def test_sync_mode_values_and_from_string(self, member, string_value):
+        """Test SyncMode enum values and creation from string."""
+        assert member == string_value
+        assert SyncMode(string_value) == member
 
     def test_sync_mode_invalid_string_raises_error(self):
         """Test that invalid string raises ValueError."""
@@ -462,19 +414,24 @@ class TestSyncMode:
         # .value gives the underlying string
         assert mode.value == "worktree"
 
-    def test_sync_mode_is_commit_sha(self):
-        """Test is_commit_sha method for known modes."""
-        assert not SyncMode.is_commit_sha("none")
-        assert not SyncMode.is_commit_sha("worktree")
-        assert not SyncMode.is_commit_sha("staged")
-        # Valid commit SHAs
-        assert SyncMode.is_commit_sha("abc123def456789012345678901234567890abcd")
-        assert SyncMode.is_commit_sha("a" * 40)
-        # Short SHAs (7-39 chars) are also valid
-        assert SyncMode.is_commit_sha("abc1234")
-        # Invalid SHAs
-        assert not SyncMode.is_commit_sha("abc")  # Too short
-        assert not SyncMode.is_commit_sha("xyz123!")  # Invalid chars
+    @pytest.mark.parametrize(
+        "value, expected",
+        [
+            pytest.param("none", False, id="mode-none"),
+            pytest.param("worktree", False, id="mode-worktree"),
+            pytest.param("staged", False, id="mode-staged"),
+            pytest.param(
+                "abc123def456789012345678901234567890abcd", True, id="full-sha"
+            ),
+            pytest.param("a" * 40, True, id="40-char-sha"),
+            pytest.param("abc1234", True, id="short-sha-7"),
+            pytest.param("abc", False, id="too-short"),
+            pytest.param("xyz123!", False, id="invalid-chars"),
+        ],
+    )
+    def test_sync_mode_is_commit_sha(self, value, expected):
+        """Test is_commit_sha correctly identifies commit SHAs vs mode strings."""
+        assert SyncMode.is_commit_sha(value) == expected
 
 
 # =============================================================================
@@ -644,70 +601,93 @@ class TestChunkHashValidation:
         defaults.update(kwargs)
         return Chunk(**defaults)
 
-    def test_chunk_valid_blake3_hash_content(self):
-        """Test that valid blake3 content_hash is accepted."""
-        chunk = self._make_chunk(content_hash="a" * 64)
-        assert chunk.content_hash == "a" * 64
+    @pytest.mark.parametrize(
+        "field, value",
+        [
+            pytest.param("content_hash", "a" * 64, id="valid-content-hash"),
+            pytest.param("file_hash", "b" * 64, id="valid-file-hash"),
+        ],
+    )
+    def test_chunk_valid_blake3_hash(self, field, value):
+        """Test that valid blake3 hashes are accepted."""
+        chunk = self._make_chunk(**{field: value})
+        assert getattr(chunk, field) == value
 
-    def test_chunk_valid_blake3_hash_file(self):
-        """Test that valid blake3 file_hash is accepted."""
-        chunk = self._make_chunk(file_hash="b" * 64)
-        assert chunk.file_hash == "b" * 64
+    @pytest.mark.parametrize(
+        "field, value, error_match",
+        [
+            pytest.param(
+                "content_hash",
+                "not-a-valid-hash",
+                "Invalid blake3 hash.*content_hash",
+                id="content-bad-format",
+            ),
+            pytest.param(
+                "content_hash",
+                "abc123",
+                "Invalid blake3 hash.*content_hash",
+                id="content-too-short",
+            ),
+            pytest.param(
+                "content_hash",
+                "",
+                "Invalid blake3 hash.*content_hash",
+                id="content-empty",
+            ),
+            pytest.param(
+                "content_hash",
+                "A" * 64,
+                "Invalid blake3 hash.*content_hash",
+                id="content-uppercase",
+            ),
+            pytest.param(
+                "file_hash",
+                "xyz-invalid-hash",
+                "Invalid blake3 hash.*file_hash",
+                id="file-bad-format",
+            ),
+            pytest.param(
+                "file_hash",
+                "a" * 63,
+                "Invalid blake3 hash.*file_hash",
+                id="file-too-short",
+            ),
+            pytest.param(
+                "file_hash",
+                "",
+                "Invalid blake3 hash.*file_hash",
+                id="file-empty",
+            ),
+        ],
+    )
+    def test_chunk_invalid_blake3_hash(self, field, value, error_match):
+        """Test that invalid blake3 hashes raise ValueError."""
+        with pytest.raises(ValueError, match=error_match):
+            self._make_chunk(**{field: value})
 
-    def test_chunk_invalid_content_hash_format_raises_error(self):
-        """Test that content_hash with non-hex chars raises ValueError."""
-        with pytest.raises(ValueError, match="Invalid blake3 hash.*content_hash"):
-            self._make_chunk(content_hash="not-a-valid-hash")
+    @pytest.mark.parametrize(
+        "tree_sha",
+        [
+            pytest.param("a" * 40, id="valid-40-char"),
+            pytest.param("", id="empty-worktree-mode"),
+        ],
+    )
+    def test_chunk_valid_tree_sha(self, tree_sha):
+        """Test that valid git tree SHA values are accepted."""
+        chunk = self._make_chunk(tree_sha=tree_sha)
+        assert chunk.tree_sha == tree_sha
 
-    def test_chunk_invalid_content_hash_length_raises_error(self):
-        """Test that content_hash with wrong length raises ValueError."""
-        with pytest.raises(ValueError, match="Invalid blake3 hash.*content_hash"):
-            self._make_chunk(content_hash="abc123")  # Too short
-
-    def test_chunk_invalid_file_hash_format_raises_error(self):
-        """Test that file_hash with non-hex chars raises ValueError."""
-        with pytest.raises(ValueError, match="Invalid blake3 hash.*file_hash"):
-            self._make_chunk(file_hash="xyz-invalid-hash")
-
-    def test_chunk_invalid_file_hash_length_raises_error(self):
-        """Test that file_hash with wrong length raises ValueError."""
-        with pytest.raises(ValueError, match="Invalid blake3 hash.*file_hash"):
-            self._make_chunk(file_hash="a" * 63)  # One char too short
-
-    def test_chunk_empty_content_hash_raises_error(self):
-        """Test that empty content_hash raises ValueError."""
-        with pytest.raises(ValueError, match="Invalid blake3 hash.*content_hash"):
-            self._make_chunk(content_hash="")
-
-    def test_chunk_empty_file_hash_raises_error(self):
-        """Test that empty file_hash raises ValueError."""
-        with pytest.raises(ValueError, match="Invalid blake3 hash.*file_hash"):
-            self._make_chunk(file_hash="")
-
-    def test_chunk_content_hash_uppercase_rejected(self):
-        """Test that uppercase hex in content_hash is rejected."""
-        with pytest.raises(ValueError, match="Invalid blake3 hash.*content_hash"):
-            self._make_chunk(content_hash="A" * 64)
-
-    def test_chunk_valid_tree_sha_format(self):
-        """Test that valid git tree SHA is accepted."""
-        chunk = self._make_chunk(tree_sha="a" * 40)
-        assert chunk.tree_sha == "a" * 40
-
-    def test_chunk_empty_tree_sha_valid(self):
-        """Test that empty tree_sha is valid (worktree mode)."""
-        chunk = self._make_chunk(tree_sha="")
-        assert chunk.tree_sha == ""
-
-    def test_chunk_invalid_tree_sha_raises_error(self):
+    @pytest.mark.parametrize(
+        "tree_sha",
+        [
+            pytest.param("not-valid-sha", id="bad-format"),
+            pytest.param("a" * 39, id="wrong-length"),
+        ],
+    )
+    def test_chunk_invalid_tree_sha(self, tree_sha):
         """Test that invalid tree_sha format raises ValueError."""
         with pytest.raises(ValueError, match="Invalid git SHA.*tree_sha"):
-            self._make_chunk(tree_sha="not-valid-sha")
-
-    def test_chunk_tree_sha_wrong_length_raises_error(self):
-        """Test that tree_sha with wrong length raises ValueError."""
-        with pytest.raises(ValueError, match="Invalid git SHA.*tree_sha"):
-            self._make_chunk(tree_sha="a" * 39)  # One char too short
+            self._make_chunk(tree_sha=tree_sha)
 
 
 # =============================================================================
@@ -827,36 +807,45 @@ class TestSearchExplanationScoreValidation:
         assert explanation.bm25_score == 0.0
         assert explanation.vector_score == 1.0
 
-    def test_negative_fused_score_raises_error(self):
-        """Test that negative fused_score raises ValueError."""
-        with pytest.raises(ValueError, match="fused_score must be between"):
-            SearchExplanation(fused_score=-0.1)
-
-    def test_fused_score_above_one_raises_error(self):
-        """Test that fused_score > 1.0 raises ValueError."""
-        with pytest.raises(ValueError, match="fused_score must be between"):
-            SearchExplanation(fused_score=1.5)
-
-    def test_negative_bm25_score_raises_error(self):
-        """Test that negative bm25_score raises ValueError."""
-        with pytest.raises(ValueError, match="bm25_score must be non-negative"):
-            SearchExplanation(fused_score=0.5, bm25_score=-0.1)
+    @pytest.mark.parametrize(
+        "kwargs, error_match",
+        [
+            pytest.param(
+                {"fused_score": -0.1},
+                "fused_score must be between",
+                id="fused-negative",
+            ),
+            pytest.param(
+                {"fused_score": 1.5},
+                "fused_score must be between",
+                id="fused-above-one",
+            ),
+            pytest.param(
+                {"fused_score": 0.5, "bm25_score": -0.1},
+                "bm25_score must be non-negative",
+                id="bm25-negative",
+            ),
+            pytest.param(
+                {"fused_score": 0.5, "vector_score": -0.5},
+                "vector_score must be between",
+                id="vector-negative",
+            ),
+            pytest.param(
+                {"fused_score": 0.5, "vector_score": 2.0},
+                "vector_score must be between",
+                id="vector-above-one",
+            ),
+        ],
+    )
+    def test_invalid_scores_raise_error(self, kwargs, error_match):
+        """Test that out-of-range scores raise ValueError."""
+        with pytest.raises(ValueError, match=error_match):
+            SearchExplanation(**kwargs)
 
     def test_bm25_score_above_one_valid(self):
         """Test that bm25_score > 1.0 is valid (raw FTS5 scores are unbounded)."""
-        # BM25 scores from SQLite FTS5 are raw, unbounded positive values
         explanation = SearchExplanation(fused_score=0.5, bm25_score=10.378)
         assert explanation.bm25_score == 10.378
-
-    def test_negative_vector_score_raises_error(self):
-        """Test that negative vector_score raises ValueError."""
-        with pytest.raises(ValueError, match="vector_score must be between"):
-            SearchExplanation(fused_score=0.5, vector_score=-0.5)
-
-    def test_vector_score_above_one_raises_error(self):
-        """Test that vector_score > 1.0 raises ValueError."""
-        with pytest.raises(ValueError, match="vector_score must be between"):
-            SearchExplanation(fused_score=0.5, vector_score=2.0)
 
 
 # =============================================================================
@@ -1014,42 +1003,43 @@ class TestChunkValidatorsInIsolation:
     one of the success criteria for #352.
     """
 
-    def test_validate_line_numbers_valid(self):
+    @pytest.mark.parametrize(
+        "start, end",
+        [pytest.param(1, 10, id="normal"), pytest.param(5, 5, id="single-line")],
+    )
+    def test_validate_line_numbers_valid(self, start, end):
         """Test _validate_line_numbers accepts valid values."""
-        # Should not raise
-        Chunk._validate_line_numbers(1, 10)
-        Chunk._validate_line_numbers(5, 5)  # Single line
+        Chunk._validate_line_numbers(start, end)  # Should not raise
 
-    def test_validate_line_numbers_zero_start(self):
-        """Test _validate_line_numbers rejects zero start_line."""
-        with pytest.raises(ValueError, match="Line numbers must be >= 1"):
-            Chunk._validate_line_numbers(0, 10)
+    @pytest.mark.parametrize(
+        "start, end, error_match",
+        [
+            pytest.param(0, 10, "Line numbers must be >= 1", id="zero-start"),
+            pytest.param(1, 0, "Line numbers must be >= 1", id="zero-end"),
+            pytest.param(20, 10, "start_line.*>.*end_line", id="start-gt-end"),
+        ],
+    )
+    def test_validate_line_numbers_invalid(self, start, end, error_match):
+        """Test _validate_line_numbers rejects invalid values."""
+        with pytest.raises(ValueError, match=error_match):
+            Chunk._validate_line_numbers(start, end)
 
-    def test_validate_line_numbers_zero_end(self):
-        """Test _validate_line_numbers rejects zero end_line."""
-        with pytest.raises(ValueError, match="Line numbers must be >= 1"):
-            Chunk._validate_line_numbers(1, 0)
-
-    def test_validate_line_numbers_start_greater_than_end(self):
-        """Test _validate_line_numbers rejects start > end."""
-        with pytest.raises(ValueError, match="start_line.*>.*end_line"):
-            Chunk._validate_line_numbers(20, 10)
-
-    def test_validate_content_valid(self):
+    @pytest.mark.parametrize(
+        "content",
+        [pytest.param("code", id="simple"), pytest.param("  code  ", id="padded")],
+    )
+    def test_validate_content_valid(self, content):
         """Test _validate_content accepts non-empty content."""
-        # Should not raise
-        Chunk._validate_content("code")
-        Chunk._validate_content("  code  ")
+        Chunk._validate_content(content)  # Should not raise
 
-    def test_validate_content_empty(self):
-        """Test _validate_content rejects empty content."""
+    @pytest.mark.parametrize(
+        "content",
+        [pytest.param("", id="empty"), pytest.param("   \n\t  ", id="whitespace-only")],
+    )
+    def test_validate_content_invalid(self, content):
+        """Test _validate_content rejects empty/whitespace content."""
         with pytest.raises(ValueError, match="content cannot be empty"):
-            Chunk._validate_content("")
-
-    def test_validate_content_whitespace_only(self):
-        """Test _validate_content rejects whitespace-only content."""
-        with pytest.raises(ValueError, match="content cannot be empty"):
-            Chunk._validate_content("   \n\t  ")
+            Chunk._validate_content(content)
 
     def test_validate_blake3_hash_valid(self):
         """Test _validate_blake3_hash accepts valid hash."""
@@ -1090,37 +1080,36 @@ class TestQueryValidatorsInIsolation:
     These tests verify that validation logic is testable in isolation.
     """
 
-    def test_validate_text_valid(self):
+    @pytest.mark.parametrize(
+        "text",
+        [pytest.param("search term", id="normal"), pytest.param("  search  ", id="padded")],
+    )
+    def test_validate_text_valid(self, text):
         """Test _validate_text accepts non-empty text."""
-        # Should not raise
-        Query._validate_text("search term")
-        Query._validate_text("  search  ")
+        Query._validate_text(text)  # Should not raise
 
-    def test_validate_text_empty(self):
-        """Test _validate_text rejects empty text."""
+    @pytest.mark.parametrize(
+        "text",
+        [pytest.param("", id="empty"), pytest.param("   ", id="whitespace-only")],
+    )
+    def test_validate_text_invalid(self, text):
+        """Test _validate_text rejects empty/whitespace text."""
         with pytest.raises(ValueError, match="Query text cannot be empty"):
-            Query._validate_text("")
+            Query._validate_text(text)
 
-    def test_validate_text_whitespace_only(self):
-        """Test _validate_text rejects whitespace-only text."""
-        with pytest.raises(ValueError, match="Query text cannot be empty"):
-            Query._validate_text("   ")
-
-    def test_validate_topk_valid(self):
+    @pytest.mark.parametrize("topk", [1, 100])
+    def test_validate_topk_valid(self, topk):
         """Test _validate_topk accepts positive values."""
-        # Should not raise
-        Query._validate_topk(1)
-        Query._validate_topk(100)
+        Query._validate_topk(topk)  # Should not raise
 
-    def test_validate_topk_zero(self):
-        """Test _validate_topk rejects zero."""
+    @pytest.mark.parametrize(
+        "topk",
+        [pytest.param(0, id="zero"), pytest.param(-5, id="negative")],
+    )
+    def test_validate_topk_invalid(self, topk):
+        """Test _validate_topk rejects non-positive values."""
         with pytest.raises(ValueError, match="topk must be positive"):
-            Query._validate_topk(0)
-
-    def test_validate_topk_negative(self):
-        """Test _validate_topk rejects negative values."""
-        with pytest.raises(ValueError, match="topk must be positive"):
-            Query._validate_topk(-5)
+            Query._validate_topk(topk)
 
     # Note: _normalize_path_filter and _normalize_lang_filter methods were removed
     # in favor of the from_strings() factory method. See TestQueryFromStrings.
@@ -1177,38 +1166,27 @@ class TestSearchResultValidation:
         result_one = SearchResult(chunk=chunk, score=1.0, rank=1)
         assert result_one.score == 1.0
 
-    def test_negative_score_raises_error(self):
-        """Test that negative score raises ValueError."""
+    @pytest.mark.parametrize(
+        "score, rank, error_match",
+        [
+            pytest.param(-0.1, 1, "score must be 0.0-1.0", id="score-negative"),
+            pytest.param(1.5, 1, "score must be 0.0-1.0", id="score-above-one"),
+            pytest.param(0.5, 0, "rank must be positive", id="rank-zero"),
+            pytest.param(0.5, -1, "rank must be positive", id="rank-negative"),
+        ],
+    )
+    def test_invalid_score_or_rank(self, score, rank, error_match):
+        """Test that invalid score/rank values raise ValueError."""
         chunk = self._make_chunk()
-        with pytest.raises(ValueError, match="score must be 0.0-1.0"):
-            SearchResult(chunk=chunk, score=-0.1, rank=1)
+        with pytest.raises(ValueError, match=error_match):
+            SearchResult(chunk=chunk, score=score, rank=rank)
 
-    def test_score_above_one_raises_error(self):
-        """Test that score > 1.0 raises ValueError."""
-        chunk = self._make_chunk()
-        with pytest.raises(ValueError, match="score must be 0.0-1.0"):
-            SearchResult(chunk=chunk, score=1.5, rank=1)
-
-    def test_rank_positive_valid(self):
+    @pytest.mark.parametrize("rank", [1, 100])
+    def test_rank_positive_valid(self, rank):
         """Test that positive rank values are valid."""
         chunk = self._make_chunk()
-        result = SearchResult(chunk=chunk, score=0.5, rank=1)
-        assert result.rank == 1
-
-        result = SearchResult(chunk=chunk, score=0.5, rank=100)
-        assert result.rank == 100
-
-    def test_rank_zero_raises_error(self):
-        """Test that rank=0 raises ValueError (1-indexed)."""
-        chunk = self._make_chunk()
-        with pytest.raises(ValueError, match="rank must be positive"):
-            SearchResult(chunk=chunk, score=0.5, rank=0)
-
-    def test_rank_negative_raises_error(self):
-        """Test that negative rank raises ValueError."""
-        chunk = self._make_chunk()
-        with pytest.raises(ValueError, match="rank must be positive"):
-            SearchResult(chunk=chunk, score=0.5, rank=-1)
+        result = SearchResult(chunk=chunk, score=0.5, rank=rank)
+        assert result.rank == rank
 
     def test_multiple_invalid_values(self):
         """Test error with both invalid score and rank."""
@@ -1242,16 +1220,20 @@ class TestSearchResultImmutability:
             rev="HEAD",
         )
 
-    def test_search_result_is_frozen(self):
+    @pytest.mark.parametrize(
+        "attr, value",
+        [
+            pytest.param("score", 0.9, id="score"),
+            pytest.param("rank", 2, id="rank"),
+            pytest.param("preview", "new preview", id="preview"),
+        ],
+    )
+    def test_search_result_is_frozen(self, attr, value):
         """Test that SearchResult instances cannot be modified after creation."""
         chunk = self._make_chunk()
         result = SearchResult(chunk=chunk, score=0.5, rank=1)
         with pytest.raises(AttributeError):
-            result.score = 0.9
-        with pytest.raises(AttributeError):
-            result.rank = 2
-        with pytest.raises(AttributeError):
-            result.preview = "new preview"
+            setattr(result, attr, value)
 
     def test_search_result_hashable(self):
         """Test that frozen SearchResult is hashable."""
@@ -1271,35 +1253,30 @@ class TestSearchResultValidatorsInIsolation:
     These tests verify that validation logic is testable in isolation.
     """
 
-    def test_validate_score_valid(self):
+    @pytest.mark.parametrize("score", [0.0, 0.5, 1.0])
+    def test_validate_score_valid(self, score):
         """Test _validate_score accepts valid values."""
-        # Should not raise
-        SearchResult._validate_score(0.0)
-        SearchResult._validate_score(0.5)
-        SearchResult._validate_score(1.0)
+        SearchResult._validate_score(score)  # Should not raise
 
-    def test_validate_score_negative(self):
-        """Test _validate_score rejects negative values."""
+    @pytest.mark.parametrize(
+        "score",
+        [pytest.param(-0.1, id="negative"), pytest.param(1.01, id="above-one")],
+    )
+    def test_validate_score_invalid(self, score):
+        """Test _validate_score rejects out-of-range values."""
         with pytest.raises(ValueError, match="score must be 0.0-1.0"):
-            SearchResult._validate_score(-0.1)
+            SearchResult._validate_score(score)
 
-    def test_validate_score_above_one(self):
-        """Test _validate_score rejects values > 1.0."""
-        with pytest.raises(ValueError, match="score must be 0.0-1.0"):
-            SearchResult._validate_score(1.01)
-
-    def test_validate_rank_valid(self):
+    @pytest.mark.parametrize("rank", [1, 100])
+    def test_validate_rank_valid(self, rank):
         """Test _validate_rank accepts positive values."""
-        # Should not raise
-        SearchResult._validate_rank(1)
-        SearchResult._validate_rank(100)
+        SearchResult._validate_rank(rank)  # Should not raise
 
-    def test_validate_rank_zero(self):
-        """Test _validate_rank rejects zero."""
+    @pytest.mark.parametrize(
+        "rank",
+        [pytest.param(0, id="zero"), pytest.param(-5, id="negative")],
+    )
+    def test_validate_rank_invalid(self, rank):
+        """Test _validate_rank rejects non-positive values."""
         with pytest.raises(ValueError, match="rank must be positive"):
-            SearchResult._validate_rank(0)
-
-    def test_validate_rank_negative(self):
-        """Test _validate_rank rejects negative values."""
-        with pytest.raises(ValueError, match="rank must be positive"):
-            SearchResult._validate_rank(-5)
+            SearchResult._validate_rank(rank)

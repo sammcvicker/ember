@@ -171,86 +171,73 @@ class TestHandleCliErrorsDecorator:
 class TestGetTargetedSyncHint:
     """Tests for _get_targeted_sync_hint function."""
 
-    def test_database_corruption_hint_suggests_reindex(self) -> None:
-        """Database corruption error should suggest --reindex."""
+    @pytest.mark.parametrize(
+        "error_message, expected_keyword",
+        [
+            pytest.param(
+                "database disk image is malformed",
+                "reindex",
+                id="db-corruption",
+            ),
+            pytest.param(
+                "file is not a database",
+                "reindex",
+                id="not-a-database",
+            ),
+            pytest.param(
+                "Embedding model changed",
+                "init",
+                id="model-mismatch",
+            ),
+            pytest.param(
+                "Vector dimension mismatch: expected 768, got 384",
+                "init|reindex",
+                id="dimension-mismatch",
+            ),
+            pytest.param(
+                "Permission denied: /path/to/file",
+                "permission",
+                id="permission-denied",
+            ),
+            pytest.param(
+                "Access denied to file.db",
+                "permission",
+                id="access-denied",
+            ),
+            pytest.param(
+                "No space left on device",
+                "space|disk",
+                id="disk-full",
+            ),
+            pytest.param(
+                "database is locked",
+                "wait|retry",
+                id="db-locked",
+            ),
+            pytest.param(
+                "database table is busy",
+                "wait|retry",
+                id="db-busy",
+            ),
+            pytest.param(
+                "Some unknown error occurred",
+                "verbose",
+                id="generic-error",
+            ),
+        ],
+    )
+    def test_get_targeted_sync_hint(self, error_message, expected_keyword) -> None:
+        """Test that error messages produce hints containing expected keywords."""
         from ember.entrypoints.cli import _get_targeted_sync_hint
 
-        hint = _get_targeted_sync_hint("database disk image is malformed")
+        hint = _get_targeted_sync_hint(error_message)
+        hint_lower = hint.lower()
 
-        assert "reindex" in hint.lower()
-
-    def test_database_not_a_database_suggests_reindex(self) -> None:
-        """'not a database' error should suggest --reindex."""
-        from ember.entrypoints.cli import _get_targeted_sync_hint
-
-        hint = _get_targeted_sync_hint("file is not a database")
-
-        assert "reindex" in hint.lower()
-
-    def test_model_mismatch_in_response_suggests_init_force(self) -> None:
-        """Model mismatch in error response should suggest init --force."""
-        from ember.entrypoints.cli import _get_targeted_sync_hint
-
-        hint = _get_targeted_sync_hint("Embedding model changed")
-
-        assert "init" in hint.lower()
-
-    def test_model_dimension_mismatch_suggests_init_force(self) -> None:
-        """Model dimension mismatch should suggest init --force."""
-        from ember.entrypoints.cli import _get_targeted_sync_hint
-
-        hint = _get_targeted_sync_hint("Vector dimension mismatch: expected 768, got 384")
-
-        # Should suggest reindex since 'mismatch' is detected
-        assert "init" in hint.lower() or "reindex" in hint.lower()
-
-    def test_permission_error_in_response_suggests_check_permissions(self) -> None:
-        """Permission error in response should suggest checking permissions."""
-        from ember.entrypoints.cli import _get_targeted_sync_hint
-
-        hint = _get_targeted_sync_hint("Permission denied: /path/to/file")
-
-        assert "permission" in hint.lower()
-
-    def test_access_denied_in_response_suggests_check_permissions(self) -> None:
-        """Access denied error should suggest checking permissions."""
-        from ember.entrypoints.cli import _get_targeted_sync_hint
-
-        hint = _get_targeted_sync_hint("Access denied to file.db")
-
-        assert "permission" in hint.lower()
-
-    def test_disk_full_in_response_suggests_free_space(self) -> None:
-        """Disk full error in response should suggest freeing space."""
-        from ember.entrypoints.cli import _get_targeted_sync_hint
-
-        hint = _get_targeted_sync_hint("No space left on device")
-
-        assert "space" in hint.lower() or "disk" in hint.lower()
-
-    def test_database_locked_suggests_wait_retry(self) -> None:
-        """Database locked error should suggest waiting and retrying."""
-        from ember.entrypoints.cli import _get_targeted_sync_hint
-
-        hint = _get_targeted_sync_hint("database is locked")
-
-        assert "wait" in hint.lower() or "retry" in hint.lower()
-
-    def test_database_busy_suggests_wait_retry(self) -> None:
-        """Database busy error should suggest waiting and retrying."""
-        from ember.entrypoints.cli import _get_targeted_sync_hint
-
-        hint = _get_targeted_sync_hint("database table is busy")
-
-        assert "wait" in hint.lower() or "retry" in hint.lower()
-
-    def test_generic_error_suggests_verbose(self) -> None:
-        """Generic error in response should suggest --verbose."""
-        from ember.entrypoints.cli import _get_targeted_sync_hint
-
-        hint = _get_targeted_sync_hint("Some unknown error occurred")
-
-        assert "verbose" in hint.lower()
+        # expected_keyword can be "keyword1|keyword2" meaning either must match
+        keywords = expected_keyword.split("|")
+        assert any(
+            kw in hint_lower for kw in keywords
+        ), f"Expected one of {keywords} in hint: {hint!r}"
 
 
 class TestSyncCommandErrorIntegration:

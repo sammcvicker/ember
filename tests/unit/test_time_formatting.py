@@ -2,85 +2,36 @@
 
 from datetime import UTC, datetime
 
+import pytest
+
 from ember.core.status.time_format import format_time_ago
 
 
 class TestFormatTimeAgo:
     """Tests for format_time_ago function."""
 
-    def test_just_now_for_seconds(self) -> None:
-        """Test that recent timestamps show 'just now'."""
+    @pytest.mark.parametrize(
+        "seconds_ago, expected",
+        [
+            pytest.param(5, "just now", id="5-seconds"),
+            pytest.param(45, "just now", id="45-seconds"),
+            pytest.param(60, "1 min ago", id="1-minute"),
+            pytest.param(300, "5 min ago", id="5-minutes"),
+            pytest.param(3600, "1 hour ago", id="1-hour"),
+            pytest.param(7200, "2 hours ago", id="2-hours"),
+            pytest.param(86400, "1 day ago", id="1-day"),
+            pytest.param(172800, "2 days ago", id="2-days"),
+            pytest.param(7 * 86400, "1 week ago", id="1-week"),
+            pytest.param(14 * 86400, "2 weeks ago", id="2-weeks"),
+            pytest.param(30 * 86400, "1 month ago", id="1-month"),
+            pytest.param(60 * 86400, "2 months ago", id="2-months"),
+        ],
+    )
+    def test_format_time_ago(self, seconds_ago: int, expected: str) -> None:
+        """Test time formatting for various durations."""
         now = datetime.now(UTC)
-        # 5 seconds ago
-        timestamp = now.timestamp() - 5
-        assert format_time_ago(timestamp) == "just now"
-
-    def test_just_now_for_under_minute(self) -> None:
-        """Test that timestamps under 1 minute show 'just now'."""
-        now = datetime.now(UTC)
-        # 45 seconds ago
-        timestamp = now.timestamp() - 45
-        assert format_time_ago(timestamp) == "just now"
-
-    def test_one_minute_ago(self) -> None:
-        """Test that 1 minute shows singular form."""
-        now = datetime.now(UTC)
-        timestamp = now.timestamp() - 60
-        assert format_time_ago(timestamp) == "1 min ago"
-
-    def test_minutes_ago(self) -> None:
-        """Test that multiple minutes show plural form."""
-        now = datetime.now(UTC)
-        timestamp = now.timestamp() - 300  # 5 minutes
-        assert format_time_ago(timestamp) == "5 min ago"
-
-    def test_one_hour_ago(self) -> None:
-        """Test that 1 hour shows singular form."""
-        now = datetime.now(UTC)
-        timestamp = now.timestamp() - 3600  # 1 hour
-        assert format_time_ago(timestamp) == "1 hour ago"
-
-    def test_hours_ago(self) -> None:
-        """Test that multiple hours show plural form."""
-        now = datetime.now(UTC)
-        timestamp = now.timestamp() - 7200  # 2 hours
-        assert format_time_ago(timestamp) == "2 hours ago"
-
-    def test_one_day_ago(self) -> None:
-        """Test that 1 day shows singular form."""
-        now = datetime.now(UTC)
-        timestamp = now.timestamp() - 86400  # 1 day
-        assert format_time_ago(timestamp) == "1 day ago"
-
-    def test_days_ago(self) -> None:
-        """Test that multiple days show plural form."""
-        now = datetime.now(UTC)
-        timestamp = now.timestamp() - 172800  # 2 days
-        assert format_time_ago(timestamp) == "2 days ago"
-
-    def test_one_week_ago(self) -> None:
-        """Test that 7+ days switches to weeks."""
-        now = datetime.now(UTC)
-        timestamp = now.timestamp() - (7 * 86400)  # 7 days
-        assert format_time_ago(timestamp) == "1 week ago"
-
-    def test_weeks_ago(self) -> None:
-        """Test that multiple weeks show plural form."""
-        now = datetime.now(UTC)
-        timestamp = now.timestamp() - (14 * 86400)  # 14 days
-        assert format_time_ago(timestamp) == "2 weeks ago"
-
-    def test_one_month_ago(self) -> None:
-        """Test that 30+ days switches to months."""
-        now = datetime.now(UTC)
-        timestamp = now.timestamp() - (30 * 86400)  # 30 days
-        assert format_time_ago(timestamp) == "1 month ago"
-
-    def test_months_ago(self) -> None:
-        """Test that multiple months show plural form."""
-        now = datetime.now(UTC)
-        timestamp = now.timestamp() - (60 * 86400)  # 60 days
-        assert format_time_ago(timestamp) == "2 months ago"
+        timestamp = now.timestamp() - seconds_ago
+        assert format_time_ago(timestamp) == expected
 
     def test_none_returns_none(self) -> None:
         """Test that None input returns None."""

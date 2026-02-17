@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Adopted `pytest.mark.parametrize` across 5 test files** (#434)
+  - Replaced repetitive test methods with parametrized tests in model registry, entities, time formatting, sync error hints, and config validation tests
+  - Net reduction in test LOC while increasing test case count (305 -> 335 individual test invocations across refactored files)
+  - Improved test readability with descriptive `pytest.param` IDs
+
 ### Added
 - **`--json` output flag for `status`, `config show`, and `daemon status` commands** (#442)
   - `ember status --json` outputs `{"files": N, "chunks": N, "model": "...", "stale": bool, "last_sync": "ISO8601"}`

@@ -22,71 +22,93 @@ from ember.adapters.local_models.registry import (
 class TestBuildEmbedderKwargs:
     """Tests for _build_embedder_kwargs helper function."""
 
-    def test_batch_size_always_included(self):
-        """Test that batch_size is always in kwargs."""
-        result = _build_embedder_kwargs(batch_size=32, device=None, max_seq_length=None)
-        assert result == {"batch_size": 32}
-
-    def test_device_included_when_not_none(self):
-        """Test that device is included when provided."""
-        result = _build_embedder_kwargs(batch_size=32, device="cuda", max_seq_length=None)
-        assert result == {"batch_size": 32, "device": "cuda"}
-
-    def test_max_seq_length_included_when_not_none(self):
-        """Test that max_seq_length is included when provided."""
-        result = _build_embedder_kwargs(batch_size=32, device=None, max_seq_length=512)
-        assert result == {"batch_size": 32, "max_seq_length": 512}
-
-    def test_all_params_included_when_provided(self):
-        """Test that all params are included when provided."""
-        result = _build_embedder_kwargs(batch_size=64, device="mps", max_seq_length=256)
-        assert result == {"batch_size": 64, "device": "mps", "max_seq_length": 256}
-
-    def test_device_cpu(self):
-        """Test that device=cpu works correctly."""
-        result = _build_embedder_kwargs(batch_size=32, device="cpu", max_seq_length=None)
-        assert result == {"batch_size": 32, "device": "cpu"}
+    @pytest.mark.parametrize(
+        "batch_size, device, max_seq_length, expected",
+        [
+            pytest.param(32, None, None, {"batch_size": 32}, id="batch-only"),
+            pytest.param(
+                32, "cuda", None, {"batch_size": 32, "device": "cuda"}, id="with-cuda"
+            ),
+            pytest.param(
+                32, None, 512, {"batch_size": 32, "max_seq_length": 512}, id="with-seq-len"
+            ),
+            pytest.param(
+                64,
+                "mps",
+                256,
+                {"batch_size": 64, "device": "mps", "max_seq_length": 256},
+                id="all-params",
+            ),
+            pytest.param(
+                32, "cpu", None, {"batch_size": 32, "device": "cpu"}, id="with-cpu"
+            ),
+        ],
+    )
+    def test_build_embedder_kwargs(self, batch_size, device, max_seq_length, expected):
+        """Test _build_embedder_kwargs returns correct kwargs for given inputs."""
+        result = _build_embedder_kwargs(
+            batch_size=batch_size, device=device, max_seq_length=max_seq_length
+        )
+        assert result == expected
 
 
 class TestResolveModelName:
     """Tests for resolve_model_name function."""
 
-    def test_resolve_preset_jina_code_v2(self):
-        """Test resolving jina-code-v2 preset."""
-        assert resolve_model_name("jina-code-v2") == "jinaai/jina-embeddings-v2-base-code"
-
-    def test_resolve_preset_minilm(self):
-        """Test resolving minilm preset."""
-        assert resolve_model_name("minilm") == "sentence-transformers/all-MiniLM-L6-v2"
-
-    def test_resolve_preset_bge_small(self):
-        """Test resolving bge-small preset."""
-        assert resolve_model_name("bge-small") == "BAAI/bge-small-en-v1.5"
-
-    def test_resolve_preset_case_insensitive(self):
-        """Test that preset names are case-insensitive."""
-        assert resolve_model_name("MINILM") == "sentence-transformers/all-MiniLM-L6-v2"
-        assert resolve_model_name("MiniLM") == "sentence-transformers/all-MiniLM-L6-v2"
-        assert resolve_model_name("BGE-SMALL") == "BAAI/bge-small-en-v1.5"
-
-    def test_resolve_legacy_default_name(self):
-        """Test resolving legacy 'local-default-code-embed' name."""
-        assert (
-            resolve_model_name("local-default-code-embed")
-            == "jinaai/jina-embeddings-v2-base-code"
-        )
-
-    def test_resolve_full_huggingface_id(self):
-        """Test resolving full HuggingFace model ID."""
-        assert (
-            resolve_model_name("jinaai/jina-embeddings-v2-base-code")
-            == "jinaai/jina-embeddings-v2-base-code"
-        )
-        assert (
-            resolve_model_name("sentence-transformers/all-MiniLM-L6-v2")
-            == "sentence-transformers/all-MiniLM-L6-v2"
-        )
-        assert resolve_model_name("BAAI/bge-small-en-v1.5") == "BAAI/bge-small-en-v1.5"
+    @pytest.mark.parametrize(
+        "input_name, expected_id",
+        [
+            pytest.param(
+                "jina-code-v2",
+                "jinaai/jina-embeddings-v2-base-code",
+                id="preset-jina",
+            ),
+            pytest.param(
+                "minilm",
+                "sentence-transformers/all-MiniLM-L6-v2",
+                id="preset-minilm",
+            ),
+            pytest.param(
+                "bge-small", "BAAI/bge-small-en-v1.5", id="preset-bge"
+            ),
+            pytest.param(
+                "MINILM",
+                "sentence-transformers/all-MiniLM-L6-v2",
+                id="case-insensitive-upper",
+            ),
+            pytest.param(
+                "MiniLM",
+                "sentence-transformers/all-MiniLM-L6-v2",
+                id="case-insensitive-mixed",
+            ),
+            pytest.param(
+                "BGE-SMALL", "BAAI/bge-small-en-v1.5", id="case-insensitive-bge"
+            ),
+            pytest.param(
+                "local-default-code-embed",
+                "jinaai/jina-embeddings-v2-base-code",
+                id="legacy-name",
+            ),
+            pytest.param(
+                "jinaai/jina-embeddings-v2-base-code",
+                "jinaai/jina-embeddings-v2-base-code",
+                id="full-hf-id-jina",
+            ),
+            pytest.param(
+                "sentence-transformers/all-MiniLM-L6-v2",
+                "sentence-transformers/all-MiniLM-L6-v2",
+                id="full-hf-id-minilm",
+            ),
+            pytest.param(
+                "BAAI/bge-small-en-v1.5",
+                "BAAI/bge-small-en-v1.5",
+                id="full-hf-id-bge",
+            ),
+        ],
+    )
+    def test_resolve_model_name(self, input_name, expected_id):
+        """Test resolving various model name formats to full HuggingFace IDs."""
+        assert resolve_model_name(input_name) == expected_id
 
     def test_resolve_unknown_model_raises_error(self):
         """Test that unknown model names raise ValueError."""
@@ -203,37 +225,52 @@ class TestCreateEmbedder:
 class TestGetModelInfo:
     """Tests for get_model_info function."""
 
-    def test_get_jina_info(self):
-        """Test getting info for Jina model."""
-        info = get_model_info("jina-code-v2")
-        assert info["name"] == "jinaai/jina-embeddings-v2-base-code"
-        assert info["dim"] == 768
-        assert info["params"] == "161M"
-        assert info["preset"] == "jina-code-v2"
-
-    def test_get_minilm_info(self):
-        """Test getting info for MiniLM model."""
-        info = get_model_info("minilm")
-        assert info["name"] == "sentence-transformers/all-MiniLM-L6-v2"
-        assert info["dim"] == 384
-        assert info["params"] == "22M"
-        assert info["preset"] == "minilm"
-
-    def test_get_bge_info(self):
-        """Test getting info for BGE-small model."""
-        info = get_model_info("bge-small")
-        assert info["name"] == "BAAI/bge-small-en-v1.5"
-        assert info["dim"] == 384
-        assert info["params"] == "33M"
-        assert info["preset"] == "bge-small"
-
-    def test_get_info_by_huggingface_id(self):
-        """Test getting info using full HuggingFace ID."""
-        info = get_model_info("jinaai/jina-embeddings-v2-base-code")
-        assert info["name"] == "jinaai/jina-embeddings-v2-base-code"
-        assert info["dim"] == 768
-        # Preset should be None when using full ID
-        assert info["preset"] is None
+    @pytest.mark.parametrize(
+        "input_name, expected_name, expected_dim, expected_params, expected_preset",
+        [
+            pytest.param(
+                "jina-code-v2",
+                "jinaai/jina-embeddings-v2-base-code",
+                768,
+                "161M",
+                "jina-code-v2",
+                id="jina-preset",
+            ),
+            pytest.param(
+                "minilm",
+                "sentence-transformers/all-MiniLM-L6-v2",
+                384,
+                "22M",
+                "minilm",
+                id="minilm-preset",
+            ),
+            pytest.param(
+                "bge-small",
+                "BAAI/bge-small-en-v1.5",
+                384,
+                "33M",
+                "bge-small",
+                id="bge-preset",
+            ),
+            pytest.param(
+                "jinaai/jina-embeddings-v2-base-code",
+                "jinaai/jina-embeddings-v2-base-code",
+                768,
+                "161M",
+                None,
+                id="full-hf-id",
+            ),
+        ],
+    )
+    def test_get_model_info(
+        self, input_name, expected_name, expected_dim, expected_params, expected_preset
+    ):
+        """Test getting model info by preset name or full HuggingFace ID."""
+        info = get_model_info(input_name)
+        assert info["name"] == expected_name
+        assert info["dim"] == expected_dim
+        assert info["params"] == expected_params
+        assert info["preset"] == expected_preset
 
     def test_get_info_unknown_model_raises_error(self):
         """Test that unknown model names raise ValueError."""
@@ -406,45 +443,30 @@ class TestIsModelCached:
 
             assert result is False
 
-    def test_resolves_preset_to_full_model_id(self):
-        """Test that preset names are resolved to full model IDs."""
+    @pytest.mark.parametrize(
+        "preset, expected_model_id",
+        [
+            pytest.param(
+                "minilm", "sentence-transformers/all-MiniLM-L6-v2", id="minilm"
+            ),
+            pytest.param(
+                "jina-code-v2",
+                "jinaai/jina-embeddings-v2-base-code",
+                id="jina",
+            ),
+            pytest.param("bge-small", "BAAI/bge-small-en-v1.5", id="bge"),
+        ],
+    )
+    def test_resolves_preset_to_full_model_id(self, preset, expected_model_id):
+        """Test that preset names are resolved to full model IDs for cache check."""
         with patch(
             "ember.adapters.local_models.registry.try_to_load_from_cache"
         ) as mock_cache:
             mock_cache.return_value = "/path/to/cached/config.json"
 
-            is_model_cached("minilm")
+            is_model_cached(preset)
 
-            # Should resolve "minilm" to full model ID
-            mock_cache.assert_called_once_with(
-                "sentence-transformers/all-MiniLM-L6-v2", "config.json"
-            )
-
-    def test_resolves_jina_preset(self):
-        """Test that jina-code-v2 preset is resolved correctly."""
-        with patch(
-            "ember.adapters.local_models.registry.try_to_load_from_cache"
-        ) as mock_cache:
-            mock_cache.return_value = "/path/to/cached/config.json"
-
-            is_model_cached("jina-code-v2")
-
-            mock_cache.assert_called_once_with(
-                "jinaai/jina-embeddings-v2-base-code", "config.json"
-            )
-
-    def test_resolves_bge_preset(self):
-        """Test that bge-small preset is resolved correctly."""
-        with patch(
-            "ember.adapters.local_models.registry.try_to_load_from_cache"
-        ) as mock_cache:
-            mock_cache.return_value = "/path/to/cached/config.json"
-
-            is_model_cached("bge-small")
-
-            mock_cache.assert_called_once_with(
-                "BAAI/bge-small-en-v1.5", "config.json"
-            )
+            mock_cache.assert_called_once_with(expected_model_id, "config.json")
 
     def test_falls_back_to_directory_check_on_import_error(self, tmp_path):
         """Test falls back to directory check when huggingface_hub fails to import."""
