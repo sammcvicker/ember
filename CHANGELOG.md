@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Schema migration is now safe against partial failure** (#436)
+  - Database is backed up (via `shutil.copy`) before any migration runs
+  - Added `migration_history` table to track which migrations have been applied
+  - All migration steps are idempotent: safe to re-run after crash or power failure
+  - Only rows with NULL `chunk_id` are backfilled on re-run (no duplicate work)
+  - Index creation uses `IF NOT EXISTS` to avoid errors on retry
+
 - **Corrupted vector BLOBs now produce clear errors instead of crashing** (#443)
   - Added `CorruptedVectorError` with chunk ID context, expected vs actual byte sizes, and remediation hint
   - Dimension validation before `struct.unpack()` catches size mismatches early
