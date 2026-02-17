@@ -33,43 +33,43 @@ class TestIndexConfigValidation:
         assert config.line_stride == 150
         assert config.overlap_lines == 20
 
-    def test_index_config_line_window_zero_raises_error(self):
-        """Test that line_window=0 raises ValueError."""
-        with pytest.raises(ValueError, match="line_window must be positive"):
-            IndexConfig(line_window=0)
-
-    def test_index_config_line_window_negative_raises_error(self):
-        """Test that negative line_window raises ValueError."""
-        with pytest.raises(ValueError, match="line_window must be positive"):
-            IndexConfig(line_window=-10)
-
-    def test_index_config_line_stride_zero_raises_error(self):
-        """Test that line_stride=0 raises ValueError."""
-        with pytest.raises(ValueError, match="line_stride must be positive"):
-            IndexConfig(line_stride=0)
-
-    def test_index_config_line_stride_negative_raises_error(self):
-        """Test that negative line_stride raises ValueError."""
-        with pytest.raises(ValueError, match="line_stride must be positive"):
-            IndexConfig(line_stride=-5)
-
-    def test_index_config_overlap_lines_negative_raises_error(self):
-        """Test that negative overlap_lines raises ValueError."""
-        with pytest.raises(ValueError, match="overlap_lines cannot be negative"):
-            IndexConfig(overlap_lines=-1)
+    @pytest.mark.parametrize(
+        "field, value, error_match",
+        [
+            pytest.param("line_window", 0, "line_window must be positive", id="window-zero"),
+            pytest.param(
+                "line_window", -10, "line_window must be positive", id="window-negative"
+            ),
+            pytest.param("line_stride", 0, "line_stride must be positive", id="stride-zero"),
+            pytest.param(
+                "line_stride", -5, "line_stride must be positive", id="stride-negative"
+            ),
+            pytest.param(
+                "overlap_lines",
+                -1,
+                "overlap_lines cannot be negative",
+                id="overlap-negative",
+            ),
+        ],
+    )
+    def test_index_config_invalid_single_field(self, field, value, error_match):
+        """Test that invalid single-field values raise ValueError."""
+        with pytest.raises(ValueError, match=error_match):
+            IndexConfig(**{field: value})
 
     def test_index_config_overlap_lines_zero_valid(self):
         """Test that overlap_lines=0 is valid (no overlap)."""
         config = IndexConfig(overlap_lines=0)
         assert config.overlap_lines == 0
 
-    def test_index_config_overlap_greater_than_window_raises_error(self):
+    @pytest.mark.parametrize(
+        "overlap",
+        [pytest.param(100, id="overlap-equals-window"), pytest.param(150, id="overlap-exceeds-window")],
+    )
+    def test_index_config_overlap_greater_than_or_equal_window_raises_error(self, overlap):
         """Test that overlap_lines >= line_window raises ValueError."""
         with pytest.raises(ValueError, match="overlap_lines.*must be less than.*line_window"):
-            IndexConfig(line_window=100, overlap_lines=100)
-
-        with pytest.raises(ValueError, match="overlap_lines.*must be less than.*line_window"):
-            IndexConfig(line_window=100, overlap_lines=150)
+            IndexConfig(line_window=100, overlap_lines=overlap)
 
     def test_index_config_stride_exceeds_window_raises_error(self):
         """Test that line_stride > line_window raises ValueError."""
@@ -166,54 +166,48 @@ class TestSearchConfigValidation:
         assert config.retrieval_pool_multiplier == 10
         assert config.min_retrieval_pool == 200
 
-    def test_search_config_topk_zero_raises_error(self):
-        """Test that topk=0 raises ValueError."""
-        with pytest.raises(ValueError, match="topk must be positive"):
-            SearchConfig(topk=0)
-
-    def test_search_config_topk_negative_raises_error(self):
-        """Test that negative topk raises ValueError."""
-        with pytest.raises(ValueError, match="topk must be positive"):
-            SearchConfig(topk=-5)
+    @pytest.mark.parametrize(
+        "field, value, error_match",
+        [
+            pytest.param("topk", 0, "topk must be positive", id="topk-zero"),
+            pytest.param("topk", -5, "topk must be positive", id="topk-negative"),
+            pytest.param("rrf_k", 0, "rrf_k must be positive", id="rrf-k-zero"),
+            pytest.param("rrf_k", -10, "rrf_k must be positive", id="rrf-k-negative"),
+            pytest.param(
+                "retrieval_pool_multiplier",
+                0,
+                "retrieval_pool_multiplier must be positive",
+                id="pool-multiplier-zero",
+            ),
+            pytest.param(
+                "retrieval_pool_multiplier",
+                -1,
+                "retrieval_pool_multiplier must be positive",
+                id="pool-multiplier-negative",
+            ),
+            pytest.param(
+                "min_retrieval_pool",
+                0,
+                "min_retrieval_pool must be positive",
+                id="min-pool-zero",
+            ),
+            pytest.param(
+                "min_retrieval_pool",
+                -50,
+                "min_retrieval_pool must be positive",
+                id="min-pool-negative",
+            ),
+        ],
+    )
+    def test_search_config_invalid_field(self, field, value, error_match):
+        """Test that invalid numeric fields raise ValueError."""
+        with pytest.raises(ValueError, match=error_match):
+            SearchConfig(**{field: value})
 
     def test_search_config_topk_one_valid(self):
         """Test that topk=1 is valid."""
         config = SearchConfig(topk=1)
         assert config.topk == 1
-
-    def test_search_config_rrf_k_zero_raises_error(self):
-        """Test that rrf_k=0 raises ValueError."""
-        with pytest.raises(ValueError, match="rrf_k must be positive"):
-            SearchConfig(rrf_k=0)
-
-    def test_search_config_rrf_k_negative_raises_error(self):
-        """Test that negative rrf_k raises ValueError."""
-        with pytest.raises(ValueError, match="rrf_k must be positive"):
-            SearchConfig(rrf_k=-10)
-
-    def test_search_config_retrieval_pool_multiplier_zero_raises_error(self):
-        """Test that retrieval_pool_multiplier=0 raises ValueError."""
-        with pytest.raises(
-            ValueError, match="retrieval_pool_multiplier must be positive"
-        ):
-            SearchConfig(retrieval_pool_multiplier=0)
-
-    def test_search_config_retrieval_pool_multiplier_negative_raises_error(self):
-        """Test that negative retrieval_pool_multiplier raises ValueError."""
-        with pytest.raises(
-            ValueError, match="retrieval_pool_multiplier must be positive"
-        ):
-            SearchConfig(retrieval_pool_multiplier=-1)
-
-    def test_search_config_min_retrieval_pool_zero_raises_error(self):
-        """Test that min_retrieval_pool=0 raises ValueError."""
-        with pytest.raises(ValueError, match="min_retrieval_pool must be positive"):
-            SearchConfig(min_retrieval_pool=0)
-
-    def test_search_config_min_retrieval_pool_negative_raises_error(self):
-        """Test that negative min_retrieval_pool raises ValueError."""
-        with pytest.raises(ValueError, match="min_retrieval_pool must be positive"):
-            SearchConfig(min_retrieval_pool=-50)
 
 
 # =============================================================================
@@ -234,15 +228,14 @@ class TestRedactionConfigValidation:
         config = RedactionConfig(max_file_mb=10)
         assert config.max_file_mb == 10
 
-    def test_redaction_config_max_file_mb_zero_raises_error(self):
-        """Test that max_file_mb=0 raises ValueError."""
+    @pytest.mark.parametrize(
+        "value",
+        [pytest.param(0, id="zero"), pytest.param(-1, id="negative")],
+    )
+    def test_redaction_config_max_file_mb_invalid(self, value):
+        """Test that non-positive max_file_mb raises ValueError."""
         with pytest.raises(ValueError, match="max_file_mb must be positive"):
-            RedactionConfig(max_file_mb=0)
-
-    def test_redaction_config_max_file_mb_negative_raises_error(self):
-        """Test that negative max_file_mb raises ValueError."""
-        with pytest.raises(ValueError, match="max_file_mb must be positive"):
-            RedactionConfig(max_file_mb=-1)
+            RedactionConfig(max_file_mb=value)
 
     def test_redaction_config_valid_regex_patterns(self):
         """Test that valid regex patterns are accepted."""
@@ -306,25 +299,36 @@ class TestModelConfigValidation:
         assert config.daemon_timeout == 600
         assert config.daemon_startup_timeout == 10
 
-    def test_model_config_daemon_timeout_zero_raises_error(self):
-        """Test that daemon_timeout=0 raises ValueError."""
-        with pytest.raises(ValueError, match="daemon_timeout must be positive"):
-            ModelConfig(daemon_timeout=0)
-
-    def test_model_config_daemon_timeout_negative_raises_error(self):
-        """Test that negative daemon_timeout raises ValueError."""
-        with pytest.raises(ValueError, match="daemon_timeout must be positive"):
-            ModelConfig(daemon_timeout=-100)
-
-    def test_model_config_daemon_startup_timeout_zero_raises_error(self):
-        """Test that daemon_startup_timeout=0 raises ValueError."""
-        with pytest.raises(ValueError, match="daemon_startup_timeout must be positive"):
-            ModelConfig(daemon_startup_timeout=0)
-
-    def test_model_config_daemon_startup_timeout_negative_raises_error(self):
-        """Test that negative daemon_startup_timeout raises ValueError."""
-        with pytest.raises(ValueError, match="daemon_startup_timeout must be positive"):
-            ModelConfig(daemon_startup_timeout=-1)
+    @pytest.mark.parametrize(
+        "field, value, error_match",
+        [
+            pytest.param(
+                "daemon_timeout", 0, "daemon_timeout must be positive", id="timeout-zero"
+            ),
+            pytest.param(
+                "daemon_timeout",
+                -100,
+                "daemon_timeout must be positive",
+                id="timeout-negative",
+            ),
+            pytest.param(
+                "daemon_startup_timeout",
+                0,
+                "daemon_startup_timeout must be positive",
+                id="startup-timeout-zero",
+            ),
+            pytest.param(
+                "daemon_startup_timeout",
+                -1,
+                "daemon_startup_timeout must be positive",
+                id="startup-timeout-negative",
+            ),
+        ],
+    )
+    def test_model_config_invalid_timeout(self, field, value, error_match):
+        """Test that non-positive timeout values raise ValueError."""
+        with pytest.raises(ValueError, match=error_match):
+            ModelConfig(**{field: value})
 
 
 # =============================================================================
@@ -351,21 +355,32 @@ class TestDisplayConfigValidation:
         assert config.color_scheme == "always"
         assert config.theme == "monokai"
 
-    def test_display_config_valid_pygments_themes(self):
+    @pytest.mark.parametrize(
+        "theme",
+        [
+            pytest.param("ansi", id="ansi"),
+            pytest.param("monokai", id="monokai"),
+            pytest.param("github-dark", id="github-dark"),
+            pytest.param("dracula", id="dracula"),
+            pytest.param("solarized-dark", id="solarized-dark"),
+        ],
+    )
+    def test_display_config_valid_pygments_themes(self, theme):
         """Test that common Pygments themes are accepted."""
-        for theme in ["ansi", "monokai", "github-dark", "dracula", "solarized-dark"]:
-            config = DisplayConfig(theme=theme)
-            assert config.theme == theme
+        config = DisplayConfig(theme=theme)
+        assert config.theme == theme
 
-    def test_display_config_invalid_theme_raises_error(self):
-        """Test that invalid theme raises ValueError."""
-        with pytest.raises(ValueError, match="Unknown theme 'invalid-theme'"):
-            DisplayConfig(theme="invalid-theme")
-
-    def test_display_config_empty_theme_raises_error(self):
-        """Test that empty theme raises ValueError."""
-        with pytest.raises(ValueError, match="Unknown theme ''"):
-            DisplayConfig(theme="")
+    @pytest.mark.parametrize(
+        "theme, expected_in_error",
+        [
+            pytest.param("invalid-theme", "invalid-theme", id="invalid"),
+            pytest.param("", "", id="empty"),
+        ],
+    )
+    def test_display_config_invalid_theme_raises_error(self, theme, expected_in_error):
+        """Test that invalid/empty theme raises ValueError."""
+        with pytest.raises(ValueError, match=f"Unknown theme '{expected_in_error}'"):
+            DisplayConfig(theme=theme)
 
 
 # =============================================================================
