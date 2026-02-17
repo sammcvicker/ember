@@ -222,19 +222,18 @@ class TestSyncCommand:
         assert_output_contains(result, "mutually exclusive")
 
     def test_sync_quiet_mode(self, runner: CliRunner, git_repo_isolated: Path, monkeypatch) -> None:
-        """Test that --quiet mode suppresses progress output."""
+        """Test that --quiet mode suppresses all informational output."""
         monkeypatch.chdir(git_repo_isolated)
         # Init first
         runner.invoke(cli, ["init"], catch_exceptions=False)
 
-        # Sync in quiet mode
+        # Sync in quiet mode - should produce no output
         result = runner.invoke(cli, ["--quiet", "sync"], catch_exceptions=False)
 
         assert_command_success(result, context="quiet sync")
-        # Output should be minimal (quiet mode shows summary but not progress)
-        lines = [line for line in result.output.strip().split('\n') if line]
-        # Should have at most a few lines (success message and stats)
-        assert len(lines) <= 5
+        assert result.output.strip() == "", (
+            f"Expected no output in quiet sync, got: {result.output!r}"
+        )
 
 
 class TestFindCommand:
@@ -951,6 +950,170 @@ class TestVerboseQuietFlags:
 
         # Semantic check: quiet mode should have less output
         assert len(result_quiet.output) < len(result_normal.output)
+
+
+class TestQuietModeConsistency:
+    """Tests for consistent --quiet mode support across all commands (Issue #433).
+
+    Verifies that --quiet suppresses informational output but NOT errors
+    or primary command output (e.g., search results, cat content).
+    """
+
+    def test_sync_quiet_suppresses_all_informational_output(
+        self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
+    ) -> None:
+        """Test that 'ember --quiet sync' produces no output on success."""
+        monkeypatch.chdir(git_repo_isolated)
+        runner.invoke(cli, ["init"], catch_exceptions=False)
+
+        # First sync in quiet mode - should produce no output
+        result = runner.invoke(cli, ["--quiet", "sync"], catch_exceptions=False)
+        assert_command_success(result, context="quiet sync first run")
+        assert result.output.strip() == "", (
+            f"Expected no output in quiet mode, got: {result.output!r}"
+        )
+
+    def test_sync_quiet_suppresses_no_changes_message(
+        self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
+    ) -> None:
+        """Test that 'ember --quiet sync' suppresses 'No changes detected' message."""
+        monkeypatch.chdir(git_repo_isolated)
+        runner.invoke(cli, ["init"], catch_exceptions=False)
+        # First sync
+        runner.invoke(cli, ["--quiet", "sync"], catch_exceptions=False)
+
+        # Second sync (no changes) in quiet mode
+        result = runner.invoke(cli, ["--quiet", "sync"], catch_exceptions=False)
+        assert_command_success(result, context="quiet sync no changes")
+        assert result.output.strip() == "", (
+            f"Expected no output in quiet mode for no-changes case, got: {result.output!r}"
+        )
+
+    def test_sync_quiet_still_shows_errors(
+        self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
+    ) -> None:
+        """Test that 'ember --quiet sync' still shows errors."""
+        monkeypatch.chdir(git_repo_isolated)
+        # Don't init - sync should fail with error
+        result = runner.invoke(cli, ["--quiet", "sync"])
+        assert_command_failed(result, context="quiet sync without init")
+        # Error should still be shown
+        assert_error_message(result)
+
+    def test_find_quiet_still_shows_results(
+        self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
+    ) -> None:
+        """Test that 'ember --quiet find' still shows search results (primary output)."""
+        monkeypatch.chdir(git_repo_isolated)
+        runner.invoke(cli, ["init"], catch_exceptions=False)
+        runner.invoke(cli, ["sync"], catch_exceptions=False)
+
+        # Find in quiet mode - results ARE the primary output, should still show
+        result = runner.invoke(
+            cli, ["--quiet", "find", "hello", "--json"],
+            catch_exceptions=False,
+        )
+        assert_command_success(result, context="quiet find")
+        # JSON results should still be present
+        data = json.loads(result.output)
+        assert isinstance(data, list)
+
+    def test_find_quiet_suppresses_cache_warning(
+        self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
+    ) -> None:
+        """Test that cache write warnings are suppressed in quiet mode."""
+        monkeypatch.chdir(git_repo_isolated)
+        runner.invoke(cli, ["init"], catch_exceptions=False)
+        runner.invoke(cli, ["sync"], catch_exceptions=False)
+
+        # Search in quiet mode - any cache warning should be suppressed
+        result = runner.invoke(
+            cli, ["--quiet", "find", "hello"],
+            catch_exceptions=False,
+        )
+        assert_command_success(result, context="quiet find with cache issue")
+        # No "Warning:" text should appear in quiet mode
+        assert "Warning: Could not cache" not in result.output
+
+    def test_status_quiet_suppresses_output(
+        self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
+    ) -> None:
+        """Test that 'ember --quiet status' produces no output."""
+        monkeypatch.chdir(git_repo_isolated)
+        runner.invoke(cli, ["init"], catch_exceptions=False)
+        runner.invoke(cli, ["sync"], catch_exceptions=False)
+
+        result = runner.invoke(cli, ["--quiet", "status"], catch_exceptions=False)
+        assert_command_success(result, context="quiet status")
+        assert result.output.strip() == "", (
+            f"Expected no output in quiet mode for status, got: {result.output!r}"
+        )
+
+    def test_status_quiet_still_shows_errors(
+        self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
+    ) -> None:
+        """Test that 'ember --quiet status' still shows errors."""
+        monkeypatch.chdir(git_repo_isolated)
+        # Don't init - status should fail
+        result = runner.invoke(cli, ["--quiet", "status"])
+        assert_command_failed(result, context="quiet status without init")
+        assert_error_message(result)
+
+    def test_cat_quiet_still_shows_content(
+        self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
+    ) -> None:
+        """Test that 'ember --quiet cat' still shows chunk content (primary output)."""
+        monkeypatch.chdir(git_repo_isolated)
+        runner.invoke(cli, ["init"], catch_exceptions=False)
+        runner.invoke(cli, ["sync"], catch_exceptions=False)
+        search_result = runner.invoke(cli, ["find", "hello"], catch_exceptions=False)
+
+        if "No results" in search_result.output or search_result.output.strip() == "":
+            pytest.skip("Search returned no results")
+
+        # Cat in quiet mode - content is primary output, should still show
+        result = runner.invoke(cli, ["--quiet", "cat", "1"], catch_exceptions=False)
+        assert_command_success(result, context="quiet cat")
+        assert len(result.output) > 0, "Cat should still show content in quiet mode"
+
+    def test_init_quiet_still_shows_summary(
+        self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
+    ) -> None:
+        """Test that 'ember --quiet init' shows summary but suppresses details."""
+        monkeypatch.chdir(git_repo_isolated)
+
+        result_quiet = runner.invoke(cli, ["--quiet", "init"], catch_exceptions=False)
+        assert_command_success(result_quiet, context="quiet init")
+        # Should have summary line (Initialized/Reinitialized)
+        assert_output_matches(result_quiet, r"[Ii]nitialized", context="init summary")
+
+        # Create second repo to compare output length
+        git_repo_2 = git_repo_isolated.parent / "test_repo_cmp"
+        git_repo_2.mkdir()
+        init_git_repo(git_repo_2)
+        monkeypatch.chdir(git_repo_2)
+        result_normal = runner.invoke(cli, ["init"], catch_exceptions=False)
+
+        # Quiet should have less output
+        assert len(result_quiet.output) < len(result_normal.output)
+
+    def test_sync_quiet_mode_with_reindex(
+        self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
+    ) -> None:
+        """Test that 'ember --quiet sync --reindex' produces no output."""
+        monkeypatch.chdir(git_repo_isolated)
+        runner.invoke(cli, ["init"], catch_exceptions=False)
+        runner.invoke(cli, ["sync"], catch_exceptions=False)
+
+        # Reindex in quiet mode
+        result = runner.invoke(
+            cli, ["--quiet", "sync", "--reindex"],
+            catch_exceptions=False,
+        )
+        assert_command_success(result, context="quiet sync --reindex")
+        assert result.output.strip() == "", (
+            f"Expected no output in quiet reindex, got: {result.output!r}"
+        )
 
 
 class TestErrorHandling:
