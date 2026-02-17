@@ -484,8 +484,8 @@ class TestDaemonTimeoutHandling:
             patch(
                 "ember.adapters.sqlite.meta_repository.SQLiteMetaRepository"
             ) as mock_meta,
-            patch("ember.entrypoints.cli._create_indexing_usecase") as mock_usecase,
-            patch("ember.entrypoints.cli.progress_context") as mock_progress_ctx,
+            patch("ember.entrypoints.commands.sync_cmd._create_indexing_usecase") as mock_usecase,
+            patch("ember.entrypoints.commands.sync_cmd.progress_context") as mock_progress_ctx,
         ):
             mock_git.return_value.get_worktree_tree_sha.return_value = "new_sha"
             mock_meta.return_value.get.return_value = "old_sha"
