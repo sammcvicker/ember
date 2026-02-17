@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Daemon client and server thread safety improvements** (#439)
+  - Fallback embedder creation is now thread-safe using double-checked locking; only one fallback embedder is created even under concurrent access
+  - Server request stats (`requests_served`, `last_request_time`) are updated atomically via `threading.Lock`
+  - Added `close()` method and context manager support to `DaemonEmbedderClient` for proper fallback embedder cleanup
+
 - **Schema migration is now safe against partial failure** (#436)
   - Database is backed up (via `shutil.copy`) before any migration runs
   - Added `migration_history` table to track which migrations have been applied
