@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Testing
+- **Added missing test coverage for editor adapter, config provider, and port protocols** (#437)
+  - Added 30+ unit tests for `SubprocessEditor` (environment lookup, command building, error handling with mocked subprocess)
+  - Added unit tests for `app/editor.py` facade (exception conversion to `click.ClickException`)
+  - Added tests for `TomlConfigProvider` global+local config merge logic (8 new scenarios)
+  - Added protocol conformance tests for `ConfigProvider`, `DaemonManager`, and `Editor` ports (0% -> 100% coverage)
+  - Added tests for editor exception hierarchy (`EditorError`, `EditorFileNotFoundError`, etc.)
+  - Replaced 14 `pytest.skip("Search returned no results")` bail-outs with deterministic assertions in integration tests
+  - Overall coverage increased from 82% to 89%
+
 ### Changed
 - **Adopted `pytest.mark.parametrize` across 5 test files** (#434)
   - Replaced repetitive test methods with parametrized tests in model registry, entities, time formatting, sync error hints, and config validation tests

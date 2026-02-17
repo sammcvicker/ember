@@ -561,9 +561,13 @@ class TestCatCommand:
         # Verify search succeeded and returned results
         assert_command_success(search_result, context="find for cat test")
 
-        # Cat might fail if no results were found in search
-        if "No results" in search_result.output or search_result.output.strip() == "":
-            pytest.skip("Search returned no results")
+        # Verify search returned results (not empty or "No results")
+        assert "No results" not in search_result.output, (
+            "Search should return results for 'hello' query in test repo"
+        )
+        assert search_result.output.strip(), (
+            "Search output should not be empty for 'hello' query"
+        )
 
         # Cat the first result (1-based indexing)
         result = runner.invoke(cli, ["cat", "1"], catch_exceptions=False)
@@ -580,10 +584,14 @@ class TestCatCommand:
         runner.invoke(cli, ["sync"], catch_exceptions=False)
         search_result = runner.invoke(cli, ["find", "hello"], catch_exceptions=False)
 
-        # Verify search succeeded
+        # Verify search succeeded and returned results
         assert_command_success(search_result, context="find for cat context test")
-        if "No results" in search_result.output or search_result.output.strip() == "":
-            pytest.skip("Search returned no results")
+        assert "No results" not in search_result.output, (
+            "Search should return results for 'hello' query in test repo"
+        )
+        assert search_result.output.strip(), (
+            "Search output should not be empty for 'hello' query"
+        )
 
         # Cat with context
         result = runner.invoke(cli, ["cat", "1", "--context", "2"], catch_exceptions=False)
@@ -638,8 +646,9 @@ class TestCatCommand:
 
         # Parse JSON to get chunk ID (semantic check)
         results = json.loads(search_result.output)
-        if len(results) == 0:
-            pytest.skip("Search returned no results")
+        assert len(results) > 0, (
+            "Search should return results for 'hello' query in test repo"
+        )
 
         # Verify chunk ID format (64 hex chars for blake3)
         chunk_id = results[0]["id"]
@@ -665,8 +674,9 @@ class TestCatCommand:
 
         # Parse JSON to get chunk ID
         results = json.loads(search_result.output)
-        if len(results) == 0:
-            pytest.skip("Search returned no results")
+        assert len(results) > 0, (
+            "Search should return results for 'hello' query in test repo"
+        )
 
         # Use short prefix (16 chars) for uniqueness
         chunk_id = results[0]["id"]
@@ -702,8 +712,9 @@ class TestCatCommand:
 
         # Parse JSON to get chunk ID
         results = json.loads(search_result.output)
-        if len(results) == 0:
-            pytest.skip("Search returned no results")
+        assert len(results) > 0, (
+            "Search should return results for 'hello' query in test repo"
+        )
 
         chunk_id = results[0]["id"]
 
@@ -1068,8 +1079,12 @@ class TestQuietModeConsistency:
         runner.invoke(cli, ["sync"], catch_exceptions=False)
         search_result = runner.invoke(cli, ["find", "hello"], catch_exceptions=False)
 
-        if "No results" in search_result.output or search_result.output.strip() == "":
-            pytest.skip("Search returned no results")
+        assert "No results" not in search_result.output, (
+            "Search should return results for 'hello' query in test repo"
+        )
+        assert search_result.output.strip(), (
+            "Search output should not be empty for 'hello' query"
+        )
 
         # Cat in quiet mode - content is primary output, should still show
         result = runner.invoke(cli, ["--quiet", "cat", "1"], catch_exceptions=False)
