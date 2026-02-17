@@ -249,9 +249,9 @@ class TestSyncCommandErrorIntegration:
         return CliRunner()
 
     @patch("ember.entrypoints.cli.get_ember_repo_root")
-    @patch("ember.entrypoints.cli._quick_check_unchanged")
+    @patch("ember.entrypoints.commands.sync_cmd._quick_check_unchanged")
     @patch("ember.entrypoints.cli._load_config")
-    @patch("ember.entrypoints.cli._create_indexing_usecase")
+    @patch("ember.entrypoints.commands.sync_cmd._create_indexing_usecase")
     def test_sync_model_mismatch_shows_targeted_hint(
         self,
         mock_create_usecase: MagicMock,
@@ -283,9 +283,9 @@ class TestSyncCommandErrorIntegration:
         assert "old-model:768" in result.output or "model" in result.output.lower()
 
     @patch("ember.entrypoints.cli.get_ember_repo_root")
-    @patch("ember.entrypoints.cli._quick_check_unchanged")
+    @patch("ember.entrypoints.commands.sync_cmd._quick_check_unchanged")
     @patch("ember.entrypoints.cli._load_config")
-    @patch("ember.entrypoints.cli._create_indexing_usecase")
+    @patch("ember.entrypoints.commands.sync_cmd._create_indexing_usecase")
     def test_sync_permission_error_shows_targeted_hint(
         self,
         mock_create_usecase: MagicMock,
@@ -316,9 +316,9 @@ class TestSyncCommandErrorIntegration:
         assert "permission" in result.output.lower()
 
     @patch("ember.entrypoints.cli.get_ember_repo_root")
-    @patch("ember.entrypoints.cli._quick_check_unchanged")
+    @patch("ember.entrypoints.commands.sync_cmd._quick_check_unchanged")
     @patch("ember.entrypoints.cli._load_config")
-    @patch("ember.entrypoints.cli._create_indexing_usecase")
+    @patch("ember.entrypoints.commands.sync_cmd._create_indexing_usecase")
     def test_sync_disk_full_shows_targeted_hint(
         self,
         mock_create_usecase: MagicMock,
@@ -347,9 +347,9 @@ class TestSyncCommandErrorIntegration:
         assert "disk" in result.output.lower() or "space" in result.output.lower()
 
     @patch("ember.entrypoints.cli.get_ember_repo_root")
-    @patch("ember.entrypoints.cli._quick_check_unchanged")
+    @patch("ember.entrypoints.commands.sync_cmd._quick_check_unchanged")
     @patch("ember.entrypoints.cli._load_config")
-    @patch("ember.entrypoints.cli._create_indexing_usecase")
+    @patch("ember.entrypoints.commands.sync_cmd._create_indexing_usecase")
     def test_sync_response_error_shows_targeted_hint(
         self,
         mock_create_usecase: MagicMock,

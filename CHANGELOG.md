@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Refactored monolithic cli.py (2,045 lines) into focused command modules** (#432)
+  - Split into 6 command modules: `init_cmd`, `sync_cmd`, `search_cmd`, `config_cmd`, `daemon_cmd`, `status_cmd`
+  - Moved `_get_targeted_sync_hint` to `core/sync/sync_service.py` (error classification belongs in core, not CLI)
+  - Reduced all function complexity to B(9) or below (previously three functions at C(12)-C(15))
+  - Extracted `_build_sync_detail_lines` and `_classify_download_error` to simplify high-complexity functions
+  - cli.py now serves as thin hub with shared utilities and backward-compatible re-exports
+  - All 1,691 existing tests pass unchanged (test patch targets updated where necessary)
+
 ### Testing
 - **Added missing test coverage for editor adapter, config provider, and port protocols** (#437)
   - Added 30+ unit tests for `SubprocessEditor` (environment lookup, command building, error handling with mocked subprocess)

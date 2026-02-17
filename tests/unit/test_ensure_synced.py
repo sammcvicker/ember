@@ -43,8 +43,8 @@ class TestEnsureSynced:
             patch(
                 "ember.adapters.sqlite.meta_repository.SQLiteMetaRepository"
             ) as mock_meta,
-            patch("ember.entrypoints.cli._create_indexing_usecase") as mock_usecase,
-            patch("ember.entrypoints.cli.progress_context") as mock_progress_ctx,
+            patch("ember.entrypoints.commands.sync_cmd._create_indexing_usecase") as mock_usecase,
+            patch("ember.entrypoints.commands.sync_cmd.progress_context") as mock_progress_ctx,
         ):
             # Setup mocks - index is stale
             mock_git.return_value.get_worktree_tree_sha.return_value = "new_sha"
@@ -78,8 +78,8 @@ class TestEnsureSynced:
             patch(
                 "ember.adapters.sqlite.meta_repository.SQLiteMetaRepository"
             ) as mock_meta,
-            patch("ember.entrypoints.cli._create_indexing_usecase") as mock_usecase,
-            patch("ember.entrypoints.cli.progress_context") as mock_progress_ctx,
+            patch("ember.entrypoints.commands.sync_cmd._create_indexing_usecase") as mock_usecase,
+            patch("ember.entrypoints.commands.sync_cmd.progress_context") as mock_progress_ctx,
         ):
             # Setup mocks - index is stale
             mock_git.return_value.get_worktree_tree_sha.return_value = "new_sha"
@@ -112,9 +112,9 @@ class TestEnsureSynced:
             patch(
                 "ember.adapters.sqlite.meta_repository.SQLiteMetaRepository"
             ) as mock_meta,
-            patch("ember.entrypoints.cli._create_indexing_usecase") as mock_usecase,
-            patch("ember.entrypoints.cli.progress_context") as mock_progress_ctx,
-            patch("ember.entrypoints.cli.click.echo") as mock_echo,
+            patch("ember.entrypoints.commands.sync_cmd._create_indexing_usecase") as mock_usecase,
+            patch("ember.entrypoints.commands.sync_cmd.progress_context") as mock_progress_ctx,
+            patch("ember.entrypoints.commands.sync_cmd.click.echo") as mock_echo,
         ):
             # Setup mocks - index is stale
             mock_git.return_value.get_worktree_tree_sha.return_value = "new_sha"
@@ -149,8 +149,8 @@ class TestEnsureSynced:
             patch(
                 "ember.adapters.sqlite.meta_repository.SQLiteMetaRepository"
             ) as mock_meta,
-            patch("ember.entrypoints.cli._create_indexing_usecase") as mock_usecase,
-            patch("ember.entrypoints.cli.click.echo") as mock_echo,
+            patch("ember.entrypoints.commands.sync_cmd._create_indexing_usecase") as mock_usecase,
+            patch("ember.entrypoints.commands.sync_cmd.click.echo") as mock_echo,
         ):
             # Setup mocks - index is NOT stale (same SHA)
             mock_git.return_value.get_worktree_tree_sha.return_value = "same_sha"
@@ -180,9 +180,9 @@ class TestEnsureSynced:
             patch(
                 "ember.adapters.sqlite.meta_repository.SQLiteMetaRepository"
             ) as mock_meta,
-            patch("ember.entrypoints.cli._create_indexing_usecase") as mock_usecase,
-            patch("ember.entrypoints.cli.progress_context") as mock_progress_ctx,
-            patch("ember.entrypoints.cli.click.echo") as mock_echo,
+            patch("ember.entrypoints.commands.sync_cmd._create_indexing_usecase") as mock_usecase,
+            patch("ember.entrypoints.commands.sync_cmd.progress_context") as mock_progress_ctx,
+            patch("ember.entrypoints.commands.sync_cmd.click.echo") as mock_echo,
         ):
             # Setup mocks - index is stale
             mock_git.return_value.get_worktree_tree_sha.return_value = "new_sha"
@@ -214,7 +214,7 @@ class TestEnsureSynced:
             patch(
                 "ember.adapters.git_cmd.git_adapter.GitAdapter"
             ) as mock_git,
-            patch("ember.entrypoints.cli.click.echo") as mock_echo,
+            patch("ember.entrypoints.commands.sync_cmd.click.echo") as mock_echo,
         ):
             # Setup mock to raise an exception
             mock_git.return_value.get_worktree_tree_sha.side_effect = Exception("Git error")
@@ -239,7 +239,7 @@ class TestEnsureSynced:
             patch(
                 "ember.adapters.git_cmd.git_adapter.GitAdapter"
             ) as mock_git,
-            patch("ember.entrypoints.cli.click.echo") as mock_echo,
+            patch("ember.entrypoints.commands.sync_cmd.click.echo") as mock_echo,
         ):
             # Setup mock to raise an exception
             mock_git.return_value.get_worktree_tree_sha.side_effect = Exception("Git error")
@@ -271,8 +271,8 @@ class TestEnsureSyncedReturnsStatus:
             patch(
                 "ember.adapters.sqlite.meta_repository.SQLiteMetaRepository"
             ) as mock_meta,
-            patch("ember.entrypoints.cli._create_indexing_usecase") as mock_usecase,
-            patch("ember.entrypoints.cli.progress_context") as mock_progress_ctx,
+            patch("ember.entrypoints.commands.sync_cmd._create_indexing_usecase") as mock_usecase,
+            patch("ember.entrypoints.commands.sync_cmd.progress_context") as mock_progress_ctx,
         ):
             # Setup mocks - index is stale
             mock_git.return_value.get_worktree_tree_sha.return_value = "new_sha"
@@ -474,8 +474,8 @@ class TestEnsureSyncedErrorClassification:
             patch(
                 "ember.adapters.sqlite.meta_repository.SQLiteMetaRepository"
             ) as mock_meta,
-            patch("ember.entrypoints.cli._create_indexing_usecase") as mock_usecase,
-            patch("ember.entrypoints.cli.progress_context") as mock_progress_ctx,
+            patch("ember.entrypoints.commands.sync_cmd._create_indexing_usecase") as mock_usecase,
+            patch("ember.entrypoints.commands.sync_cmd.progress_context") as mock_progress_ctx,
         ):
             mock_git.return_value.get_worktree_tree_sha.return_value = "new_sha"
             mock_meta.return_value.get.return_value = "old_sha"

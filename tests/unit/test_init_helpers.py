@@ -29,7 +29,7 @@ class TestSelectEmbeddingModel:
         """Should return recommended model when --yes is set."""
         from ember.entrypoints.cli import _select_embedding_model
 
-        with patch("ember.entrypoints.cli.click.echo"), patch(
+        with patch("ember.entrypoints.commands.init_cmd.click.echo"), patch(
             "ember.core.hardware.detect_system_resources"
         ) as mock_detect:
             mock_detect.return_value = SystemResources(
@@ -73,8 +73,8 @@ class TestSelectEmbeddingModel:
         from ember.entrypoints.cli import _select_embedding_model
 
         with (
-            patch("ember.entrypoints.cli.click.echo"),
-            patch("ember.entrypoints.cli.click.confirm") as mock_confirm,
+            patch("ember.entrypoints.commands.init_cmd.click.echo"),
+            patch("ember.entrypoints.commands.init_cmd.click.confirm") as mock_confirm,
             patch("ember.core.hardware.detect_system_resources") as mock_detect,
         ):
             mock_confirm.return_value = True
@@ -108,7 +108,7 @@ class TestDisplaySystemResources:
             gpu=None,
         )
 
-        with patch("ember.entrypoints.cli.click.echo") as mock_echo:
+        with patch("ember.entrypoints.commands.init_cmd.click.echo") as mock_echo:
             _display_system_resources(resources, "jina-code-v2", "reason text")
 
             # Verify RAM was displayed
@@ -132,7 +132,7 @@ class TestDisplaySystemResources:
             ),
         )
 
-        with patch("ember.entrypoints.cli.click.echo") as mock_echo:
+        with patch("ember.entrypoints.commands.init_cmd.click.echo") as mock_echo:
             _display_system_resources(resources, "jina-code-v2", "reason")
 
             calls = [str(call) for call in mock_echo.call_args_list]
@@ -155,8 +155,8 @@ class TestPromptForModelChoice:
         )
 
         with (
-            patch("ember.entrypoints.cli.click.echo"),
-            patch("ember.entrypoints.cli.click.confirm") as mock_confirm,
+            patch("ember.entrypoints.commands.init_cmd.click.echo"),
+            patch("ember.entrypoints.commands.init_cmd.click.confirm") as mock_confirm,
         ):
             mock_confirm.return_value = True
             result = _prompt_for_model_choice(resources, "bge-small")
@@ -173,8 +173,8 @@ class TestPromptForModelChoice:
         )
 
         with (
-            patch("ember.entrypoints.cli.click.echo"),
-            patch("ember.entrypoints.cli.click.confirm") as mock_confirm,
+            patch("ember.entrypoints.commands.init_cmd.click.echo"),
+            patch("ember.entrypoints.commands.init_cmd.click.confirm") as mock_confirm,
         ):
             mock_confirm.return_value = False
             result = _prompt_for_model_choice(resources, "bge-small")
@@ -196,8 +196,8 @@ class TestPromptForModelChoice:
         )
 
         with (
-            patch("ember.entrypoints.cli.click.echo") as mock_echo,
-            patch("ember.entrypoints.cli.click.confirm"),
+            patch("ember.entrypoints.commands.init_cmd.click.echo") as mock_echo,
+            patch("ember.entrypoints.commands.init_cmd.click.confirm"),
         ):
             _prompt_for_model_choice(resources, "bge-small")
             calls = [str(call) for call in mock_echo.call_args_list]
@@ -214,8 +214,8 @@ class TestPromptForModelChoice:
         )
 
         with (
-            patch("ember.entrypoints.cli.click.echo") as mock_echo,
-            patch("ember.entrypoints.cli.click.confirm"),
+            patch("ember.entrypoints.commands.init_cmd.click.echo") as mock_echo,
+            patch("ember.entrypoints.commands.init_cmd.click.confirm"),
         ):
             _prompt_for_model_choice(resources, "bge-small")
             calls = [str(call) for call in mock_echo.call_args_list]
@@ -237,7 +237,7 @@ class TestReportInitResults:
         response.db_path = MagicMock(name="index.db")
         response.state_path = MagicMock(name="state.json")
 
-        with patch("ember.entrypoints.cli.click.echo") as mock_echo:
+        with patch("ember.entrypoints.commands.init_cmd.click.echo") as mock_echo:
             _report_init_results(response, "jina-code-v2", quiet=False)
 
             calls = [str(call) for call in mock_echo.call_args_list]
@@ -256,7 +256,7 @@ class TestReportInitResults:
         response.db_path = MagicMock(name="index.db")
         response.state_path = MagicMock(name="state.json")
 
-        with patch("ember.entrypoints.cli.click.echo") as mock_echo:
+        with patch("ember.entrypoints.commands.init_cmd.click.echo") as mock_echo:
             _report_init_results(response, "jina-code-v2", quiet=False)
 
             calls = [str(call) for call in mock_echo.call_args_list]
@@ -275,7 +275,7 @@ class TestReportInitResults:
         response.db_path = MagicMock(name="index.db")
         response.state_path = MagicMock(name="state.json")
 
-        with patch("ember.entrypoints.cli.click.echo") as mock_echo:
+        with patch("ember.entrypoints.commands.init_cmd.click.echo") as mock_echo:
             _report_init_results(response, "jina-code-v2", quiet=False)
 
             calls = [str(call) for call in mock_echo.call_args_list]
@@ -291,7 +291,7 @@ class TestReportInitResults:
         response.was_reinitialized = False
         response.ember_dir = Path("/tmp/repo/.ember")
 
-        with patch("ember.entrypoints.cli.click.echo") as mock_echo:
+        with patch("ember.entrypoints.commands.init_cmd.click.echo") as mock_echo:
             _report_init_results(response, "jina-code-v2", quiet=True)
 
             # Only the basic success message should be shown
