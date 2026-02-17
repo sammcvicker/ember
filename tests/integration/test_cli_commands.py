@@ -1206,3 +1206,206 @@ class TestGetEmberRepoRoot:
 
         assert repo_root == git_repo_isolated
         assert ember_dir == git_repo_isolated / ".ember"
+
+
+class TestJsonOutputFlag:
+    """Tests for --json output flag on status, config show, and daemon status commands (#442)."""
+
+    def test_status_json_outputs_valid_json(
+        self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
+    ) -> None:
+        """Test that 'ember status --json' outputs valid JSON."""
+        monkeypatch.chdir(git_repo_isolated)
+        runner.invoke(cli, ["init"], catch_exceptions=False)
+        runner.invoke(cli, ["sync"], catch_exceptions=False)
+
+        result = runner.invoke(cli, ["status", "--json"], catch_exceptions=False)
+
+        assert_command_success(result, context="status --json")
+        data = json.loads(result.output)
+        assert isinstance(data, dict)
+
+    def test_status_json_contains_expected_fields(
+        self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
+    ) -> None:
+        """Test that status --json includes files, chunks, model, stale, last_sync."""
+        monkeypatch.chdir(git_repo_isolated)
+        runner.invoke(cli, ["init"], catch_exceptions=False)
+        runner.invoke(cli, ["sync"], catch_exceptions=False)
+
+        result = runner.invoke(cli, ["status", "--json"], catch_exceptions=False)
+
+        assert_command_success(result, context="status --json fields")
+        data = json.loads(result.output)
+        assert "files" in data
+        assert "chunks" in data
+        assert "model" in data
+        assert "stale" in data
+        assert "last_sync" in data
+        assert isinstance(data["files"], int)
+        assert isinstance(data["chunks"], int)
+        assert isinstance(data["stale"], bool)
+
+    def test_status_json_reflects_stale_state(
+        self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
+    ) -> None:
+        """Test that status --json shows stale=true after a change."""
+        monkeypatch.chdir(git_repo_isolated)
+        runner.invoke(cli, ["init"], catch_exceptions=False)
+        runner.invoke(cli, ["sync"], catch_exceptions=False)
+
+        # Modify file (creating staleness)
+        test_file = git_repo_isolated / "example.py"
+        test_file.write_text(test_file.read_text() + "\n# New comment\n")
+        git_add_and_commit(git_repo_isolated, message="Update")
+
+        result = runner.invoke(cli, ["status", "--json"], catch_exceptions=False)
+
+        assert_command_success(result, context="status --json stale")
+        data = json.loads(result.output)
+        assert data["stale"] is True
+
+    def test_status_json_without_sync(
+        self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
+    ) -> None:
+        """Test that status --json works before any sync (never synced state)."""
+        monkeypatch.chdir(git_repo_isolated)
+        runner.invoke(cli, ["init"], catch_exceptions=False)
+
+        result = runner.invoke(cli, ["status", "--json"], catch_exceptions=False)
+
+        assert_command_success(result, context="status --json never synced")
+        data = json.loads(result.output)
+        assert data["files"] == 0
+        assert data["chunks"] == 0
+        assert data["last_sync"] is None
+
+    def test_status_json_is_pure_json(
+        self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
+    ) -> None:
+        """Test that status --json does not include human-readable text."""
+        monkeypatch.chdir(git_repo_isolated)
+        runner.invoke(cli, ["init"], catch_exceptions=False)
+        runner.invoke(cli, ["sync"], catch_exceptions=False)
+
+        result = runner.invoke(cli, ["status", "--json"], catch_exceptions=False)
+
+        assert_command_success(result, context="status --json purity")
+        # Should only contain valid JSON, no extra lines
+        data = json.loads(result.output.strip())
+        assert isinstance(data, dict)
+        # Ensure no "Index is up to date" style text
+        assert "Index is" not in result.output
+
+    def test_config_show_json_outputs_valid_json(
+        self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
+    ) -> None:
+        """Test that 'ember config show --json' outputs valid JSON."""
+        monkeypatch.chdir(git_repo_isolated)
+        runner.invoke(cli, ["init"], catch_exceptions=False)
+
+        result = runner.invoke(cli, ["config", "show", "--json"], catch_exceptions=False)
+
+        assert_command_success(result, context="config show --json")
+        data = json.loads(result.output)
+        assert isinstance(data, dict)
+
+    def test_config_show_json_contains_config_sections(
+        self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
+    ) -> None:
+        """Test that config show --json includes index, search, model, display sections."""
+        monkeypatch.chdir(git_repo_isolated)
+        runner.invoke(cli, ["init"], catch_exceptions=False)
+
+        result = runner.invoke(cli, ["config", "show", "--json"], catch_exceptions=False)
+
+        assert_command_success(result, context="config show --json sections")
+        data = json.loads(result.output)
+        assert "index" in data
+        assert "search" in data
+        assert "model" in data
+        assert "display" in data
+        # Verify nested values
+        assert "model" in data["index"]  # index.model (embedding model name)
+        assert "topk" in data["search"]
+
+    def test_config_show_json_is_pure_json(
+        self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
+    ) -> None:
+        """Test that config show --json does not include path status text."""
+        monkeypatch.chdir(git_repo_isolated)
+        runner.invoke(cli, ["init"], catch_exceptions=False)
+
+        result = runner.invoke(cli, ["config", "show", "--json"], catch_exceptions=False)
+
+        assert_command_success(result, context="config show --json purity")
+        data = json.loads(result.output.strip())
+        assert isinstance(data, dict)
+        # Ensure no "Global config:" style text
+        assert "Global config:" not in result.output
+
+    def test_daemon_status_json_outputs_valid_json(
+        self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
+    ) -> None:
+        """Test that 'ember daemon status --json' outputs valid JSON."""
+        monkeypatch.chdir(git_repo_isolated)
+
+        result = runner.invoke(cli, ["daemon", "status", "--json"], catch_exceptions=False)
+
+        assert_command_success(result, context="daemon status --json")
+        data = json.loads(result.output)
+        assert isinstance(data, dict)
+
+    def test_daemon_status_json_contains_expected_fields(
+        self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
+    ) -> None:
+        """Test that daemon status --json includes running, pid, status fields."""
+        monkeypatch.chdir(git_repo_isolated)
+
+        result = runner.invoke(cli, ["daemon", "status", "--json"], catch_exceptions=False)
+
+        assert_command_success(result, context="daemon status --json fields")
+        data = json.loads(result.output)
+        assert "running" in data
+        assert "pid" in data
+        assert "status" in data
+        assert isinstance(data["running"], bool)
+
+    def test_daemon_status_json_is_pure_json(
+        self, runner: CliRunner, git_repo_isolated: Path, monkeypatch
+    ) -> None:
+        """Test that daemon status --json does not include human-readable text."""
+        monkeypatch.chdir(git_repo_isolated)
+
+        result = runner.invoke(cli, ["daemon", "status", "--json"], catch_exceptions=False)
+
+        assert_command_success(result, context="daemon status --json purity")
+        data = json.loads(result.output.strip())
+        assert isinstance(data, dict)
+        # Ensure no styled symbols
+        assert "✓" not in result.output
+        assert "✗" not in result.output
+
+    def test_status_json_help_documented(
+        self, runner: CliRunner
+    ) -> None:
+        """Test that --json flag is documented in status --help."""
+        result = runner.invoke(cli, ["status", "--help"])
+        assert_command_success(result, context="status --help")
+        assert "--json" in result.output
+
+    def test_config_show_json_help_documented(
+        self, runner: CliRunner
+    ) -> None:
+        """Test that --json flag is documented in config show --help."""
+        result = runner.invoke(cli, ["config", "show", "--help"])
+        assert_command_success(result, context="config show --help")
+        assert "--json" in result.output
+
+    def test_daemon_status_json_help_documented(
+        self, runner: CliRunner
+    ) -> None:
+        """Test that --json flag is documented in daemon status --help."""
+        result = runner.invoke(cli, ["daemon", "status", "--help"])
+        assert_command_success(result, context="daemon status --help")
+        assert "--json" in result.output

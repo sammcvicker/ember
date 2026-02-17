@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`--json` output flag for `status`, `config show`, and `daemon status` commands** (#442)
+  - `ember status --json` outputs `{"files": N, "chunks": N, "model": "...", "stale": bool, "last_sync": "ISO8601"}`
+  - `ember config show --json` outputs the full effective configuration as JSON
+  - `ember daemon status --json` outputs daemon status dict as JSON (running, pid, status, etc.)
+  - Enables programmatic integration with scripts, CI pipelines, and editor plugins
+  - Follows the same pattern as the existing `find --json` flag
+
 ### Fixed
 - **Consistent `--quiet` mode support across all CLI commands** (#433)
   - Added `_echo()` and `_secho()` helpers that check the quiet flag before printing
