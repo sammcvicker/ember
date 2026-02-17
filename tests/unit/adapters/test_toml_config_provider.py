@@ -348,3 +348,265 @@ patterns = ["api_key\\s*=\\s*['\"].*['\"]", "(?i)secret.*"]
 
         assert len(result.redaction.patterns) == 2
         assert "api_key" in result.redaction.patterns[0]
+
+
+class TestGlobalLocalMerge:
+    """Tests for global + local config merging behavior.
+
+    The merge cascade is: defaults -> global overrides -> local overrides.
+    Local config takes priority over global, which takes priority over defaults.
+    """
+
+    def test_global_config_overrides_defaults(
+        self, provider: TomlConfigProvider, tmp_path: Path
+    ) -> None:
+        """Global config values override built-in defaults."""
+        ember_dir = tmp_path / ".ember"
+        ember_dir.mkdir()
+        # No local config
+
+        # Set up global config
+        global_dir = tmp_path / "global_config" / "ember"
+        global_dir.mkdir(parents=True)
+        global_config = global_dir / "config.toml"
+        global_config.write_text(
+            """
+[search]
+topk = 75
+
+[display]
+theme = "monokai"
+"""
+        )
+
+        with patch(
+            "ember.adapters.config.toml_config_provider.get_global_config_path",
+            return_value=global_config,
+        ):
+            result = provider.load(ember_dir)
+
+        assert result.search.topk == 75
+        assert result.display.theme == "monokai"
+        # Other sections should use defaults
+        assert result.index.line_window == 120
+
+    def test_local_config_overrides_global(
+        self, provider: TomlConfigProvider, tmp_path: Path
+    ) -> None:
+        """Local config values take precedence over global config."""
+        ember_dir = tmp_path / ".ember"
+        ember_dir.mkdir()
+
+        # Local config overrides topk
+        local_config = ember_dir / "config.toml"
+        local_config.write_text(
+            """
+[search]
+topk = 200
+"""
+        )
+
+        # Global config sets different topk and also rerank
+        global_dir = tmp_path / "global_config" / "ember"
+        global_dir.mkdir(parents=True)
+        global_config = global_dir / "config.toml"
+        global_config.write_text(
+            """
+[search]
+topk = 75
+rerank = true
+"""
+        )
+
+        with patch(
+            "ember.adapters.config.toml_config_provider.get_global_config_path",
+            return_value=global_config,
+        ):
+            result = provider.load(ember_dir)
+
+        # Local overrides global
+        assert result.search.topk == 200
+        # Global value preserved where local doesn't override
+        assert result.search.rerank is True
+
+    def test_merge_across_different_sections(
+        self, provider: TomlConfigProvider, tmp_path: Path
+    ) -> None:
+        """Global and local configs can contribute different sections."""
+        ember_dir = tmp_path / ".ember"
+        ember_dir.mkdir()
+
+        # Local sets search section
+        local_config = ember_dir / "config.toml"
+        local_config.write_text(
+            """
+[search]
+topk = 50
+"""
+        )
+
+        # Global sets display section
+        global_dir = tmp_path / "global_config" / "ember"
+        global_dir.mkdir(parents=True)
+        global_config = global_dir / "config.toml"
+        global_config.write_text(
+            """
+[display]
+theme = "monokai"
+syntax_highlighting = false
+"""
+        )
+
+        with patch(
+            "ember.adapters.config.toml_config_provider.get_global_config_path",
+            return_value=global_config,
+        ):
+            result = provider.load(ember_dir)
+
+        # Local search settings
+        assert result.search.topk == 50
+        # Global display settings
+        assert result.display.theme == "monokai"
+        assert result.display.syntax_highlighting is False
+
+    def test_invalid_global_config_falls_back_to_defaults(
+        self, provider: TomlConfigProvider, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Invalid global config is ignored with a warning, defaults are used."""
+        ember_dir = tmp_path / ".ember"
+        ember_dir.mkdir()
+
+        # Valid local config
+        local_config = ember_dir / "config.toml"
+        local_config.write_text(
+            """
+[search]
+topk = 42
+"""
+        )
+
+        # Invalid global config
+        global_dir = tmp_path / "global_config" / "ember"
+        global_dir.mkdir(parents=True)
+        global_config = global_dir / "config.toml"
+        global_config.write_text("this is [[ invalid toml")
+
+        import logging
+
+        with (
+            patch(
+                "ember.adapters.config.toml_config_provider.get_global_config_path",
+                return_value=global_config,
+            ),
+            caplog.at_level(logging.WARNING),
+        ):
+            result = provider.load(ember_dir)
+
+        # Local config should still apply
+        assert result.search.topk == 42
+        # Warning should be logged about global config
+        assert "global config" in caplog.text.lower() or "Failed to parse global config" in caplog.text
+
+    def test_invalid_local_config_falls_back_to_global(
+        self, provider: TomlConfigProvider, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Invalid local config is ignored, global config is still used."""
+        ember_dir = tmp_path / ".ember"
+        ember_dir.mkdir()
+
+        # Invalid local config
+        local_config = ember_dir / "config.toml"
+        local_config.write_text("this is [[ invalid toml")
+
+        # Valid global config
+        global_dir = tmp_path / "global_config" / "ember"
+        global_dir.mkdir(parents=True)
+        global_config = global_dir / "config.toml"
+        global_config.write_text(
+            """
+[search]
+topk = 99
+"""
+        )
+
+        import logging
+
+        with (
+            patch(
+                "ember.adapters.config.toml_config_provider.get_global_config_path",
+                return_value=global_config,
+            ),
+            caplog.at_level(logging.WARNING),
+        ):
+            result = provider.load(ember_dir)
+
+        # Global config should be used
+        assert result.search.topk == 99
+        # Warning about local config
+        assert "config.toml" in caplog.text
+
+    def test_both_configs_missing_returns_defaults(
+        self, provider: TomlConfigProvider, tmp_path: Path, no_global_config: Path
+    ) -> None:
+        """When both global and local configs are missing, defaults are returned."""
+        ember_dir = tmp_path / ".ember"
+        ember_dir.mkdir()
+        # No local config, no_global_config fixture handles global
+
+        result = provider.load(ember_dir)
+
+        default = EmberConfig.default()
+        assert result == default
+
+    def test_invalid_model_name_falls_back_to_defaults(
+        self, provider: TomlConfigProvider, tmp_path: Path, no_global_config: Path
+    ) -> None:
+        """Invalid model name causes fallback to complete defaults."""
+        ember_dir = tmp_path / ".ember"
+        ember_dir.mkdir()
+
+        local_config = ember_dir / "config.toml"
+        local_config.write_text(
+            """
+[index]
+model = "totally-nonexistent-model-xyz"
+
+[search]
+topk = 999
+"""
+        )
+
+        with patch(
+            "ember.adapters.config.toml_config_provider._validate_model_name",
+            side_effect=ValueError("Unknown model"),
+        ):
+            result = provider.load(ember_dir)
+
+        # Should fall back to complete defaults when model is invalid
+        default = EmberConfig.default()
+        assert result == default
+
+    def test_global_config_not_loaded_when_not_exists(
+        self, provider: TomlConfigProvider, tmp_path: Path
+    ) -> None:
+        """No global config is loaded when the file does not exist."""
+        ember_dir = tmp_path / ".ember"
+        ember_dir.mkdir()
+
+        local_config = ember_dir / "config.toml"
+        local_config.write_text(
+            """
+[search]
+topk = 30
+"""
+        )
+
+        nonexistent_global = tmp_path / "nonexistent" / "config.toml"
+
+        with patch(
+            "ember.adapters.config.toml_config_provider.get_global_config_path",
+            return_value=nonexistent_global,
+        ):
+            result = provider.load(ember_dir)
+
+        assert result.search.topk == 30

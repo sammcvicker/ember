@@ -64,8 +64,9 @@ class TestCatSyntaxHighlighting:
 
         assert search_result.exit_code == 0
         results = json.loads(search_result.output)
-        if len(results) == 0:
-            pytest.skip("Search returned no results")
+        assert len(results) > 0, (
+            "Search should return results for 'calculate' query in test repo"
+        )
 
         # Cat the first result - should have syntax highlighting by default
         result = runner.invoke(cli, ["cat", "1"], catch_exceptions=False)
@@ -103,8 +104,9 @@ class TestCatSyntaxHighlighting:
 
         assert search_result.exit_code == 0
         results = json.loads(search_result.output)
-        if len(results) == 0:
-            pytest.skip("Search returned no results")
+        assert len(results) > 0, (
+            "Search should return results for 'calculate' query in test repo"
+        )
 
         # Cat the first result - should NOT have syntax highlighting
         result = runner.invoke(cli, ["cat", "1"], catch_exceptions=False)
@@ -142,8 +144,9 @@ class TestCatSyntaxHighlighting:
 
         assert search_result.exit_code == 0
         results = json.loads(search_result.output)
-        if len(results) == 0:
-            pytest.skip("Search returned no results")
+        assert len(results) > 0, (
+            "Search should return results for 'calculate' query in test repo"
+        )
 
         # Cat the first result - should use github-dark theme
         result = runner.invoke(cli, ["cat", "1"], catch_exceptions=False)
@@ -165,8 +168,9 @@ class TestCatSyntaxHighlighting:
 
         assert search_result.exit_code == 0
         results = json.loads(search_result.output)
-        if len(results) == 0:
-            pytest.skip("Search returned no results")
+        assert len(results) > 0, (
+            "Search should return results for 'calculate' query in test repo"
+        )
 
         # Verify the result is from a .py file
         assert results[0]["path"].endswith(".py")
@@ -191,8 +195,9 @@ class TestCatSyntaxHighlighting:
 
         assert search_result.exit_code == 0
         results = json.loads(search_result.output)
-        if len(results) == 0:
-            pytest.skip("Search returned no results")
+        assert len(results) > 0, (
+            "Search should return results for 'calculate' query in test repo"
+        )
 
         # Cat the result
         result = runner.invoke(cli, ["cat", "1"], catch_exceptions=False)
@@ -214,8 +219,9 @@ class TestCatSyntaxHighlighting:
 
         assert search_result.exit_code == 0
         results = json.loads(search_result.output)
-        if len(results) == 0:
-            pytest.skip("Search returned no results")
+        assert len(results) > 0, (
+            "Search should return results for 'calculate' query in test repo"
+        )
 
         # Cat with context
         result = runner.invoke(cli, ["cat", "1", "--context", "2"], catch_exceptions=False)
@@ -238,8 +244,9 @@ class TestCatSyntaxHighlighting:
 
         assert search_result.exit_code == 0
         results = json.loads(search_result.output)
-        if len(results) == 0:
-            pytest.skip("Search returned no results")
+        assert len(results) > 0, (
+            "Search should return results for 'calculate' query in test repo"
+        )
 
         chunk_id = results[0]["id"]
 
@@ -270,8 +277,9 @@ class TestCatSyntaxHighlighting:
 
         assert search_result.exit_code == 0
         results = json.loads(search_result.output)
-        if len(results) == 0:
-            pytest.skip("Search returned no results")
+        assert len(results) > 0, (
+            "Search should return results for 'calculate' query in test repo"
+        )
 
         chunk_id = results[0]["id"]
 
@@ -347,7 +355,7 @@ class TestCatSyntaxHighlighting:
         assert search_result.exit_code == 0
         results = json.loads(search_result.output)
         if len(results) == 0:
-            pytest.skip("Search returned no results")
+            pytest.skip("Search returned no results for unknown file type .xyz")
 
         # Cat should work even with unknown file type (fallback to plain text)
         result = runner.invoke(cli, ["cat", "1"], catch_exceptions=False)
