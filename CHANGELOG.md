@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Reduced cyclomatic complexity of `format_time_ago`** (#441)
+  - Replaced 13-branch if/elif chain with a data-driven lookup table
+  - Same output for all existing cases; easier to extend with new time units
+
 - **Consolidated Embedder Protocol to single canonical definition** (#440)
   - Removed duplicate `Embedder` Protocol classes from `adapters/factory.py` and `adapters/local_models/registry.py`
   - Both files now import `Embedder` from `ember/ports/embedders.py`

@@ -2,6 +2,27 @@
 
 from datetime import UTC, datetime
 
+# Each entry: (upper_threshold, divisor, singular_label, plural_label)
+# Ordered from smallest to largest time unit.
+# To add a new unit (e.g., "year"), append an entry at the end.
+_TIME_UNITS: list[tuple[float, float, str, str]] = [
+    (3_600, 60, "1 min ago", "{n} min ago"),
+    (86_400, 3_600, "1 hour ago", "{n} hours ago"),
+    (7 * 86_400, 86_400, "1 day ago", "{n} days ago"),
+    (30 * 86_400, 7 * 86_400, "1 week ago", "{n} weeks ago"),
+]
+
+_FINAL_DIVISOR: float = 30 * 86_400
+_FINAL_SINGULAR: str = "1 month ago"
+_FINAL_PLURAL: str = "{n} months ago"
+
+
+def _format_unit(value: int, singular: str, plural: str) -> str:
+    """Return the singular label if value == 1, otherwise the plural with {n} replaced."""
+    if value == 1:
+        return singular
+    return plural.format(n=value)
+
 
 def format_time_ago(timestamp: float | None) -> str | None:
     """Format a Unix timestamp as a human-friendly relative time string.
@@ -27,44 +48,15 @@ def format_time_ago(timestamp: float | None) -> str | None:
     then = datetime.fromtimestamp(timestamp, tz=UTC)
     delta_seconds = (now - then).total_seconds()
 
-    # Handle future timestamps (clock skew) gracefully
-    if delta_seconds < 0:
-        return "just now"
-
-    # Less than 1 minute
+    # Handle future timestamps (clock skew) or very recent
     if delta_seconds < 60:
         return "just now"
 
-    # Less than 1 hour
-    minutes = int(delta_seconds // 60)
-    if delta_seconds < 3600:
-        if minutes == 1:
-            return "1 min ago"
-        return f"{minutes} min ago"
+    for upper_threshold, divisor, singular, plural in _TIME_UNITS:
+        if delta_seconds < upper_threshold:
+            value = int(delta_seconds // divisor)
+            return _format_unit(value, singular, plural)
 
-    # Less than 1 day
-    hours = int(delta_seconds // 3600)
-    if delta_seconds < 86400:
-        if hours == 1:
-            return "1 hour ago"
-        return f"{hours} hours ago"
-
-    # Less than 1 week
-    days = int(delta_seconds // 86400)
-    if delta_seconds < 7 * 86400:
-        if days == 1:
-            return "1 day ago"
-        return f"{days} days ago"
-
-    # Less than 1 month (30 days)
-    weeks = int(delta_seconds // (7 * 86400))
-    if delta_seconds < 30 * 86400:
-        if weeks == 1:
-            return "1 week ago"
-        return f"{weeks} weeks ago"
-
-    # Months
-    months = int(delta_seconds // (30 * 86400))
-    if months == 1:
-        return "1 month ago"
-    return f"{months} months ago"
+    # Largest unit (months) has no upper bound
+    value = int(delta_seconds // _FINAL_DIVISOR)
+    return _format_unit(value, _FINAL_SINGULAR, _FINAL_PLURAL)
