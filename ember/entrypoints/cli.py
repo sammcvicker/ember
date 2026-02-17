@@ -1488,9 +1488,15 @@ cli.add_command(open_result, name="open")
     is_flag=True,
     help="Show full technical details including configuration parameters.",
 )
+@click.option(
+    "--json",
+    "json_output",
+    is_flag=True,
+    help="Output status as JSON for programmatic use.",
+)
 @click.pass_context
 @handle_cli_errors("status")
-def status(ctx: click.Context, detailed: bool) -> None:
+def status(ctx: click.Context, detailed: bool, json_output: bool) -> None:
     """Show ember index status.
 
     By default, shows essential information:
@@ -1499,6 +1505,7 @@ def status(ctx: click.Context, detailed: bool) -> None:
     - When last synced
 
     Use --detailed for full technical output including configuration parameters.
+    Use --json for machine-readable JSON output.
     """
     from ember.adapters.factory import RepositoryFactory
     from ember.core.status.status_usecase import StatusRequest, StatusUseCase
@@ -1530,6 +1537,29 @@ def status(ctx: click.Context, detailed: bool) -> None:
             f"Failed to get status: {response.error}",
             hint="Try 'ember sync' to refresh the index",
         )
+
+    # JSON output mode
+    if json_output:
+        import json
+
+        # Format last_sync as ISO 8601 string or None
+        last_sync_iso = None
+        if response.last_sync_time is not None:
+            from datetime import UTC, datetime
+
+            last_sync_iso = datetime.fromtimestamp(
+                response.last_sync_time, tz=UTC
+            ).isoformat()
+
+        data = {
+            "files": response.indexed_files,
+            "chunks": response.total_chunks,
+            "model": response.model_name,
+            "stale": response.is_stale,
+            "last_sync": last_sync_iso,
+        }
+        click.echo(json.dumps(data, indent=2))
+        return
 
     # In quiet mode, suppress all informational status output
     quiet = ctx.obj.get("quiet", False)
@@ -1666,19 +1696,47 @@ def _show_effective_config(
 @click.option(
     "--local", "-l", "show_local", is_flag=True, help="Show local config location"
 )
+@click.option(
+    "--json",
+    "json_output",
+    is_flag=True,
+    help="Output configuration as JSON for programmatic use.",
+)
 @click.pass_context
 @handle_cli_errors("config show")
 def config_show(
-    ctx: click.Context, show_global: bool, show_local: bool
+    ctx: click.Context, show_global: bool, show_local: bool, json_output: bool
 ) -> None:
     """Show configuration file locations and current settings.
 
     By default shows both locations. Use --global or --local to show specific one.
+    Use --json for machine-readable JSON output of the effective configuration.
     """
+    import dataclasses
+
     from ember.shared.config_io import get_global_config_path
 
     global_path = get_global_config_path()
     local_path = _get_local_config_path()
+
+    # JSON output mode - output effective config as JSON
+    if json_output:
+        import json
+
+        if local_path and local_path.parent.exists():
+            effective_config = _load_config(local_path.parent)
+        elif global_path.exists():
+            from ember.shared.config_io import load_config
+
+            effective_config = load_config(global_path)
+        else:
+            from ember.domain.config import EmberConfig as EmberConfigClass
+
+            effective_config = EmberConfigClass.default()
+
+        data = dataclasses.asdict(effective_config)
+        click.echo(json.dumps(data, indent=2))
+        return
 
     # Determine what to display - default is both
     include_global = show_global or not show_local
@@ -1924,17 +1982,33 @@ def restart(ctx: click.Context) -> None:
 
 
 @daemon.command(name="status")
+@click.option(
+    "--json",
+    "json_output",
+    is_flag=True,
+    help="Output daemon status as JSON for programmatic use.",
+)
 @click.pass_context
 @handle_cli_errors("daemon status")
-def daemon_status(ctx: click.Context) -> None:
-    """Show daemon status."""
-    from ember.adapters.factory import DaemonFactory
+def daemon_status(ctx: click.Context, json_output: bool) -> None:
+    """Show daemon status.
 
-    quiet = ctx.obj.get("quiet", False)
+    Use --json for machine-readable JSON output.
+    """
+    from ember.adapters.factory import DaemonFactory
 
     daemon_factory = DaemonFactory()
     lifecycle = daemon_factory.create_daemon_lifecycle()
     status = lifecycle.status()
+
+    # JSON output mode
+    if json_output:
+        import json
+
+        click.echo(json.dumps(status, indent=2))
+        return
+
+    quiet = ctx.obj.get("quiet", False)
 
     if quiet:
         return
