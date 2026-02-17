@@ -44,3 +44,12 @@ class Embedder(Protocol):
             RuntimeError: If model fails to load or embed.
         """
         ...
+
+    def ensure_loaded(self) -> None:
+        """Eagerly load the model into memory.
+
+        Calling this before embed_texts ensures the model is ready,
+        avoiding lazy-loading delays during batch processing.
+        Implementations should be idempotent.
+        """
+        ...
