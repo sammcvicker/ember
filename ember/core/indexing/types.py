@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ember.core.use_case_errors import EmberError
+from ember.ports.chunkers import ParseWarning
 
 
 class ModelMismatchError(EmberError):
@@ -58,6 +59,7 @@ class IndexResponse:
         is_incremental: Whether this was an incremental sync (vs full reindex).
         success: Whether indexing succeeded.
         error: Error message if indexing failed.
+        parse_warnings: List of parse warnings from tree-sitter failures.
     """
 
     files_indexed: int
@@ -70,6 +72,7 @@ class IndexResponse:
     is_incremental: bool = False
     success: bool = True
     error: str | None = None
+    parse_warnings: list[ParseWarning] = field(default_factory=list)
 
     @classmethod
     def create_success(
@@ -83,6 +86,7 @@ class IndexResponse:
         tree_sha: str,
         is_incremental: bool = False,
         files_failed: int = 0,
+        parse_warnings: list[ParseWarning] | None = None,
     ) -> "IndexResponse":
         """Create a success response with indexing statistics.
 
@@ -95,6 +99,7 @@ class IndexResponse:
             tree_sha: Git tree SHA that was indexed.
             is_incremental: Whether this was an incremental sync.
             files_failed: Number of files that failed to chunk.
+            parse_warnings: Optional list of parse warnings.
 
         Returns:
             IndexResponse with success=True and all statistics.
@@ -110,6 +115,7 @@ class IndexResponse:
             is_incremental=is_incremental,
             success=True,
             error=None,
+            parse_warnings=parse_warnings or [],
         )
 
     @classmethod

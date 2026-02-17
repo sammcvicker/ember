@@ -9,6 +9,38 @@ from pathlib import Path
 from typing import Protocol
 
 
+class ParseError(Exception):
+    """Raised when tree-sitter fails to parse a file.
+
+    This is a non-fatal error: the chunking use case catches it, records
+    a warning, and falls back to line-based chunking. The file is still
+    indexed, but users are informed that semantic parsing failed.
+
+    Distinct from returning an empty list (no definitions found), which
+    is normal behavior for files containing only statements.
+    """
+
+    pass
+
+
+@dataclass(frozen=True)
+class ParseWarning:
+    """Records a parse failure for user-facing reporting.
+
+    Created when tree-sitter fails to parse a file and the chunker
+    falls back to line-based chunking.
+
+    Attributes:
+        path: Relative path to the file that failed to parse.
+        language: Language identifier (py, ts, go, etc.).
+        reason: Human-readable description of the failure.
+    """
+
+    path: Path
+    language: str
+    reason: str
+
+
 @dataclass(frozen=True)
 class ChunkData:
     """Raw chunk data before creating a Chunk entity.

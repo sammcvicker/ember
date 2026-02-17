@@ -10,7 +10,7 @@ from tree_sitter import QueryCursor
 
 from ember.adapters.parsers.definition_matcher import DefinitionMatcher
 from ember.adapters.parsers.language_registry import LanguageRegistry
-from ember.ports.chunkers import ChunkData
+from ember.ports.chunkers import ChunkData, ParseError
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,11 @@ class TreeSitterChunker:
 
         Returns:
             List of ChunkData for extracted functions/classes.
-            Empty list if language not supported or parsing fails.
+            Empty list if language not supported or no definitions found.
+
+        Raises:
+            ParseError: If tree-sitter fails to parse the file or execute the query.
+                The caller should catch this and fall back to line-based chunking.
         """
         # Get language configuration
         config = self._registry.get_by_identifier(lang)
@@ -54,26 +58,30 @@ class TreeSitterChunker:
         query = self._registry.get_query(config.name)
 
         if not parser or not query:
-            logger.warning(f"Failed to initialize parser for {config.name} (file: {path})")
-            return []
+            raise ParseError(
+                f"Failed to initialize parser for {config.name} (file: {path})"
+            )
 
         # Parse the content
         try:
             tree = parser.parse(bytes(content, "utf-8"))
         except UnicodeEncodeError as e:
-            logger.warning(f"Failed to encode {path} as UTF-8: {e}")
-            return []
+            raise ParseError(
+                f"Failed to encode {path} as UTF-8: {e}"
+            ) from e
         except Exception as e:
-            logger.warning(f"Failed to parse {path} as {config.name}: {e}")
-            return []
+            raise ParseError(
+                f"Failed to parse {path} as {config.name}: {e}"
+            ) from e
 
         # Execute query to find definitions (query is pre-compiled and cached)
         try:
             cursor = QueryCursor(query)
             captures = cursor.captures(tree.root_node)
         except Exception as e:
-            logger.warning(f"Query execution failed for {path} ({config.name}): {e}")
-            return []
+            raise ParseError(
+                f"Query execution failed for {path} ({config.name}): {e}"
+            ) from e
 
         # Match names to definitions using DefinitionMatcher
         definitions = DefinitionMatcher.match(captures)

@@ -972,11 +972,12 @@ def _get_targeted_sync_hint(error_message: str) -> str:
     return "Run 'ember sync --verbose' for more details"
 
 
-def _format_sync_results(response) -> None:
+def _format_sync_results(response, verbose: bool = False) -> None:
     """Print formatted sync results.
 
     Args:
         response: IndexResponse from indexing use case.
+        verbose: If True, show detailed information including individual parse failures.
     """
     sync_type = "incremental" if response.is_incremental else "full"
 
@@ -993,6 +994,22 @@ def _format_sync_results(response) -> None:
         click.echo(f"  • {response.chunks_deleted} chunks deleted")
     if response.vectors_stored > 0:
         click.echo(f"  • {response.vectors_stored} vectors stored")
+
+    # Show parse failure summary
+    parse_warnings = getattr(response, "parse_warnings", [])
+    if parse_warnings:
+        click.echo(
+            f"  • {len(parse_warnings)} file(s) failed to parse "
+            f"(fell back to line-based chunking)"
+        )
+        if verbose:
+            for warning in parse_warnings:
+                click.echo(f"    - {warning.path}: {warning.reason}")
+        else:
+            click.echo("    Run with --verbose to see which files failed")
+    if response.files_failed > 0:
+        click.echo(f"  • {response.files_failed} file(s) failed to index")
+
     if response.files_indexed > 0 or response.chunks_deleted > 0:
         click.echo(f"  • Tree SHA: {response.tree_sha[:12]}...")
 
@@ -1068,7 +1085,7 @@ def sync(
             hint=hint,
         )
 
-    _format_sync_results(response)
+    _format_sync_results(response, verbose=ctx.obj.get("verbose", False))
 
 
 @cli.command()
