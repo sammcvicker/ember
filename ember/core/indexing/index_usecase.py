@@ -28,7 +28,7 @@ from ember.core.use_case_errors import (
     log_use_case_error,
 )
 from ember.domain.entities import Chunk
-from ember.ports.chunkers import ChunkData
+from ember.ports.chunkers import ChunkData, ParseWarning
 from ember.ports.embedders import Embedder
 from ember.ports.fs import FileSystem
 from ember.ports.progress import ProgressCallback
@@ -168,13 +168,14 @@ class IndexingUseCase:
         sync_mode: str,
         sync_type: str,
         progress: ProgressCallback | None,
-    ) -> dict[str, int]:
+    ) -> dict:
         """Index all files with progress reporting. Returns counts dict."""
         files_indexed = 0
         chunks_created = 0
         chunks_updated = 0
         vectors_stored = 0
         files_failed = 0
+        all_parse_warnings: list[ParseWarning] = []
 
         # Report progress start
         if progress and files_to_index:
@@ -198,6 +199,7 @@ class IndexingUseCase:
             chunks_updated += result["chunks_updated"]
             vectors_stored += result["vectors_stored"]
             files_failed += result["failed"]
+            all_parse_warnings.extend(result.get("parse_warnings", []))
 
         # Report completion
         if progress and files_to_index:
@@ -209,6 +211,7 @@ class IndexingUseCase:
             "chunks_updated": chunks_updated,
             "vectors_stored": vectors_stored,
             "files_failed": files_failed,
+            "parse_warnings": all_parse_warnings,
         }
 
     def _update_metadata(self, tree_sha: str, sync_mode: str) -> None:
@@ -230,6 +233,7 @@ class IndexingUseCase:
         tree_sha: str,
         is_incremental: bool,
         files_failed: int = 0,
+        parse_warnings: list[ParseWarning] | None = None,
     ) -> IndexResponse:
         """Create a success response with indexing statistics.
 
@@ -242,6 +246,7 @@ class IndexingUseCase:
             tree_sha: Git tree SHA that was indexed.
             is_incremental: Whether this was an incremental sync.
             files_failed: Number of files that failed to chunk.
+            parse_warnings: Optional list of parse warnings from tree-sitter failures.
 
         Returns:
             IndexResponse with success=True and all statistics.
@@ -253,6 +258,8 @@ class IndexingUseCase:
         )
         if files_failed > 0:
             log_msg += f", {files_failed} failed"
+        if parse_warnings:
+            log_msg += f", {len(parse_warnings)} parse warning(s)"
         logger.info(log_msg)
 
         return IndexResponse.create_success(
@@ -264,6 +271,7 @@ class IndexingUseCase:
             tree_sha=tree_sha,
             is_incremental=is_incremental,
             files_failed=files_failed,
+            parse_warnings=parse_warnings,
         )
 
     def execute(
@@ -384,7 +392,7 @@ class IndexingUseCase:
         repo_root: Path,
         tree_sha: str,
         sync_mode: str,
-    ) -> dict[str, int]:
+    ) -> dict:
         """Index a single file.
 
         This method orchestrates the file indexing pipeline:
@@ -400,7 +408,8 @@ class IndexingUseCase:
             sync_mode: Sync mode (for rev field).
 
         Returns:
-            Dict with counts: chunks_created, chunks_updated, vectors_stored, failed.
+            Dict with counts: chunks_created, chunks_updated, vectors_stored, failed,
+            and parse_warnings list.
             On failure, failed=1 and other counts are 0.
         """
         # Step 1: Preprocess file (I/O, hashing, decoding, language detection)
@@ -419,11 +428,19 @@ class IndexingUseCase:
                 f"Failed to chunk {preprocessed.rel_path}: {chunk_response.error}. "
                 f"Preserving existing chunks to avoid data loss."
             )
-            return {"chunks_created": 0, "chunks_updated": 0, "vectors_stored": 0, "failed": 1}
+            return {
+                "chunks_created": 0, "chunks_updated": 0,
+                "vectors_stored": 0, "failed": 1,
+                "parse_warnings": [],
+            }
 
         # Step 3: Delete old chunks (done AFTER chunking succeeds to prevent data loss)
         if not self.chunk_storage.delete_old_chunks(preprocessed.rel_path):
-            return {"chunks_created": 0, "chunks_updated": 0, "vectors_stored": 0, "failed": 1}
+            return {
+                "chunks_created": 0, "chunks_updated": 0,
+                "vectors_stored": 0, "failed": 1,
+                "parse_warnings": chunk_response.parse_warnings,
+            }
 
         # Step 4: Create Chunk entities from ChunkData
         chunks = self._create_chunks(
@@ -440,7 +457,11 @@ class IndexingUseCase:
         )
 
         if result.failed:
-            return {"chunks_created": 0, "chunks_updated": 0, "vectors_stored": 0, "failed": 1}
+            return {
+                "chunks_created": 0, "chunks_updated": 0,
+                "vectors_stored": 0, "failed": 1,
+                "parse_warnings": chunk_response.parse_warnings,
+            }
 
         # Step 6: Track file metadata (non-critical, failures logged but don't fail indexing)
         self._track_file_metadata(file_path, preprocessed)
@@ -450,6 +471,7 @@ class IndexingUseCase:
             "chunks_updated": result.chunks_updated,
             "vectors_stored": result.vectors_stored,
             "failed": 0,
+            "parse_warnings": chunk_response.parse_warnings,
         }
 
     def _track_file_metadata(

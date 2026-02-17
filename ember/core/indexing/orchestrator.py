@@ -94,6 +94,7 @@ class IndexingOrchestrator:
             tree_sha=ctx.tree_sha,
             is_incremental=ctx.is_incremental,
             files_failed=ctx.stats["files_failed"],
+            parse_warnings=ctx.stats.get("parse_warnings", []),
         )
 
     def _handle_deletions_if_incremental(self, ctx: IndexingContext) -> int:

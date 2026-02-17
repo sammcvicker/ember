@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Tree-sitter parse failures are now surfaced to users instead of being silently swallowed** (#438)
+  - `TreeSitterChunker` now raises `ParseError` on parse failure instead of returning an empty list
+  - `ChunkFileUseCase` catches `ParseError`, records a `ParseWarning`, and falls back to line-based chunking
+  - Sync output shows count of files that failed to parse (e.g., "3 file(s) failed to parse")
+  - `--verbose` flag lists specific files and reasons for parse failures
+  - Files that parse successfully are completely unaffected
+  - Files with no definitions (only statements) still fall back normally without a warning
+
 - **SimpleVectorSearch no longer loads all vectors into memory on every query** (#435)
   - Replaced `fetchall()` with streaming `fetchmany()` batches and a bounded min-heap
   - Memory usage is now O(topk + batch_size) regardless of corpus size

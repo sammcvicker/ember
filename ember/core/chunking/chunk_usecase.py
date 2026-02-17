@@ -4,11 +4,11 @@ This module provides the business logic for chunking files using tree-sitter
 when available, falling back to line-based chunking for unsupported languages.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from ember.core.use_case_errors import format_error_message, log_use_case_error
-from ember.ports.chunkers import ChunkData, Chunker
+from ember.ports.chunkers import ChunkData, Chunker, ParseError, ParseWarning
 
 
 @dataclass
@@ -35,22 +35,29 @@ class ChunkFileResponse:
         strategy: Strategy used ("tree-sitter" or "line-based").
         success: Whether chunking succeeded.
         error: Error message if chunking failed.
+        parse_warnings: List of parse warnings (e.g., tree-sitter fallback).
     """
 
     chunks: list[ChunkData]
     strategy: str
     success: bool = True
     error: str | None = None
+    parse_warnings: list[ParseWarning] = field(default_factory=list)
 
     @classmethod
     def create_success(
-        cls, *, chunks: list[ChunkData], strategy: str
+        cls,
+        *,
+        chunks: list[ChunkData],
+        strategy: str,
+        parse_warnings: list[ParseWarning] | None = None,
     ) -> "ChunkFileResponse":
         """Create a success response with chunks.
 
         Args:
             chunks: List of extracted chunks.
             strategy: Strategy used ("tree-sitter", "line-based", or "none").
+            parse_warnings: Optional list of parse warnings.
 
         Returns:
             ChunkFileResponse with success=True and chunks.
@@ -60,6 +67,7 @@ class ChunkFileResponse:
             strategy=strategy,
             success=True,
             error=None,
+            parse_warnings=parse_warnings or [],
         )
 
     @classmethod
@@ -107,6 +115,7 @@ class ChunkFileUseCase:
 
         Error handling contract:
             - KeyboardInterrupt/SystemExit are re-raised (user wants to exit)
+            - ParseError from tree-sitter triggers fallback with a warning
             - All other exceptions are caught and converted to error responses
             - See ember.core.use_case_errors for the error handling pattern
 
@@ -121,21 +130,34 @@ class ChunkFileUseCase:
             if not request.content.strip():
                 return ChunkFileResponse.create_success(chunks=[], strategy="none")
 
+            parse_warnings: list[ParseWarning] = []
+
             # Try tree-sitter first for supported languages
             if request.lang in self.tree_sitter.supported_languages:
-                chunks = self.tree_sitter.chunk_file(
-                    content=request.content,
-                    path=request.path,
-                    lang=request.lang,
-                )
-
-                # If tree-sitter succeeded and returned chunks, use them
-                if chunks:
-                    return ChunkFileResponse.create_success(
-                        chunks=chunks, strategy="tree-sitter"
+                try:
+                    chunks = self.tree_sitter.chunk_file(
+                        content=request.content,
+                        path=request.path,
+                        lang=request.lang,
                     )
 
-                # Tree-sitter failed or returned no chunks, fall back to line-based
+                    # If tree-sitter succeeded and returned chunks, use them
+                    if chunks:
+                        return ChunkFileResponse.create_success(
+                            chunks=chunks, strategy="tree-sitter"
+                        )
+
+                    # Tree-sitter returned no chunks (no definitions found),
+                    # fall back to line-based without a warning
+                except ParseError as e:
+                    # Tree-sitter failed to parse - record warning and fall back
+                    parse_warnings.append(
+                        ParseWarning(
+                            path=request.path,
+                            language=request.lang,
+                            reason=str(e),
+                        )
+                    )
 
             # Fall back to line-based chunking
             chunks = self.line_chunker.chunk_file(
@@ -144,7 +166,11 @@ class ChunkFileUseCase:
                 lang=request.lang,
             )
 
-            return ChunkFileResponse.create_success(chunks=chunks, strategy="line-based")
+            return ChunkFileResponse.create_success(
+                chunks=chunks,
+                strategy="line-based",
+                parse_warnings=parse_warnings,
+            )
 
         except (KeyboardInterrupt, SystemExit):
             raise
