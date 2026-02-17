@@ -1,9 +1,43 @@
 """SQLite adapter implementing VectorRepository protocol for embedding storage."""
 
+import logging
 import struct
 from pathlib import Path
 
 from ember.adapters.sqlite.base_repository import SQLiteBaseRepository
+
+logger = logging.getLogger(__name__)
+
+
+class CorruptedVectorError(Exception):
+    """Raised when a vector BLOB cannot be decoded due to corruption.
+
+    This typically happens from interrupted writes, database corruption,
+    or dimension mismatch after an embedding model change without reindexing.
+
+    Attributes:
+        chunk_id: The chunk identifier associated with the corrupted vector.
+        expected_bytes: The number of bytes expected for the given dimension.
+        actual_bytes: The actual number of bytes in the BLOB.
+    """
+
+    def __init__(
+        self,
+        chunk_id: str | None,
+        expected_bytes: int,
+        actual_bytes: int,
+    ) -> None:
+        self.chunk_id = chunk_id
+        self.expected_bytes = expected_bytes
+        self.actual_bytes = actual_bytes
+        chunk_desc = chunk_id if chunk_id else "unknown chunk"
+        super().__init__(
+            f"Corrupted vector BLOB for chunk '{chunk_desc}': "
+            f"expected {expected_bytes} bytes (dim={expected_bytes // 4}) "
+            f"but got {actual_bytes} bytes. "
+            f"This may indicate database corruption or a model change. "
+            f"Run 'ember sync --force' to rebuild the index."
+        )
 
 
 class SQLiteVectorRepository(SQLiteBaseRepository):
@@ -39,18 +73,43 @@ class SQLiteVectorRepository(SQLiteBaseRepository):
         # Pack as array of float32 (4 bytes each)
         return struct.pack(f"{len(vector)}f", *vector)
 
-    def _decode_vector(self, blob: bytes, dim: int) -> list[float]:
+    def _decode_vector(
+        self, blob: bytes, dim: int, chunk_id: str | None = None
+    ) -> list[float]:
         """Decode a vector from binary BLOB.
+
+        Validates BLOB size before decoding and provides informative error
+        messages including chunk context when available.
 
         Args:
             blob: Binary BLOB data.
             dim: Expected vector dimension.
+            chunk_id: Optional chunk identifier for error context.
 
         Returns:
             List of floats.
+
+        Raises:
+            CorruptedVectorError: If BLOB size doesn't match expected dimension.
         """
-        # Unpack array of float32
-        return list(struct.unpack(f"{dim}f", blob))
+        expected_bytes = dim * 4  # float32 = 4 bytes
+        actual_bytes = len(blob)
+
+        if actual_bytes != expected_bytes:
+            raise CorruptedVectorError(
+                chunk_id=chunk_id,
+                expected_bytes=expected_bytes,
+                actual_bytes=actual_bytes,
+            )
+
+        try:
+            return list(struct.unpack(f"{dim}f", blob))
+        except struct.error as e:
+            raise CorruptedVectorError(
+                chunk_id=chunk_id,
+                expected_bytes=expected_bytes,
+                actual_bytes=actual_bytes,
+            ) from e
 
     def _get_db_chunk_id(self, chunk_id: str) -> int | None:
         """Get the DB's internal integer id for a chunk.
@@ -132,11 +191,14 @@ class SQLiteVectorRepository(SQLiteBaseRepository):
     def get(self, chunk_id: str) -> list[float] | None:
         """Retrieve an embedding vector for a chunk.
 
+        Uses graceful degradation: if the stored vector BLOB is corrupted,
+        returns None and logs a warning instead of raising an exception.
+
         Args:
             chunk_id: The chunk identifier.
 
         Returns:
-            The embedding vector if found, None otherwise.
+            The embedding vector if found and valid, None otherwise.
         """
         # Get the DB's internal chunk id
         db_chunk_id = self._get_db_chunk_id(chunk_id)
@@ -162,7 +224,18 @@ class SQLiteVectorRepository(SQLiteBaseRepository):
         blob = row[0]
         dim = row[1]
 
-        return self._decode_vector(blob, dim)
+        try:
+            return self._decode_vector(blob, dim, chunk_id=chunk_id)
+        except CorruptedVectorError:
+            logger.warning(
+                "Skipping corrupted vector for chunk '%s': "
+                "expected %d bytes but got %d bytes. "
+                "Run 'ember sync --force' to rebuild the index.",
+                chunk_id,
+                dim * 4,
+                len(blob),
+            )
+            return None
 
     def delete(self, chunk_id: str) -> None:
         """Delete an embedding vector.

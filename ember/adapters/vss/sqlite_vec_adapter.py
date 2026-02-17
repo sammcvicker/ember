@@ -9,6 +9,7 @@ sqlite-vec provides much better performance than brute-force methods,
 especially for larger datasets.
 """
 
+import logging
 import re
 import sqlite3
 import struct
@@ -17,6 +18,8 @@ from pathlib import Path
 import sqlite_vec
 
 from ember.adapters.sqlite.base_repository import SQLiteBaseRepository
+
+logger = logging.getLogger(__name__)
 
 
 def _clamp_similarity(similarity: float) -> float:
@@ -191,8 +194,33 @@ class SqliteVecAdapter(SQLiteBaseRepository):
             start_line = row[5]
             end_line = row[6]
 
-            # Decode vector from BLOB (stored as float32)
-            vector = list(struct.unpack(f"{dim}f", embedding_blob))
+            # Validate BLOB size before decoding (dim floats * 4 bytes each)
+            expected_bytes = dim * 4
+            actual_bytes = len(embedding_blob)
+            if actual_bytes != expected_bytes:
+                logger.warning(
+                    "Skipping corrupted vector for chunk_db_id=%d (path=%s): "
+                    "expected %d bytes (dim=%d) but got %d bytes. "
+                    "Run 'ember sync --force' to rebuild the index.",
+                    chunk_db_id,
+                    path,
+                    expected_bytes,
+                    dim,
+                    actual_bytes,
+                )
+                continue
+
+            try:
+                vector = list(struct.unpack(f"{dim}f", embedding_blob))
+            except struct.error:
+                logger.warning(
+                    "Skipping corrupted vector for chunk_db_id=%d (path=%s): "
+                    "failed to decode BLOB. "
+                    "Run 'ember sync --force' to rebuild the index.",
+                    chunk_db_id,
+                    path,
+                )
+                continue
 
             vectors_to_add.append((vector, project_id, path, start_line, end_line, chunk_db_id))
 

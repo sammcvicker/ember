@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Corrupted vector BLOBs now produce clear errors instead of crashing** (#443)
+  - Added `CorruptedVectorError` with chunk ID context, expected vs actual byte sizes, and remediation hint
+  - Dimension validation before `struct.unpack()` catches size mismatches early
+  - `VectorRepository.get()` gracefully returns `None` and logs a warning for corrupted vectors
+  - `SqliteVecAdapter._sync_vectors()` skips corrupted vectors and continues syncing valid ones
+  - All error messages suggest `ember sync --force` to rebuild the index
+
 ### Changed
 - **Reduced cyclomatic complexity of `format_time_ago`** (#441)
   - Replaced 13-branch if/elif chain with a data-driven lookup table
