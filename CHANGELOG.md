@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Consistent `--quiet` mode support across all CLI commands** (#433)
+  - Added `_echo()` and `_secho()` helpers that check the quiet flag before printing
+  - `sync` now fully suppresses completion messages, quick-check messages, and progress in quiet mode
+  - `status` suppresses all informational output in quiet mode (errors still display)
+  - `find` suppresses cache warnings and degraded-result warnings in quiet mode
+  - Daemon commands (`start`, `stop`, `restart`, `status`) all respect quiet mode
+  - `config edit` suppresses informational messages in quiet mode
+  - Primary output (search results, cat content, JSON output) is never suppressed
+  - Errors always display regardless of quiet mode
+
 - **Tree-sitter parse failures are now surfaced to users instead of being silently swallowed** (#438)
   - `TreeSitterChunker` now raises `ParseError` on parse failure instead of returning an empty list
   - `ChunkFileUseCase` catches `ParseError`, records a `ParseWarning`, and falls back to line-based chunking

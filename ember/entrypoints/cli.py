@@ -45,6 +45,39 @@ from ember.domain.exceptions import EmberDomainError
 from ember.version import __version__
 
 
+def _echo(ctx: click.Context, message: str, **kwargs) -> None:
+    """Print a message only if quiet mode is not active.
+
+    Use this for all informational output that should be suppressed with --quiet.
+    Do NOT use this for error messages or primary command output (search results,
+    cat content, etc.) -- those should always be displayed.
+
+    Args:
+        ctx: Click context containing the quiet flag in ctx.obj.
+        message: Message to print.
+        **kwargs: Additional keyword arguments passed to click.echo
+            (e.g., err=True, nl=True).
+    """
+    if not ctx.obj.get("quiet", False):
+        click.echo(message, **kwargs)
+
+
+def _secho(ctx: click.Context, message: str, **kwargs) -> None:
+    """Print a styled message only if quiet mode is not active.
+
+    Use this for styled informational output that should be suppressed with --quiet.
+    Do NOT use this for error messages or primary command output.
+
+    Args:
+        ctx: Click context containing the quiet flag in ctx.obj.
+        message: Message to print.
+        **kwargs: Additional keyword arguments passed to click.secho
+            (e.g., fg="green", err=True).
+    """
+    if not ctx.obj.get("quiet", False):
+        click.secho(message, **kwargs)
+
+
 def _make_path_in_exclusive_callback(command_name: str, in_param_name: str = "path_filter"):
     """Create a callback that validates PATH and --in are mutually exclusive.
 
@@ -896,7 +929,7 @@ def _parse_sync_mode(rev: str | None, staged: bool, worktree: bool) -> str:
 
 
 def _quick_check_unchanged(
-    repo_root: Path, db_path: Path, sync_mode: str, reindex: bool
+    repo_root: Path, db_path: Path, sync_mode: str, reindex: bool, quiet: bool = False
 ) -> bool:
     """Check if index is up-to-date without expensive setup.
 
@@ -908,6 +941,7 @@ def _quick_check_unchanged(
         db_path: Path to SQLite database.
         sync_mode: Sync mode (worktree, staged, or revision).
         reindex: Whether force reindex is requested.
+        quiet: If True, suppress warning messages.
 
     Returns:
         True if index is unchanged and sync can be skipped, False otherwise.
@@ -923,7 +957,8 @@ def _quick_check_unchanged(
         return sync_service.quick_check_unchanged(sync_mode, reindex)
     except Exception as e:
         # If quick check fails, fall through to full sync
-        click.echo(f"Warning: Quick check failed, performing full sync: {e}", err=True)
+        if not quiet:
+            click.echo(f"Warning: Quick check failed, performing full sync: {e}", err=True)
         return False
 
 
@@ -972,13 +1007,17 @@ def _get_targeted_sync_hint(error_message: str) -> str:
     return "Run 'ember sync --verbose' for more details"
 
 
-def _format_sync_results(response, verbose: bool = False) -> None:
+def _format_sync_results(response, verbose: bool = False, quiet: bool = False) -> None:
     """Print formatted sync results.
 
     Args:
         response: IndexResponse from indexing use case.
         verbose: If True, show detailed information including individual parse failures.
+        quiet: If True, suppress all informational output.
     """
+    if quiet:
+        return
+
     sync_type = "incremental" if response.is_incremental else "full"
 
     if response.files_indexed == 0 and response.chunks_deleted == 0:
@@ -1055,9 +1094,11 @@ def sync(
     db_path = ember_dir / "index.db"
     sync_mode = _parse_sync_mode(rev, staged, worktree)
 
+    quiet = ctx.obj.get("quiet", False)
+
     # Quick check optimization
-    if _quick_check_unchanged(repo_root, db_path, sync_mode, reindex):
-        click.echo("✓ No changes detected (quick check)")
+    if _quick_check_unchanged(repo_root, db_path, sync_mode, reindex, quiet=quiet):
+        _echo(ctx, "✓ No changes detected (quick check)")
         return
 
     # Load config and create indexing use case
@@ -1085,7 +1126,7 @@ def sync(
             hint=hint,
         )
 
-    _format_sync_results(response, verbose=ctx.obj.get("verbose", False))
+    _format_sync_results(response, verbose=ctx.obj.get("verbose", False), quiet=quiet)
 
 
 @cli.command()
@@ -1198,7 +1239,7 @@ def find(
 
     # Display warning if results are degraded (missing chunks)
     if result_set.warning:
-        click.secho(result_set.warning, fg="yellow", err=True)
+        _secho(ctx, result_set.warning, fg="yellow", err=True)
 
     # Cache results for cat/open commands
     cache_path = deps.ember_dir / ".last_search.json"
@@ -1208,8 +1249,8 @@ def find(
         cache_data = ResultPresenter.serialize_for_cache(query, result_set.results)
         cache_path.write_text(json.dumps(cache_data, indent=2))
     except Exception as e:
-        # Always show cache errors to stderr (Issue #421 - don't silently swallow)
-        click.echo(f"Warning: Could not cache results: {e}", err=True)
+        # Show cache errors to stderr unless quiet mode (non-critical warning)
+        _echo(ctx, f"Warning: Could not cache results: {e}", err=True)
 
     # Display results
     presenter = ResultPresenter(LocalFileSystem())
@@ -1490,6 +1531,11 @@ def status(ctx: click.Context, detailed: bool) -> None:
             hint="Try 'ember sync' to refresh the index",
         )
 
+    # In quiet mode, suppress all informational status output
+    quiet = ctx.obj.get("quiet", False)
+    if quiet:
+        return
+
     # Build sync time display
     sync_time_display = ""
     if response.last_sync_time_ago:
@@ -1700,7 +1746,7 @@ def config_edit(ctx: click.Context, edit_global: bool) -> None:
 
     # Create config file if it doesn't exist
     if not config_path.exists():
-        click.echo(f"Creating {config_type} config at {config_path}...")
+        _echo(ctx, f"Creating {config_type} config at {config_path}...")
         if edit_global:
             create_global_config_file(config_path)
         else:
@@ -1708,7 +1754,7 @@ def config_edit(ctx: click.Context, edit_global: bool) -> None:
 
     # Open in editor
     editor = get_editor()
-    click.echo(f"Opening {config_path} in {editor}...")
+    _echo(ctx, f"Opening {config_path} in {editor}...")
     try:
         subprocess.run([editor, str(config_path)], check=True)
     except subprocess.CalledProcessError as e:
@@ -1798,10 +1844,10 @@ def start(ctx: click.Context, foreground: bool) -> None:
         )
 
         if lifecycle.is_running():
-            click.echo("✓ Daemon is already running")
+            _echo(ctx, "✓ Daemon is already running")
             return
 
-        click.echo("Starting daemon in foreground...")
+        _echo(ctx, "Starting daemon in foreground...")
         try:
             lifecycle.start(foreground=True)
         except RuntimeError as e:
@@ -1827,8 +1873,9 @@ def start(ctx: click.Context, foreground: bool) -> None:
 
 
 @daemon.command()
+@click.pass_context
 @handle_cli_errors("daemon stop")
-def stop() -> None:
+def stop(ctx: click.Context) -> None:
     """Stop the daemon server."""
     from ember.adapters.factory import DaemonFactory
 
@@ -1836,12 +1883,12 @@ def stop() -> None:
     lifecycle = daemon_factory.create_daemon_lifecycle()
 
     if not lifecycle.is_running():
-        click.echo("Daemon is not running")
+        _echo(ctx, "Daemon is not running")
         return
 
-    click.echo("Stopping daemon...")
+    _echo(ctx, "Stopping daemon...")
     if lifecycle.stop():
-        click.echo("✓ Daemon stopped successfully")
+        _echo(ctx, "✓ Daemon stopped successfully")
     else:
         raise EmberCliError(
             "Failed to stop daemon",
@@ -1865,10 +1912,10 @@ def restart(ctx: click.Context) -> None:
         idle_timeout=config.model.daemon_timeout,
         model_name=config.index.model,
     )
-    click.echo("Restarting daemon...")
+    _echo(ctx, "Restarting daemon...")
 
     if lifecycle.restart():
-        click.echo("✓ Daemon restarted successfully")
+        _echo(ctx, "✓ Daemon restarted successfully")
     else:
         raise EmberCliError(
             "Failed to restart daemon",
@@ -1877,14 +1924,20 @@ def restart(ctx: click.Context) -> None:
 
 
 @daemon.command(name="status")
+@click.pass_context
 @handle_cli_errors("daemon status")
-def daemon_status() -> None:
+def daemon_status(ctx: click.Context) -> None:
     """Show daemon status."""
     from ember.adapters.factory import DaemonFactory
+
+    quiet = ctx.obj.get("quiet", False)
 
     daemon_factory = DaemonFactory()
     lifecycle = daemon_factory.create_daemon_lifecycle()
     status = lifecycle.status()
+
+    if quiet:
+        return
 
     # Display status
     if status["running"]:
