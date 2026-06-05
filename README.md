@@ -2,7 +2,7 @@
 
 **Local codebase embedding and semantic search for developers and AI agents**
 
-Ember turns any codebase into a searchable knowledge base using hybrid search (BM25 + vector embeddings). Fast, deterministic, and completely local—no servers, no MCP, no cloud dependencies.
+Ember turns any codebase into a searchable knowledge base using hybrid search (BM25 + vector embeddings). Fast, deterministic, and completely local—no cloud dependencies. Includes an MCP server for seamless AI agent integration.
 
 [![Tests](https://img.shields.io/badge/tests-801%20passing-brightgreen)]()
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)]()
@@ -21,7 +21,8 @@ Ember turns any codebase into a searchable knowledge base using hybrid search (B
 - **Developer-friendly**: `find -> cat -> open` workflow integrates with your editor
 - **Works like git**: Run from any subdirectory, search what you see (including untracked files)
 - **Deterministic**: Reproducible indexes via git tree SHAs and model fingerprints
-- **Zero dependencies**: No servers, APIs, or cloud services—runs entirely offline
+- **MCP-ready**: Built-in MCP server for AI agent integration (Claude, Cursor, Gemini, etc.)
+- **Zero cloud dependencies**: No APIs or cloud services—runs entirely offline
 
 ---
 
@@ -335,6 +336,37 @@ daemon_timeout = 900   # auto-shutdown after 15 min (default)
 - **Direct mode (no daemon):** 800ms+ per search
 
 **Note:** Daemon auto-starts on first `ember find` or `ember sync` command. Manual management is optional.
+
+---
+
+### `ember mcp`
+
+Expose Ember as an MCP (Model Context Protocol) server for AI agent integration.
+
+**Commands:**
+```bash
+# Start MCP server (stdio transport)
+ember mcp start
+```
+
+**MCP Client Configuration:**
+
+Add to your MCP client config (Claude Desktop, Cursor, Gemini, etc.):
+```json
+{
+  "ember": {
+    "command": "ember",
+    "args": ["mcp", "start"]
+  }
+}
+```
+
+**Available MCP Tools:**
+- **`ember_search`**: Semantic code search with auto-sync (query, topk, path_filter, lang_filter)
+- **`ember_status`**: Check index health, file counts, and configuration
+- **`ember_cat`**: Retrieve full content of a search result by index or chunk hash
+
+**Note:** The MCP server runs over stdio and auto-syncs the index before searches.
 
 ---
 
@@ -667,13 +699,17 @@ A: The daemon keeps the embedding model loaded in memory, making searches 18.6x 
 - Daemon reliability fixes (#214, #215, #216)
 - 801 comprehensive tests (up from 271)
 
+**v1.3.0** (Unreleased)
+- MCP server for AI agent integration (`ember mcp start`)
+- Compatible with Claude, Cursor, Gemini, and other MCP clients
+- Three MCP tools: `ember_search`, `ember_status`, `ember_cat`
+
 **Future** (see [GitHub Issues](https://github.com/sammcvicker/ember/issues))
 - Export/import bundles
 - Audit command for secrets
 - Include/ignore patterns from config
 - Cross-encoder reranking
 - Watch mode (auto-sync on file changes)
-- HTTP server for AI agents
 - Multi-project support
 
 ---

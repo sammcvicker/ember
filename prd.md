@@ -8,7 +8,7 @@
 
 ## 1) Problem Statement & Goals
 
-**Problem:** Quickly turn any codebase into a searchable knowledge base that both humans and AI agents can query—without servers, MCP, or cloud dependencies.
+**Problem:** Quickly turn any codebase into a searchable knowledge base that both humans and AI agents can query—no cloud dependencies required. Includes MCP server for seamless AI agent integration.
 
 **Primary goals**
 

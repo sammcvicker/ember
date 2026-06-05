@@ -1363,6 +1363,36 @@ def config_path(show_global: bool, show_local: bool) -> None:
         pass
 
 
+# MCP server commands
+@cli.group(name="mcp")
+def mcp_group() -> None:
+    """MCP server for AI agent integration.
+
+    Exposes Ember's search capabilities via the Model Context Protocol.
+    Compatible with Claude, Cursor, Gemini, and other MCP clients.
+    """
+    pass
+
+
+@mcp_group.command()
+def start() -> None:
+    """Start the MCP server (stdio transport).
+
+    For use with MCP-compatible AI clients. Add to your MCP config:
+
+    \b
+        {
+          "ember": {
+            "command": "ember",
+            "args": ["mcp", "start"]
+          }
+        }
+    """
+    from ember.entrypoints.mcp_server import run_server
+
+    run_server()
+
+
 # Daemon management commands
 @cli.group()
 def daemon() -> None:

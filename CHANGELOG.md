@@ -7,7 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-*No changes yet*
+### Added
+- **MCP server for AI agent integration** (`ember mcp start`)
+  - Exposes Ember's search capabilities via the Model Context Protocol (MCP)
+  - Three MCP tools: `ember_search` (semantic code search with auto-sync), `ember_status` (index health), `ember_cat` (chunk content retrieval)
+  - Stdio transport for use with Claude, Cursor, Gemini, and other MCP-compatible clients
+  - Powered by FastMCP 3.x framework
+  - MCP client config: `{"ember": {"command": "ember", "args": ["mcp", "start"]}}`
+
 
 ## [1.2.0] - 2025-12-12
 

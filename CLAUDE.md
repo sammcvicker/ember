@@ -21,6 +21,7 @@
 - Batch embedding optimization (2-6x faster indexing) ✅
 - Fast test suite (~91s, 801 tests) ✅
 - Clean architecture with ports/adapters ✅
+- MCP server for AI agent integration (`ember mcp start`) ✅
 - 82% test coverage ✅
 
 **Known Issues:**
