@@ -64,13 +64,21 @@ class SQLiteFTS:
         # No-op: FTS5 table is automatically synced via triggers
         pass
 
+    def _escape_query(self, q: str) -> str:
+        """Escape special characters in FTS5 query string to avoid syntax errors.
+
+        Wraps the query in double-quotes and doubles any existing double-quotes.
+        """
+        escaped = q.replace('"', '""')
+        return f'"{escaped}"'
+
     def query(
         self, q: str, topk: int = 100, path_filter: str | None = None
     ) -> list[tuple[str, float]]:
         """Query the FTS5 index using SQLite full-text search.
 
         Args:
-            q: Query string (supports FTS5 query syntax like AND, OR, NEAR, quotes).
+            q: Query string. Will be escaped to prevent FTS5 syntax errors.
             topk: Maximum number of results to return.
             path_filter: Optional glob pattern to filter results by path.
 
@@ -78,6 +86,10 @@ class SQLiteFTS:
             List of (chunk_id, score) tuples, sorted by relevance (descending).
             Score is the negative BM25 rank from FTS5 (higher = more relevant).
         """
+        if not q.strip():
+            return []
+
+        escaped_q = self._escape_query(q)
         conn = self._get_connection()
         cursor = conn.cursor()
 
@@ -98,7 +110,7 @@ class SQLiteFTS:
                 ORDER BY rank
                 LIMIT ?
                 """,
-                (q, path_filter, topk),
+                (escaped_q, path_filter, topk),
             )
         else:
             cursor.execute(
@@ -112,7 +124,7 @@ class SQLiteFTS:
                 ORDER BY rank
                 LIMIT ?
                 """,
-                (q, topk),
+                (escaped_q, topk),
             )
 
         rows = cursor.fetchall()
