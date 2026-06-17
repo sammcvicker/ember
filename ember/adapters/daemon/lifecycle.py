@@ -37,9 +37,18 @@ class DaemonLifecycle:
             model_name: Embedding model preset or HuggingFace ID
         """
         ember_dir = Path.home() / ".ember"
-        self.socket_path = socket_path or (ember_dir / "daemon.sock")
-        self.pid_file = pid_file or (ember_dir / "daemon.pid")
-        self.log_file = log_file or (ember_dir / "daemon.log")
+        suffix = ""
+        if model_name:
+            try:
+                from ember.adapters.local_models.registry import resolve_model_name
+                resolved = resolve_model_name(model_name)
+                sanitized = resolved.replace("/", "_").replace("-", "_").replace(".", "_")
+                suffix = f"_{sanitized}"
+            except Exception:
+                pass
+        self.socket_path = socket_path or (ember_dir / f"daemon{suffix}.sock")
+        self.pid_file = pid_file or (ember_dir / f"daemon{suffix}.pid")
+        self.log_file = log_file or (ember_dir / f"daemon{suffix}.log")
         self.idle_timeout = idle_timeout
         self.model_name = model_name
 

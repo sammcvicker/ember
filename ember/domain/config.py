@@ -28,6 +28,7 @@ class IndexConfig:
     """
 
     model: str = "local-default-code-embed"
+    doc_model: str = "jina-en-v2"
     chunk: Literal["symbol", "lines"] = "symbol"
     line_window: int = 120
     line_stride: int = 100
@@ -46,6 +47,7 @@ class IndexConfig:
             "**/*.c",
             "**/*.h",
             "**/*.hpp",
+            "**/*.md",
         ]
     )
     ignore: list[str] = field(
@@ -77,11 +79,11 @@ class IndexConfig:
                 f"overlap_lines ({self.overlap_lines}) must be less than "
                 f"line_window ({self.line_window})"
             )
-        # Validate model name
-        self._validate_model()
+        # Validate model names
+        self._validate_models()
 
-    def _validate_model(self) -> None:
-        """Validate that the model name is recognized.
+    def _validate_models(self) -> None:
+        """Validate that the model names are recognized.
 
         Raises:
             ValueError: If model name is not a known preset or supported model
@@ -93,6 +95,12 @@ class IndexConfig:
             resolve_model_name(self.model)
         except ValueError as e:
             raise ValueError(f"Invalid model configuration: {e}") from e
+
+        if self.doc_model:
+            try:
+                resolve_model_name(self.doc_model)
+            except ValueError as e:
+                raise ValueError(f"Invalid doc_model configuration: {e}") from e
 
 
 @dataclass(frozen=True)

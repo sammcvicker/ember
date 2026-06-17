@@ -52,6 +52,7 @@ class VectorSearch(Protocol):
         vector: list[float],
         topk: int = 100,
         path_filter: str | None = None,
+        model_fingerprint: str | None = None,
     ) -> list[tuple[str, float]]:
         """Query for nearest neighbors.
 
@@ -59,6 +60,7 @@ class VectorSearch(Protocol):
             vector: Query embedding vector.
             topk: Maximum number of results to return.
             path_filter: Optional glob pattern to filter results by path.
+            model_fingerprint: Optional model fingerprint to filter by.
 
         Returns:
             List of (chunk_id, distance) tuples, sorted by distance (ascending).

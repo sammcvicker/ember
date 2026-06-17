@@ -83,12 +83,16 @@ class SimpleVectorSearch:
         self,
         vector: list[float],
         topk: int = 100,
+        path_filter: str | None = None,
+        model_fingerprint: str | None = None,
     ) -> list[tuple[str, float]]:
         """Query for nearest neighbors using brute-force cosine similarity.
 
         Args:
             vector: Query embedding vector.
             topk: Maximum number of results to return.
+            path_filter: Optional glob pattern to filter results by path.
+            model_fingerprint: Optional model fingerprint to filter results.
 
         Returns:
             List of (chunk_id, similarity) tuples, sorted by similarity (descending).
@@ -98,17 +102,28 @@ class SimpleVectorSearch:
         try:
             cursor = conn.cursor()
 
-            # Load all vectors with their stored chunk_id
-            cursor.execute(
-                """
+            # Load vectors with filtering
+            sql = """
                 SELECT
                     c.chunk_id,
                     v.embedding,
                     v.dim
                 FROM vectors v
                 JOIN chunks c ON v.chunk_id = c.id
-                """
-            )
+            """
+            conditions = []
+            params = []
+            if model_fingerprint:
+                conditions.append("v.model_fingerprint = ?")
+                params.append(model_fingerprint)
+            if path_filter:
+                conditions.append("c.path GLOB ?")
+                params.append(path_filter)
+
+            if conditions:
+                sql += " WHERE " + " AND ".join(conditions)
+
+            cursor.execute(sql, tuple(params))
 
             rows = cursor.fetchall()
             results = []

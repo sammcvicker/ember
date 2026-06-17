@@ -32,6 +32,9 @@ MODEL_PRESETS: dict[str, str] = {
     # Default code-optimized model (161M params, 768 dims, ~1.6GB)
     "jina-code-v2": "jinaai/jina-embeddings-v2-base-code",
     "local-default-code-embed": "jinaai/jina-embeddings-v2-base-code",  # Legacy name
+    # Default natural language/documentation optimized model (161M params, 768 dims, ~1.6GB)
+    "jina-en-v2": "jinaai/jina-embeddings-v2-base-en",
+    "jina-english-v2": "jinaai/jina-embeddings-v2-base-en",
     # Lightweight option (22M params, 384 dims, ~100MB)
     "minilm": "sentence-transformers/all-MiniLM-L6-v2",
     "all-minilm-l6-v2": "sentence-transformers/all-MiniLM-L6-v2",
@@ -46,6 +49,7 @@ AUTO_MODEL = "auto"
 # Full HuggingFace model IDs that we support directly
 SUPPORTED_MODELS: set[str] = {
     "jinaai/jina-embeddings-v2-base-code",
+    "jinaai/jina-embeddings-v2-base-en",
     "sentence-transformers/all-MiniLM-L6-v2",
     "BAAI/bge-small-en-v1.5",
 }
@@ -124,6 +128,18 @@ def create_embedder(
             kwargs["device"] = device
         if max_seq_length is not None:
             kwargs["max_seq_length"] = max_seq_length
+        kwargs["model_name"] = resolved
+        return JinaCodeEmbedder(**kwargs)
+
+    elif resolved == "jinaai/jina-embeddings-v2-base-en":
+        from ember.adapters.local_models.jina_embedder import JinaCodeEmbedder
+
+        kwargs = {"batch_size": batch_size}
+        if device is not None:
+            kwargs["device"] = device
+        if max_seq_length is not None:
+            kwargs["max_seq_length"] = max_seq_length
+        kwargs["model_name"] = resolved
         return JinaCodeEmbedder(**kwargs)
 
     elif resolved == "sentence-transformers/all-MiniLM-L6-v2":
@@ -178,6 +194,14 @@ def get_model_info(model_name: str) -> dict:
             "max_seq_length": 8192,
             "description": "Code-optimized model with excellent code understanding",
         })
+    elif resolved == "jinaai/jina-embeddings-v2-base-en":
+        info.update({
+            "dim": 768,
+            "params": "161M",
+            "memory": "~1.6GB",
+            "max_seq_length": 8192,
+            "description": "English natural language optimization with 8k context",
+        })
     elif resolved == "sentence-transformers/all-MiniLM-L6-v2":
         info.update({
             "dim": 384,
@@ -219,3 +243,51 @@ def list_available_models() -> list[dict]:
             models.append(info)
 
     return models
+
+
+class LazyEmbedder:
+    """A lazy-loaded embedder proxy that implements the Embedder protocol.
+
+    Only instantiates the underlying embedder (and starts any daemons)
+    when a method is actually called.
+    """
+
+    def __init__(self, factory_fn) -> None:
+        """Initialize lazy embedder.
+
+        Args:
+            factory_fn: A callable that returns an Embedder instance.
+        """
+        self._factory_fn = factory_fn
+        self._embedder = None
+
+    def _get_embedder(self):
+        if self._embedder is None:
+            self._embedder = self._factory_fn()
+        return self._embedder
+
+    @property
+    def name(self) -> str:
+        """Model name."""
+        return self._get_embedder().name
+
+    @property
+    def dim(self) -> int:
+        """Embedding dimension."""
+        # Return dim without instantiating if possible, by resolving name first
+        if self._embedder is not None:
+            return self._embedder.dim
+        # Fallback to general Jina dim since it's 768 for Jina v2
+        return 768
+
+    def fingerprint(self) -> str:
+        """Deterministic fingerprint."""
+        return self._get_embedder().fingerprint()
+
+    def embed_texts(self, texts: list[str]) -> list[list[float]]:
+        """Embed texts."""
+        return self._get_embedder().embed_texts(texts)
+
+    def ensure_loaded(self) -> None:
+        """Ensure loaded."""
+        self._get_embedder().ensure_loaded()
