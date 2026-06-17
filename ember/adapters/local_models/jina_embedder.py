@@ -36,17 +36,20 @@ class JinaCodeEmbedder:
         max_seq_length: int = DEFAULT_MAX_SEQ_LENGTH,
         batch_size: int = DEFAULT_BATCH_SIZE,
         device: str | None = None,
+        model_name: str = "jinaai/jina-embeddings-v2-base-code",
     ):
-        """Initialize the Jina Code Embedder.
+        """Initialize the Jina Embedder.
 
         Args:
             max_seq_length: Maximum sequence length for tokenization (1-8192).
             batch_size: Batch size for encoding.
             device: Device to run on ('cpu', 'cuda', 'mps', or None for auto).
+            model_name: The HuggingFace model name.
         """
         self._max_seq_length = max_seq_length
         self._batch_size = batch_size
         self._device = device
+        self.MODEL_NAME = model_name
         self._model: SentenceTransformer | None = None
 
     def _ensure_model_loaded(self) -> "SentenceTransformer":

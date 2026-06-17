@@ -73,11 +73,12 @@ def handle_cli_errors(command_name: str):
     return decorator
 
 
-def _create_embedder(config, show_progress: bool = True):
+def _create_embedder(config, model_name: str | None = None, show_progress: bool = True):
     """Create embedder based on configuration.
 
     Args:
         config: EmberConfig with model settings
+        model_name: Optional custom model name to instantiate (defaults to config.index.model)
         show_progress: Show progress bar during daemon startup
 
     Returns:
@@ -88,7 +89,7 @@ def _create_embedder(config, show_progress: bool = True):
         ValueError: If model name is not recognized
     """
     # Get the configured model name
-    model_name = config.index.model
+    model_name = model_name or config.index.model
 
     if config.model.mode == "daemon":
         # Use daemon mode (default)
@@ -177,10 +178,19 @@ def _create_indexing_usecase(repo_root: Path, db_path: Path, config):
     vcs = GitAdapter(repo_root)
     fs = LocalFileSystem()
     embedder = _create_embedder(config)
+    doc_embedder = None
+    if getattr(config.index, "doc_model", None):
+        if config.index.doc_model == config.index.model:
+            doc_embedder = embedder
+        else:
+            from ember.adapters.local_models.registry import LazyEmbedder
+            doc_embedder = LazyEmbedder(
+                lambda: _create_embedder(config, model_name=config.index.doc_model, show_progress=False)
+            )
 
     # Initialize repositories
     chunk_repo = SQLiteChunkRepository(db_path)
-    vector_repo = SQLiteVectorRepository(db_path, expected_dim=embedder.dim)
+    vector_repo = SQLiteVectorRepository(db_path, expected_dim=embedder.dim if (not doc_embedder or doc_embedder.dim == embedder.dim) else None)
     file_repo = SQLiteFileRepository(db_path)
     meta_repo = SQLiteMetaRepository(db_path)
 
@@ -201,6 +211,7 @@ def _create_indexing_usecase(repo_root: Path, db_path: Path, config):
         fs=fs,
         chunk_usecase=chunk_usecase,
         embedder=embedder,
+        doc_embedder=doc_embedder,
         chunk_repo=chunk_repo,
         vector_repo=vector_repo,
         file_repo=file_repo,
@@ -768,10 +779,21 @@ def find(
     from ember.domain.entities import Query
 
     # Initialize dependencies
+    from ember.adapters.sqlite.meta_repository import SQLiteMetaRepository
     text_search = SQLiteFTS(db_path)
     vector_search = SqliteVecAdapter(db_path)
     chunk_repo = SQLiteChunkRepository(db_path)
+    meta_repo = SQLiteMetaRepository(db_path)
     embedder = _create_embedder(config)
+    doc_embedder = None
+    if getattr(config.index, "doc_model", None):
+        if config.index.doc_model == config.index.model:
+            doc_embedder = embedder
+        else:
+            from ember.adapters.local_models.registry import LazyEmbedder
+            doc_embedder = LazyEmbedder(
+                lambda: _create_embedder(config, model_name=config.index.doc_model, show_progress=False)
+            )
 
     # Create search use case
     search_usecase = SearchUseCase(
@@ -779,6 +801,8 @@ def find(
         vector_search=vector_search,
         chunk_repo=chunk_repo,
         embedder=embedder,
+        doc_embedder=doc_embedder,
+        meta_repo=meta_repo,
     )
 
     # Create query object
@@ -936,11 +960,21 @@ def search(
     from ember.core.retrieval.search_usecase import SearchUseCase
     from ember.domain.entities import Query
 
-    # Initialize search dependencies
+    from ember.adapters.sqlite.meta_repository import SQLiteMetaRepository
     text_search = SQLiteFTS(db_path)
     vector_search = SqliteVecAdapter(db_path)
     chunk_repo = SQLiteChunkRepository(db_path)
+    meta_repo = SQLiteMetaRepository(db_path)
     embedder = _create_embedder(config, show_progress=False)  # No progress for interactive
+    doc_embedder = None
+    if getattr(config.index, "doc_model", None):
+        if config.index.doc_model == config.index.model:
+            doc_embedder = embedder
+        else:
+            from ember.adapters.local_models.registry import LazyEmbedder
+            doc_embedder = LazyEmbedder(
+                lambda: _create_embedder(config, model_name=config.index.doc_model, show_progress=False)
+            )
 
     # Create search use case
     search_usecase = SearchUseCase(
@@ -948,6 +982,8 @@ def search(
         vector_search=vector_search,
         chunk_repo=chunk_repo,
         embedder=embedder,
+        doc_embedder=doc_embedder,
+        meta_repo=meta_repo,
     )
 
     # Create search function wrapper

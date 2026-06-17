@@ -219,8 +219,8 @@ class TestListAvailableModels:
     def test_contains_all_unique_models(self):
         """Test that list contains all unique models."""
         result = list_available_models()
-        # Should have 3 unique models (Jina, MiniLM, BGE)
-        assert len(result) == 3
+        # Should have 4 unique models (Jina Code, Jina English, MiniLM, BGE)
+        assert len(result) == 4
 
     def test_each_model_has_required_fields(self):
         """Test that each model info has required fields."""

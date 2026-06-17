@@ -58,7 +58,16 @@ class DaemonEmbedderClient:
             daemon_timeout: Daemon idle timeout in seconds
             model_name: Embedding model preset or HuggingFace ID
         """
-        self.socket_path = socket_path or (Path.home() / ".ember" / "daemon.sock")
+        suffix = ""
+        if model_name:
+            try:
+                from ember.adapters.local_models.registry import resolve_model_name
+                resolved = resolve_model_name(model_name)
+                sanitized = resolved.replace("/", "_").replace("-", "_").replace(".", "_")
+                suffix = f"_{sanitized}"
+            except Exception:
+                pass
+        self.socket_path = socket_path or (Path.home() / ".ember" / f"daemon{suffix}.sock")
         self.fallback_enabled = fallback
         self.auto_start = auto_start
         self.max_seq_length = max_seq_length

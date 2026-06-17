@@ -203,6 +203,7 @@ class SqliteVecAdapter:
         vector: list[float],
         topk: int = 100,
         path_filter: str | None = None,
+        model_fingerprint: str | None = None,
     ) -> list[tuple[str, float]]:
         """Query for nearest neighbors using sqlite-vec.
 
@@ -212,6 +213,7 @@ class SqliteVecAdapter:
             vector: Query embedding vector.
             topk: Maximum number of results to return.
             path_filter: Optional glob pattern to filter results by path.
+            model_fingerprint: Optional model fingerprint to filter results.
 
         Returns:
             List of (chunk_id, similarity) tuples, sorted by similarity (descending).
@@ -228,41 +230,79 @@ class SqliteVecAdapter:
 
         # Query vec0 table for nearest neighbors
         # sqlite-vec returns distance, we need to convert to similarity
-        # Add path filtering if specified
-        # Join with chunks table to get the stored chunk_id
-        if path_filter:
-            cursor.execute(
-                """
-                SELECT
-                    c.chunk_id,
-                    v.distance
-                FROM vec_chunks v
-                JOIN vec_chunk_mapping m ON v.rowid = m.vec_rowid
-                JOIN chunks c ON m.chunk_db_id = c.id
-                WHERE v.embedding MATCH ?
-                  AND k = ?
-                  AND m.path GLOB ?
-                ORDER BY v.distance
-                LIMIT ?
-                """,
-                (serialized_vector, topk, path_filter, topk),
-            )
+        # Join with vectors/chunks table to get stored chunk_id and filter by fingerprint if specified
+        if model_fingerprint:
+            if path_filter:
+                cursor.execute(
+                    """
+                    SELECT
+                        c.chunk_id,
+                        v.distance
+                    FROM vec_chunks v
+                    JOIN vec_chunk_mapping m ON v.rowid = m.vec_rowid
+                    JOIN chunks c ON m.chunk_db_id = c.id
+                    JOIN vectors vec ON c.id = vec.chunk_id
+                    WHERE v.embedding MATCH ?
+                      AND k = ?
+                      AND vec.model_fingerprint = ?
+                      AND m.path GLOB ?
+                    ORDER BY v.distance
+                    LIMIT ?
+                    """,
+                    (serialized_vector, topk, model_fingerprint, path_filter, topk),
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT
+                        c.chunk_id,
+                        v.distance
+                    FROM vec_chunks v
+                    JOIN vec_chunk_mapping m ON v.rowid = m.vec_rowid
+                    JOIN chunks c ON m.chunk_db_id = c.id
+                    JOIN vectors vec ON c.id = vec.chunk_id
+                    WHERE v.embedding MATCH ?
+                      AND k = ?
+                      AND vec.model_fingerprint = ?
+                    ORDER BY v.distance
+                    LIMIT ?
+                    """,
+                    (serialized_vector, topk, model_fingerprint, topk),
+                )
         else:
-            cursor.execute(
-                """
-                SELECT
-                    c.chunk_id,
-                    v.distance
-                FROM vec_chunks v
-                JOIN vec_chunk_mapping m ON v.rowid = m.vec_rowid
-                JOIN chunks c ON m.chunk_db_id = c.id
-                WHERE v.embedding MATCH ?
-                  AND k = ?
-                ORDER BY v.distance
-                LIMIT ?
-                """,
-                (serialized_vector, topk, topk),
-            )
+            if path_filter:
+                cursor.execute(
+                    """
+                    SELECT
+                        c.chunk_id,
+                        v.distance
+                    FROM vec_chunks v
+                    JOIN vec_chunk_mapping m ON v.rowid = m.vec_rowid
+                    JOIN chunks c ON m.chunk_db_id = c.id
+                    WHERE v.embedding MATCH ?
+                      AND k = ?
+                      AND m.path GLOB ?
+                    ORDER BY v.distance
+                    LIMIT ?
+                    """,
+                    (serialized_vector, topk, path_filter, topk),
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT
+                        c.chunk_id,
+                        v.distance
+                    FROM vec_chunks v
+                    JOIN vec_chunk_mapping m ON v.rowid = m.vec_rowid
+                    JOIN chunks c ON m.chunk_db_id = c.id
+                    WHERE v.embedding MATCH ?
+                      AND k = ?
+                    ORDER BY v.distance
+                    LIMIT ?
+                    """,
+                    (serialized_vector, topk, topk),
+                )
 
         rows = cursor.fetchall()
         results = []

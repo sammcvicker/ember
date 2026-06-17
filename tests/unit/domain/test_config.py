@@ -70,6 +70,16 @@ class TestIndexConfigValidation:
         with pytest.raises(ValueError, match="overlap_lines.*must be less than.*line_window"):
             IndexConfig(line_window=100, overlap_lines=150)
 
+    def test_index_config_valid_doc_model(self):
+        """Test that a valid doc_model is accepted."""
+        config = IndexConfig(doc_model="jina-en-v2")
+        assert config.doc_model == "jina-en-v2"
+
+    def test_index_config_invalid_doc_model_raises_error(self):
+        """Test that an invalid doc_model raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid doc_model configuration"):
+            IndexConfig(doc_model="invalid-model-name")
+
 
 # =============================================================================
 # SearchConfig validation tests

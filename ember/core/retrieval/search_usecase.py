@@ -8,7 +8,7 @@ import logging
 
 from ember.domain.entities import Chunk, Query, SearchResult
 from ember.ports.embedders import Embedder
-from ember.ports.repositories import ChunkRepository
+from ember.ports.repositories import ChunkRepository, MetaRepository
 from ember.ports.search import TextSearch, VectorSearch
 
 logger = logging.getLogger(__name__)
@@ -32,6 +32,8 @@ class SearchUseCase:
         chunk_repo: ChunkRepository,
         embedder: Embedder,
         rrf_k: int = 60,
+        doc_embedder: Embedder | None = None,
+        meta_repo: MetaRepository | None = None,
     ) -> None:
         """Initialize search use case.
 
@@ -41,12 +43,16 @@ class SearchUseCase:
             chunk_repo: Repository for retrieving chunk metadata.
             embedder: Embedder for query vectorization.
             rrf_k: RRF constant (default 60, higher = less weight to top ranks).
+            doc_embedder: Optional embedding model for documentation files.
+            meta_repo: Optional metadata repository.
         """
         self.text_search = text_search
         self.vector_search = vector_search
         self.chunk_repo = chunk_repo
         self.embedder = embedder
+        self.doc_embedder = doc_embedder or embedder
         self.rrf_k = rrf_k
+        self.meta_repo = meta_repo
 
     def search(self, query: Query) -> list[SearchResult]:
         """Execute hybrid search and return ranked results.
@@ -57,10 +63,7 @@ class SearchUseCase:
         Returns:
             List of SearchResult objects, ranked by relevance.
         """
-        # 1. Embed query text
-        query_embedding = self.embedder.embed_texts([query.text])[0]
-
-        # 2. Get BM25 results from full-text search
+        # 1. Get BM25 results from full-text search
         # Use a larger retrieval pool for fusion (e.g., 100)
         # Pass path_filter to filter during SQL query (not after)
         retrieval_pool = max(query.topk * 5, 100)
@@ -68,10 +71,52 @@ class SearchUseCase:
             query.text, topk=retrieval_pool, path_filter=query.path_filter
         )
 
-        # 3. Get vector search results
-        vector_results = self.vector_search.query(
-            query_embedding, topk=retrieval_pool, path_filter=query.path_filter
-        )
+        # 2. Get vector search results (embed query and query VSS)
+        # Only query the doc model if it's configured differently AND we actually have indexed doc files
+        has_doc_model = False
+        if self.doc_embedder and self.doc_embedder != self.embedder and self.meta_repo:
+            has_doc_model = self.meta_repo.get("doc_model_fingerprint") is not None
+
+        if has_doc_model:
+            # Query both vector spaces since we have separate models
+            query_embedding_code = self.embedder.embed_texts([query.text])[0]
+            vector_results_code = self.vector_search.query(
+                query_embedding_code,
+                topk=retrieval_pool,
+                path_filter=query.path_filter,
+                model_fingerprint=self.embedder.fingerprint(),
+            )
+
+            query_embedding_doc = self.doc_embedder.embed_texts([query.text])[0]
+            vector_results_doc = self.vector_search.query(
+                query_embedding_doc,
+                topk=retrieval_pool,
+                path_filter=query.path_filter,
+                model_fingerprint=self.doc_embedder.fingerprint(),
+            )
+
+            # Combine results, sort by similarity descending, and keep topk
+            combined_vector_results = {}
+            for chunk_id, score in vector_results_code:
+                combined_vector_results[chunk_id] = score
+            for chunk_id, score in vector_results_doc:
+                # If chunk already in (e.g. somehow retrieved twice, though highly unlikely as fingerprints differ)
+                combined_vector_results[chunk_id] = max(combined_vector_results.get(chunk_id, 0.0), score)
+
+            vector_results = sorted(
+                combined_vector_results.items(),
+                key=lambda x: x[1],
+                reverse=True,
+            )[:retrieval_pool]
+        else:
+            # Single model query
+            query_embedding = self.embedder.embed_texts([query.text])[0]
+            vector_results = self.vector_search.query(
+                query_embedding,
+                topk=retrieval_pool,
+                path_filter=query.path_filter,
+                model_fingerprint=self.embedder.fingerprint(),
+            )
 
         # 4. Fuse results using Reciprocal Rank Fusion
         fused_scores = self._reciprocal_rank_fusion(

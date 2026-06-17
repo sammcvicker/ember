@@ -148,6 +148,7 @@ class IndexingUseCase:
         file_repo: FileRepository,
         meta_repo: MetaRepository,
         project_id: str,
+        doc_embedder: Embedder | None = None,
     ) -> None:
         """Initialize indexing use case.
 
@@ -161,11 +162,13 @@ class IndexingUseCase:
             file_repo: Repository for tracking indexed files.
             meta_repo: Repository for metadata (last tree SHA, etc.).
             project_id: Project identifier (typically repo root hash).
+            doc_embedder: Optional embedding model for documentation files.
         """
         self.vcs = vcs
         self.fs = fs
         self.chunk_usecase = chunk_usecase
         self.embedder = embedder
+        self.doc_embedder = doc_embedder or embedder
         self.chunk_repo = chunk_repo
         self.vector_repo = vector_repo
         self.file_repo = file_repo
@@ -211,7 +214,25 @@ class IndexingUseCase:
                 "Run 'ember sync --force' to rebuild the index with the new model."
             )
 
-    def _ensure_model_loaded(self, progress: ProgressCallback | None) -> None:
+        if self.doc_embedder and self.doc_embedder != self.embedder:
+            stored_doc_fingerprint = self.meta_repo.get("doc_model_fingerprint")
+            # Only compare fingerprints if there is already a stored doc fingerprint.
+            # Calling fingerprint() before any docs are indexed would eagerly load
+            # the doc model daemon even on code-only repos.
+            if stored_doc_fingerprint:
+                current_doc_fingerprint = self.doc_embedder.fingerprint()
+                if stored_doc_fingerprint != current_doc_fingerprint:
+                    logger.warning(
+                        f"Documentation embedding model changed: {stored_doc_fingerprint} → {current_doc_fingerprint}"
+                    )
+                    logger.warning(
+                        "Existing doc vectors may be incompatible with the new doc model. "
+                        "Run 'ember sync --force' to rebuild the index."
+                    )
+
+    def _ensure_model_loaded(
+        self, progress: ProgressCallback | None, files_to_index: list[Path] | None = None
+    ) -> None:
         """Eagerly load embedding model before indexing.
 
         Loading the model upfront (can take 2-3 seconds) prevents misleading
@@ -219,6 +240,9 @@ class IndexingUseCase:
 
         Args:
             progress: Optional progress callback for reporting model loading.
+            files_to_index: List of files about to be indexed. When provided,
+                the doc embedder is only loaded if any .md files are present,
+                avoiding unnecessary daemon startup for code-only repos.
         """
         if hasattr(self.embedder, "ensure_loaded"):
             logger.debug("Loading embedding model")
@@ -227,6 +251,20 @@ class IndexingUseCase:
             self.embedder.ensure_loaded()  # type: ignore[attr-defined]
             if progress:
                 progress.on_complete()
+
+        if self.doc_embedder and self.doc_embedder != self.embedder and hasattr(self.doc_embedder, "ensure_loaded"):
+            # Only load doc embedder if there are .md files in the batch, or if
+            # no file list was provided (caller must know what they're doing).
+            has_md_files = files_to_index is None or any(
+                f.suffix.lower() == ".md" for f in files_to_index
+            )
+            if has_md_files:
+                logger.debug("Loading documentation embedding model")
+                if progress:
+                    progress.on_start(1, "Loading documentation embedding model")
+                self.doc_embedder.ensure_loaded()  # type: ignore[attr-defined]
+                if progress:
+                    progress.on_complete()
 
     def _index_files_with_progress(
         self,
@@ -292,16 +330,23 @@ class IndexingUseCase:
             "files_failed": files_failed,
         }
 
-    def _update_metadata(self, tree_sha: str, sync_mode: str) -> None:
+    def _update_metadata(
+        self, tree_sha: str, sync_mode: str, doc_model_used: bool = False
+    ) -> None:
         """Update metadata after successful indexing.
 
         Args:
             tree_sha: Current tree SHA.
             sync_mode: Sync mode that was used.
+            doc_model_used: Whether the doc embedder was used during this sync.
+                Only saves the doc model fingerprint when True, to avoid
+                eagerly loading the doc model on code-only repos.
         """
         self.meta_repo.set("last_tree_sha", tree_sha)
         self.meta_repo.set("last_sync_mode", sync_mode)
         self.meta_repo.set("model_fingerprint", self.embedder.fingerprint())
+        if self.doc_embedder and doc_model_used:
+            self.meta_repo.set("doc_model_fingerprint", self.doc_embedder.fingerprint())
 
     def _create_success_response(
         self,
@@ -394,9 +439,8 @@ class IndexingUseCase:
                 if chunks_deleted > 0:
                     logger.info(f"Deleted {chunks_deleted} chunk(s) from removed files")
 
-            # Eagerly load embedding model before indexing
             if files_to_index:
-                self._ensure_model_loaded(progress)
+                self._ensure_model_loaded(progress, files_to_index=files_to_index)
 
             # Index all files with progress reporting
             stats = self._index_files_with_progress(
@@ -408,8 +452,13 @@ class IndexingUseCase:
                 progress=progress,
             )
 
-            # Update metadata with new tree SHA
-            self._update_metadata(tree_sha, request.sync_mode)
+            # Update metadata with new tree SHA.
+            # Only save doc fingerprint if doc model was actually used (avoids
+            # eagerly loading the doc daemon on code-only repos).
+            doc_model_used = self.doc_embedder != self.embedder and any(
+                f.suffix.lower() == ".md" for f in files_to_index
+            )
+            self._update_metadata(tree_sha, request.sync_mode, doc_model_used=doc_model_used)
 
             # Return success response
             return self._create_success_response(
@@ -723,11 +772,15 @@ class IndexingUseCase:
             # Collect all chunk contents
             contents = [chunk.content for chunk in chunks]
 
+            # Route to doc_embedder for markdown files, else default to main embedder
+            is_md = file_path.suffix.lower() == ".md"
+            active_embedder = self.doc_embedder if (is_md and self.doc_embedder) else self.embedder
+
             # Single batch embedding call
-            embeddings = self.embedder.embed_texts(contents)
+            embeddings = active_embedder.embed_texts(contents)
 
             # Compute fingerprint once (avoids repeated function calls)
-            model_fingerprint = self.embedder.fingerprint()
+            model_fingerprint = active_embedder.fingerprint()
 
             # Store vectors for each chunk
             for chunk, embedding in zip(chunks, embeddings, strict=True):
